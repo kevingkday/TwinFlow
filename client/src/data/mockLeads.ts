@@ -14,6 +14,7 @@ export const INITIAL_LEADS: LeadCardData[] = [
       'Expanding commercial GTM team from 15 to 45 over the next two quarters across North America and EMEA.',
       'Current outbound outreach tech stack is struggling with lead verification latency across regulated enterprise clients.'
     ],
+    articleSummary: 'HyperScale AI has raised $42M in Series B funding led by Lightspeed and a16z to expand synthetic data fine-tuning capabilities. The capital will fund a tripling of its commercial GTM team from 15 to 45 across North America and EMEA over the next two quarters.',
     decisionMaker: {
       id: 'dm-001',
       name: 'Elena Rostova',
@@ -21,7 +22,37 @@ export const INITIAL_LEADS: LeadCardData[] = [
       company: 'HyperScale AI',
       email: 'elena.rostova@hyperscale.ai',
       linkedinUrl: 'https://linkedin.com/in/elena-rostova-growth',
+      isEnriched: true,
     },
+    contacts: [
+      {
+        id: 'dm-001',
+        name: 'Elena Rostova',
+        title: 'VP of Growth & Revenue Operations',
+        company: 'HyperScale AI',
+        email: 'elena.rostova@hyperscale.ai',
+        linkedinUrl: 'https://linkedin.com/in/elena-rostova-growth',
+        isEnriched: true,
+      },
+      {
+        id: 'dm-001-b',
+        name: 'Alexei Ivanov',
+        title: 'Co-Founder & Chief Executive Officer',
+        company: 'HyperScale AI',
+        email: undefined,
+        linkedinUrl: 'https://linkedin.com/in/alexei-ivanov-hyperscale',
+        isEnriched: false,
+      },
+      {
+        id: 'dm-001-c',
+        name: 'Sarah Chen',
+        title: 'Head of Enterprise Sales & GTM',
+        company: 'HyperScale AI',
+        email: undefined,
+        linkedinUrl: undefined,
+        isEnriched: false,
+      },
+    ],
     emailDraft: {
       subject: 'Scaling HyperScale\'s GTM outbound after the $42M Series B',
       body: `Hi Elena,\n\nSaw TechCrunch's report on your $42M Series B — huge milestone for HyperScale AI!\n\nAs you ramp up your commercial team to 45 reps, automated data pipeline enrichment is typically where SDR velocity gets bogged down. TwinFlow hooks right into your news signals and auto-generates verified prospect pitches before your competitors even spot the press release.\n\nWould you be open to seeing a 3-minute interactive teardown of how 3 peers in enterprise synthetic data are using this today?`,
@@ -44,6 +75,7 @@ export const INITIAL_LEADS: LeadCardData[] = [
       'Mandated to launch instant reconciliation APIs for cross-border logistics and merchant merchant-of-record services.',
       'Active budget allocated for real-time trigger-based outbound pipeline tools to modernize legacy sales cycles.'
     ],
+    articleSummary: 'FinMatrix has recruited former Stripe enterprise executive Marcus Vance as Chief Commercial Officer to spearhead cross-border logistics reconciliation APIs and drive enterprise fintech sales modernization.',
     decisionMaker: {
       id: 'dm-002',
       name: 'Marcus Vance',
@@ -51,7 +83,37 @@ export const INITIAL_LEADS: LeadCardData[] = [
       company: 'FinMatrix',
       email: 'm.vance@finmatrix.io',
       linkedinUrl: 'https://linkedin.com/in/marcus-vance-fintech',
+      isEnriched: true,
     },
+    contacts: [
+      {
+        id: 'dm-002',
+        name: 'Marcus Vance',
+        title: 'Chief Commercial Officer',
+        company: 'FinMatrix',
+        email: 'm.vance@finmatrix.io',
+        linkedinUrl: 'https://linkedin.com/in/marcus-vance-fintech',
+        isEnriched: true,
+      },
+      {
+        id: 'dm-002-b',
+        name: 'Nadia Patel',
+        title: 'Chief Executive Officer & Founder',
+        company: 'FinMatrix',
+        email: undefined,
+        linkedinUrl: 'https://linkedin.com/in/nadia-patel-finmatrix',
+        isEnriched: false,
+      },
+      {
+        id: 'dm-002-c',
+        name: 'David Zhao',
+        title: 'VP of Product Infrastructure',
+        company: 'FinMatrix',
+        email: undefined,
+        linkedinUrl: undefined,
+        isEnriched: false,
+      },
+    ],
     emailDraft: {
       subject: 'Congrats on the CCO role at FinMatrix + trigger-based sales orchestration',
       body: `Hi Marcus,\n\nCongratulations on stepping in as Chief Commercial Officer at FinMatrix! Bringing that Stripe pedigree to cross-border logistics infrastructure is a massive move.\n\nWhenever new commercial leadership enters, tightening the signal-to-outreach feedback loop is job #1. TwinFlow automatically converts merchant regulatory announcements into ready-to-approve hyper-personalized pitch decks.\n\nOpen to taking a quick look at a live feed calibrated for FinMatrix's target accounts?`,

@@ -100,6 +100,7 @@ export const signals = sqliteTable('signals', {
   sourceUrl: text('source_url').notNull(),
   publishedAt: text('published_at').notNull(),
   summaryBullets: text('summary_bullets').notNull(), // JSON array string e.g. ["point 1", "point 2", "point 3"]
+  articleSummary: text('article_summary'),
   companyName: text('company_name').notNull(),
   signalType: text('signal_type').notNull(),
   industryTags: text('industry_tags'), // JSON array string e.g. ["Fintech", "Series A"]

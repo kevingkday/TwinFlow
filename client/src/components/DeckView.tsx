@@ -1,7 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Sparkles, CheckCircle2, RotateCcw, Radio } from 'lucide-react';
-import type { LeadCardData, SwipeAction } from '../types/lead';
+import type { LeadCardData, SwipeAction, DecisionMaker } from '../types/lead';
 import { SwipeCard } from './SwipeCard';
 
 interface DeckViewProps {
@@ -13,6 +13,8 @@ interface DeckViewProps {
   onScoutNews?: () => void;
   isScouting?: boolean;
   onOpenBranchOut?: (lead: LeadCardData) => void;
+  onSelectContact?: (leadId: string, contact: DecisionMaker) => void;
+  onEnrichContact?: (leadId: string, contact: DecisionMaker) => Promise<void>;
 }
 
 export const DeckView: React.FC<DeckViewProps> = ({
@@ -24,6 +26,8 @@ export const DeckView: React.FC<DeckViewProps> = ({
   onScoutNews,
   isScouting = false,
   onOpenBranchOut,
+  onSelectContact,
+  onEnrichContact,
 }) => {
   const currentLead = leads[0];
   const nextLead = leads[1];
@@ -101,6 +105,8 @@ export const DeckView: React.FC<DeckViewProps> = ({
           onOpenPitchEditor={onOpenPitchEditor}
           onSelectForDetail={onSelectForDetail}
           onOpenBranchOut={onOpenBranchOut}
+          onSelectContact={onSelectContact}
+          onEnrichContact={onEnrichContact}
         />
       </AnimatePresence>
     </div>

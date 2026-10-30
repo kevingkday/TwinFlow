@@ -17,10 +17,12 @@ import {
   Network,
   Copy,
   Check,
+  Users,
+  Radio,
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
-import type { LeadCardData, SwipeAction } from '../types/lead';
+import type { LeadCardData, SwipeAction, DecisionMaker } from '../types/lead';
 
 interface SwipeCardProps {
   lead: LeadCardData;
@@ -29,6 +31,8 @@ interface SwipeCardProps {
   onOpenPitchEditor?: (lead: LeadCardData) => void;
   onSelectForDetail?: (lead: LeadCardData) => void;
   onOpenBranchOut?: (lead: LeadCardData) => void;
+  onSelectContact?: (leadId: string, contact: DecisionMaker) => void;
+  onEnrichContact?: (leadId: string, contact: DecisionMaker) => Promise<void>;
 }
 
 export const SwipeCard: React.FC<SwipeCardProps> = ({
@@ -37,9 +41,31 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   onSwipe,
   onOpenPitchEditor,
   onOpenBranchOut,
+  onSelectContact,
+  onEnrichContact,
 }) => {
   const [copiedPitch, setCopiedPitch] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
+  const [isEnriching, setIsEnriching] = useState(false);
+
+  const currentContact = lead.decisionMaker;
+  const contactsList = lead.contacts && lead.contacts.length > 0 ? lead.contacts : [lead.decisionMaker];
+
+  const handleSelectContact = (contact: DecisionMaker) => {
+    onSelectContact?.(lead.id, contact);
+  };
+
+  const handleEnrich = async (contact: DecisionMaker) => {
+    if (isEnriching) return;
+    setIsEnriching(true);
+    try {
+      if (onEnrichContact) {
+        await onEnrichContact(lead.id, contact);
+      }
+    } finally {
+      setIsEnriching(false);
+    }
+  };
 
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-250, 0, 250], [-14, 0, 14]);
@@ -199,39 +225,100 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
               Read article <ExternalLink className="w-3 h-3" />
             </a>
           </div>
+
+          {/* Executive Article Summary */}
+          {lead.articleSummary && (
+            <div className="mt-3.5 p-3 sm:p-3.5 rounded-xl bg-black/35 border border-white/[0.08] text-xs sm:text-[13px] text-slate-300 leading-relaxed">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-indigo-400 tracking-wider mb-1">
+                <span>Article Brief & Context</span>
+              </div>
+              <p className="text-slate-200/90 leading-relaxed font-sans">{lead.articleSummary}</p>
+            </div>
+          )}
         </div>
 
         {/* Card Body: 2 Spacious Columns on md+ screens */}
         <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-5 lg:gap-6 items-stretch">
           {/* Left Column (md:col-span-5): Decision-Maker & Signal Intelligence */}
           <div className="md:col-span-5 flex flex-col gap-4">
+            {/* Key Names Detected in Article */}
+            {contactsList.length > 1 && (
+              <div className="rounded-xl bg-white/[0.02] p-3 border border-white/[0.08]">
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-cyan-400" />
+                    Key People in Article ({contactsList.length})
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">Click to select target</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {contactsList.map((c) => {
+                    const isSelected = c.id === currentContact.id || c.name === currentContact.name;
+                    const isEnriched = Boolean(c.email || c.linkedinUrl || c.isEnriched);
+                    return (
+                      <button
+                        key={c.id || c.name}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectContact(c);
+                        }}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-600/35 text-white border border-indigo-400/60 shadow-sm ring-1 ring-indigo-400/40'
+                            : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08]'
+                        }`}
+                        title={isEnriched ? 'Verified contact dossier' : 'Pending enrichment'}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                            isEnriched ? 'bg-emerald-400 shadow-glow-emerald' : 'bg-amber-400'
+                          }`}
+                        />
+                        <span className="font-semibold">{c.name}</span>
+                        <span className="text-[10px] text-slate-400 hidden sm:inline">({c.title})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Extracted Decision-Maker Card */}
             <div className="rounded-xl bg-white/[0.03] p-4 border border-white/[0.08] hover:border-white/15 transition-all">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  Extracted Decision-Maker
+                  Target Decision-Maker
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-medium">
-                  Verified Prospect
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${
+                    currentContact.email || currentContact.linkedinUrl || currentContact.isEnriched
+                      ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                  }`}
+                >
+                  {currentContact.email || currentContact.linkedinUrl || currentContact.isEnriched
+                    ? 'Verified Prospect'
+                    : 'Pending Enrichment'}
                 </span>
               </div>
 
               <div className="flex items-center gap-3">
                 <ExecutiveAvatar
-                  name={lead.decisionMaker.name}
-                  avatarUrl={lead.decisionMaker.avatarUrl}
+                  name={currentContact.name}
+                  avatarUrl={currentContact.avatarUrl}
                   size="lg"
                   className="w-12 h-12 text-sm flex-shrink-0"
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <h3 className="text-sm font-bold text-white truncate">
-                      {lead.decisionMaker.name}
+                      {currentContact.name}
                     </h3>
-                    {lead.decisionMaker.linkedinUrl && (
+                    {currentContact.linkedinUrl && (
                       <a
-                        href={lead.decisionMaker.linkedinUrl}
+                        href={currentContact.linkedinUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
@@ -243,19 +330,19 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
                     )}
                   </div>
                   <p className="text-xs text-indigo-300 font-medium truncate">
-                    {lead.decisionMaker.title}
+                    {currentContact.title}
                   </p>
                   <p className="text-[11px] text-slate-400 truncate">
-                    {lead.decisionMaker.company}
+                    {currentContact.company || lead.companyName}
                   </p>
                 </div>
               </div>
 
-              {lead.decisionMaker.email && (
+              {currentContact.email ? (
                 <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 text-xs text-slate-300 font-mono truncate">
                     <Mail className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                    <span className="truncate">{lead.decisionMaker.email}</span>
+                    <span className="truncate">{currentContact.email}</span>
                   </div>
                   <button
                     type="button"
@@ -267,6 +354,30 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
                       <Check className="w-3.5 h-3.5 text-emerald-400" />
                     ) : (
                       <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-3 pt-2.5 border-t border-white/[0.06]">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEnrich(currentContact);
+                    }}
+                    disabled={isEnriching}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isEnriching ? (
+                      <>
+                        <Radio className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        <span>Enriching Dossier via Apollo...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                        <span>Enrich {currentContact.name.split(' ')[0]} (Find Verified Email)</span>
+                      </>
                     )}
                   </button>
                 </div>

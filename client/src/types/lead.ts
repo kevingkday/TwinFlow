@@ -6,6 +6,7 @@ export interface DecisionMaker {
   avatarUrl?: string;
   email?: string;
   linkedinUrl?: string;
+  isEnriched?: boolean;
 }
 
 export interface EmailDraft {
@@ -37,7 +38,9 @@ export interface LeadCardData {
   category: SignalCategory;
   fitScore: number;
   summaryBullets: string[];
+  articleSummary?: string;
   decisionMaker: DecisionMaker;
+  contacts?: DecisionMaker[];
   emailDraft: EmailDraft;
   rawSignalSummary: string;
   tags: string[];
@@ -100,17 +103,30 @@ export interface ApiSignalItem {
   sourceUrl: string;
   publishedAt: string;
   summaryBullets: string[];
+  articleSummary?: string | null;
   companyName: string;
   signalType: string;
   industryTags?: string[];
   status: 'queued' | 'approved' | 'dismissed';
+  contacts?: Array<{
+    id: string;
+    name: string;
+    title: string;
+    company?: string;
+    email?: string | null;
+    linkedinUrl?: string | null;
+    avatarUrl?: string | null;
+    isEnriched?: boolean;
+  }>;
   contact: {
     id: string;
     name: string;
     title: string;
+    company?: string;
     email?: string | null;
     linkedinUrl?: string | null;
     avatarUrl?: string | null;
+    isEnriched?: boolean;
   } | null;
   outreachDraft: {
     id: string;

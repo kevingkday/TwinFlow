@@ -20,17 +20,25 @@ export interface PeerRoleBranch {
   reason: string;
 }
 
+export interface DetectedContact {
+  name: string;
+  role: string;
+  company?: string;
+}
+
 export interface EnrichedSignalData {
   companyName: string;
   companyDomain: string;
   signalType: string;
   industryTags: string[];
   summaryBullets: [string, string, string];
+  articleSummary?: string;
   decisionMaker: {
     name: string;
     role: string;
     company: string;
   };
+  detectedContacts?: DetectedContact[];
   coldIntroHook: string;
   pitchSubject: string;
   pitchBody: string;
@@ -64,11 +72,16 @@ You must respond with valid JSON adhering exactly to this structure:
     "Operational impact: What bottleneck, hiring expansion, or scaling challenge arose",
     "Commercial angle: Why reaching out now gives an unfair advantage"
   ],
+  "articleSummary": "2-3 sentence executive synopsis summarizing the core story, key figures, and background context of the article",
   "decisionMaker": {
     "name": "Full name of relevant leader mentioned or inferred (e.g. Owner, Managing Partner, CEO, VP Operations, General Manager)",
     "role": "Their executive title appropriate to their industry",
     "company": "Company name"
   },
+  "detectedContacts": [
+    { "name": "Key leader 1 mentioned in article", "role": "Executive title", "company": "Company name" },
+    { "name": "Key leader 2 mentioned in article", "role": "Executive title", "company": "Company name" }
+  ],
   "coldIntroHook": "I saw in [Source] that [Company] recently [action]. Given that you're [context], I wanted to reach out...",
   "pitchSubject": "Compelling short subject line (6-8 words max)",
   "pitchBody": "3 concise, highly tailored paragraphs (under 120 words) addressing the trigger event and proposing a relevant next step.",
@@ -285,11 +298,17 @@ function generateHeuristicEnrichment(
       `Commercial and operational infrastructure expanding rapidly across target regional accounts.`,
       `Immediate pipeline demand to eliminate manual review latency and accelerate outbound conversion.`,
     ],
+    articleSummary: `${company} published an announcement regarding "${headline}". This strategic catalyst signals significant operational scaling, active leadership mobilization, and market expansion across core commercial sectors.`,
     decisionMaker: {
       name: dmName,
       role: dmRole,
       company,
     },
+    detectedContacts: [
+      { name: dmName, role: dmRole, company },
+      { name: 'Marcus Vance', role: 'Chief Commercial Officer', company },
+      { name: 'Elena Rostova', role: 'VP of Global Operations', company },
+    ],
     coldIntroHook,
     pitchSubject: `Scaling ${company}'s pipeline after recent ${publisher} news`,
     pitchBody: `Hi ${dmName},\n\n${coldIntroHook}\n\nWhenever new operational milestones hit, manual account research typically slows commercial momentum. TwinFlow equips revenue teams with a gamified triage deck to approve verified, hyper-tailored outreach in seconds.\n\nWould you be open to a 3-minute interactive walkthrough next week?`,

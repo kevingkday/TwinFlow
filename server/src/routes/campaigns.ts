@@ -283,6 +283,7 @@ campaignsRouter.post('/', async (c) => {
           sourceUrl: art.url,
           publishedAt: art.publishedAt || new Date().toISOString(),
           summaryBullets: JSON.stringify(enriched.summaryBullets),
+          articleSummary: enriched.articleSummary || null,
           companyName: enriched.companyName,
           signalType: enriched.signalType,
           industryTags: JSON.stringify(enriched.industryTags || targetIndustries),

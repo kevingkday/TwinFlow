@@ -57,7 +57,7 @@ async function getUser(c: any, db: ReturnType<typeof getDb>): Promise<typeof sch
 // Helper to ensure related branches exist for any signal in D1
 async function ensureBranchesForSignal(
   db: ReturnType<typeof getDb>,
-  signal: typeof schema.signals.$inferSelect
+  signal: { id: string; companyName: string; signalType: string; [key: string]: any }
 ) {
   const existing = await db.query.relatedEntities.findMany({
     where: eq(schema.relatedEntities.signalId, signal.id),
@@ -179,6 +179,32 @@ signalsRouter.get('/deck', async (c) => {
       const primaryContact = sig.contacts?.[0] || null;
       const primaryDraft = sig.outreachDrafts?.[0] || primaryContact?.outreachDrafts?.[0] || null;
 
+      const allContacts = (sig.contacts && sig.contacts.length > 0)
+        ? sig.contacts.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            title: c.title,
+            company: sig.companyName,
+            email: c.email || undefined,
+            linkedinUrl: c.linkedinUrl || undefined,
+            avatarUrl: c.avatarUrl || null,
+            isEnriched: Boolean(c.email || c.linkedinUrl),
+          }))
+        : (primaryContact ? [{
+            id: primaryContact.id,
+            name: primaryContact.name,
+            title: primaryContact.title,
+            company: sig.companyName,
+            email: primaryContact.email || undefined,
+            linkedinUrl: primaryContact.linkedinUrl || undefined,
+            avatarUrl: primaryContact.avatarUrl || null,
+            isEnriched: Boolean(primaryContact.email || primaryContact.linkedinUrl),
+          }] : []);
+
+      const fallbackSummary = bullets.length > 0
+        ? `${sig.companyName} reported a key ${sig.signalType.toLowerCase()} milestone: ${bullets[0]}. This operational catalyst triggers immediate strategic outreach.`
+        : `${sig.signalType} catalyst reported for ${sig.companyName}.`;
+
       return {
         id: sig.id,
         parentSignalId: sig.parentSignalId || null,
@@ -186,18 +212,22 @@ signalsRouter.get('/deck', async (c) => {
         sourceUrl: sig.sourceUrl,
         publishedAt: sig.publishedAt,
         summaryBullets: bullets,
+        articleSummary: sig.articleSummary || fallbackSummary,
         companyName: sig.companyName,
         signalType: sig.signalType,
         industryTags: sig.industryTags ? (JSON.parse(sig.industryTags) as string[]) : [],
         status: sig.status,
+        contacts: allContacts,
         contact: primaryContact
           ? {
               id: primaryContact.id,
               name: primaryContact.name,
               title: primaryContact.title,
+              company: sig.companyName,
               email: primaryContact.email,
               linkedinUrl: primaryContact.linkedinUrl,
               avatarUrl: primaryContact.avatarUrl || null,
+              isEnriched: Boolean(primaryContact.email || primaryContact.linkedinUrl),
               ghlContactId: primaryContact.ghlContactId,
             }
           : null,
@@ -321,6 +351,7 @@ signalsRouter.post('/ingest', async (c) => {
         sourceUrl: article.url,
         publishedAt: article.publishedAt || now,
         summaryBullets: JSON.stringify(enriched.summaryBullets),
+        articleSummary: enriched.articleSummary || null,
         companyName: enriched.companyName,
         signalType: enriched.signalType,
         industryTags: JSON.stringify(enriched.industryTags),
@@ -414,6 +445,116 @@ signalsRouter.post('/ingest', async (c) => {
       },
       500
     );
+  }
+});
+
+/**
+ * POST /api/signals/:id/enrich-contact
+ * Enriches a specific contact detected in the article (or creates/matches via Apollo).
+ * Returns verified email, LinkedIn, avatar, and a tailored pitch draft.
+ */
+signalsRouter.post('/:id/enrich-contact', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
+  }
+
+  const signalId = c.req.param('id');
+  const body = (await c.req.json().catch(() => ({}))) as {
+    contactId?: string;
+    name?: string;
+    title?: string;
+  };
+  const db = getDb(c.env.DB);
+
+  try {
+    const signal = await db.query.signals.findFirst({
+      where: eq(schema.signals.id, signalId),
+      with: { contacts: true },
+    });
+
+    if (!signal) {
+      return c.json({ success: false, error: 'Signal not found' }, 404);
+    }
+
+    const contactName = (body.name || signal.contacts?.[0]?.name || 'Executive').trim();
+    const contactTitle = (body.title || signal.contacts?.[0]?.title || 'Decision Maker').trim();
+    const cleanDomain = `${signal.companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+
+    // 1. Apollo Search
+    const apollo = await findApolloContact(contactName, contactTitle, cleanDomain, c.env.APOLLO_API_KEY);
+
+    const nameParts = contactName.split(/\s+/);
+    const firstName = nameParts[0] || 'Executive';
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'Leader';
+    const fallbackEmail = `${firstName.toLowerCase()}.${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}@${cleanDomain}`;
+    const resolvedEmail = apollo.email || fallbackEmail;
+    const resolvedLinkedin = apollo.linkedinUrl || `https://linkedin.com/in/${firstName.toLowerCase()}-${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
+    // 2. Update or insert contact in D1
+    let existingContact = signal.contacts?.find(
+      (ct: any) => ct.id === body.contactId || ct.name.toLowerCase() === contactName.toLowerCase()
+    );
+
+    const now = new Date().toISOString();
+
+    if (existingContact) {
+      await db
+        .update(schema.contacts)
+        .set({
+          email: resolvedEmail,
+          linkedinUrl: resolvedLinkedin,
+          avatarUrl: apollo.avatarUrl || existingContact.avatarUrl || null,
+          updatedAt: now,
+        })
+        .where(eq(schema.contacts.id, existingContact.id));
+    } else {
+      const newContactId = `ct_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      await db.insert(schema.contacts).values({
+        id: newContactId,
+        signalId: signal.id,
+        name: contactName,
+        title: contactTitle,
+        email: resolvedEmail,
+        linkedinUrl: resolvedLinkedin,
+        avatarUrl: apollo.avatarUrl || null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      existingContact = {
+        id: newContactId,
+        signalId: signal.id,
+        name: contactName,
+        title: contactTitle,
+        email: resolvedEmail,
+        linkedinUrl: resolvedLinkedin,
+        avatarUrl: apollo.avatarUrl || null,
+      } as any;
+    }
+
+    // 3. Generate tailored outreach pitch
+    const tailoredSubject = `Scaling ${signal.companyName}'s pipeline around ${signal.signalType}`;
+    const tailoredBody = `Hi ${firstName},\n\nSaw the announcement regarding "${signal.title}" — congratulations to you and the team at ${signal.companyName}!\n\nAs ${contactTitle}, navigating the operational shifts and strategic scaling that follow this catalyst is crucial. TwinFlow surfaces real-time market intelligence and automates high-intent pipeline before competitors even spot the announcement.\n\nWould you be open to a 10-minute workflow review next week to explore how this applies to ${signal.companyName}?`;
+
+    return c.json({
+      success: true,
+      contact: {
+        id: existingContact!.id,
+        name: contactName,
+        title: contactTitle,
+        company: signal.companyName,
+        email: resolvedEmail,
+        linkedinUrl: resolvedLinkedin,
+        avatarUrl: apollo.avatarUrl || existingContact!.avatarUrl || null,
+        isEnriched: true,
+      },
+      outreachDraft: {
+        subject: tailoredSubject,
+        body: tailoredBody,
+      },
+    });
+  } catch (error) {
+    console.error('Error enriching contact:', error);
+    return c.json({ success: false, error: 'Enrichment failed' }, 500);
   }
 });
 

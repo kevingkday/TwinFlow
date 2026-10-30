@@ -10,6 +10,7 @@ import type {
   ApiSignalItem,
   SignalCategory,
   UserProfile,
+  DecisionMaker,
 } from './types/lead';
 import type { Campaign, CampaignsResponse } from './types/campaign';
 import { Header } from './components/Header';
@@ -40,6 +41,34 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
   const bodyWords = item.outreachDraft?.body ? item.outreachDraft.body.split(/\s+/).length : 50;
   const readSeconds = Math.max(25, Math.ceil((bodyWords / 180) * 60));
 
+  const primaryContact: DecisionMaker = {
+    id: item.contact?.id || `dm-${item.id}`,
+    name: item.contact?.name || 'Verified Executive',
+    title: item.contact?.title || 'Decision Maker',
+    company: item.companyName,
+    email: item.contact?.email || undefined,
+    linkedinUrl: item.contact?.linkedinUrl || undefined,
+    avatarUrl: item.contact?.avatarUrl || undefined,
+    isEnriched: Boolean(item.contact?.email || item.contact?.linkedinUrl),
+  };
+
+  const allContacts: DecisionMaker[] = (item.contacts && item.contacts.length > 0)
+    ? item.contacts.map((c) => ({
+        id: c.id,
+        name: c.name,
+        title: c.title,
+        company: item.companyName,
+        email: c.email || undefined,
+        linkedinUrl: c.linkedinUrl || undefined,
+        avatarUrl: c.avatarUrl || undefined,
+        isEnriched: Boolean(c.email || c.linkedinUrl || c.isEnriched),
+      }))
+    : [primaryContact];
+
+  const defaultSummary = item.summaryBullets && item.summaryBullets.length > 0
+    ? `${item.companyName} reported a key ${item.signalType.toLowerCase()} milestone: ${item.summaryBullets[0]}. This operational catalyst triggers immediate strategic outreach.`
+    : `${item.signalType} catalyst reported for ${item.companyName}.`;
+
   return {
     id: item.id,
     parentSignalId: item.parentSignalId || null,
@@ -58,15 +87,9 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
             'Substantial operational scaling underway',
             'Immediate outbound pipeline opportunity',
           ],
-    decisionMaker: {
-      id: item.contact?.id || `dm-${item.id}`,
-      name: item.contact?.name || 'Verified Executive',
-      title: item.contact?.title || 'Decision Maker',
-      company: item.companyName,
-      email: item.contact?.email || undefined,
-      linkedinUrl: item.contact?.linkedinUrl || undefined,
-      avatarUrl: item.contact?.avatarUrl || undefined,
-    },
+    articleSummary: item.articleSummary || defaultSummary,
+    decisionMaker: primaryContact,
+    contacts: allContacts,
     emailDraft: {
       id: item.outreachDraft?.id,
       subject: item.outreachDraft?.subject || `Scaling ${item.companyName}'s pipeline`,
@@ -691,6 +714,81 @@ export const App: React.FC = () => {
     handleSwipe('approve');
   };
 
+  const handleSelectContact = (leadId: string, contact: DecisionMaker) => {
+    setLeads((prev) =>
+      prev.map((lead) => {
+        if (lead.id !== leadId) return lead;
+        const firstName = contact.name.split(' ')[0] || 'there';
+        let newBody = lead.emailDraft.body;
+        if (/^Hi\s+[A-Za-z]+,/i.test(newBody)) {
+          newBody = newBody.replace(/^Hi\s+[A-Za-z]+,/i, `Hi ${firstName},`);
+        }
+        return {
+          ...lead,
+          decisionMaker: contact,
+          emailDraft: {
+            ...lead.emailDraft,
+            body: newBody,
+          },
+        };
+      })
+    );
+  };
+
+  const handleEnrichContact = async (leadId: string, contact: DecisionMaker) => {
+    setScoutToast({
+      message: `Enriching ${contact.name} via Apollo & AI search...`,
+      type: 'info',
+    });
+    try {
+      const res = await fetch(`/api/signals/${leadId}/enrich-contact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactId: contact.id,
+          name: contact.name,
+          title: contact.title,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.contact) {
+        setLeads((prev) =>
+          prev.map((lead) => {
+            if (lead.id !== leadId) return lead;
+            const updatedContacts = (lead.contacts || []).map((c) =>
+              c.id === contact.id || c.name === contact.name
+                ? { ...c, ...data.contact, isEnriched: true }
+                : c
+            );
+            return {
+              ...lead,
+              decisionMaker: { ...data.contact, isEnriched: true },
+              contacts: updatedContacts,
+              emailDraft: data.outreachDraft || lead.emailDraft,
+            };
+          })
+        );
+        setScoutToast({
+          message: `Enriched ${data.contact.name}! Verified contact dossier active.`,
+          type: 'success',
+        });
+        if (soundEnabled) playSound('streak');
+        triggerConfetti();
+      } else {
+        setScoutToast({
+          message: data.error || 'Contact enrichment could not find verified match.',
+          type: 'error',
+        });
+      }
+    } catch (err) {
+      console.error('Error enriching contact:', err);
+      setScoutToast({
+        message: 'Could not connect to enrichment service.',
+        type: 'error',
+      });
+    }
+  };
+
   // Keyboard Navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -855,6 +953,8 @@ export const App: React.FC = () => {
                 onScoutNews={handleScoutNews}
                 isScouting={isScouting}
                 onOpenBranchOut={(lead) => setBranchModalLead(lead)}
+                onSelectContact={handleSelectContact}
+                onEnrichContact={handleEnrichContact}
               />
 
               {/* Deck Action Controls */}
