@@ -83,20 +83,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({
            ========================================================================= */}
         <section className="pt-12 pb-16 sm:pt-20 sm:pb-24 px-4 sm:px-6 max-w-7xl mx-auto w-full text-center flex flex-col items-center">
           {/* Eyebrow Pill */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-semibold mb-6 shadow-glow-brand animate-fade-in">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-            </span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-medium mb-6">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span>Autonomous Market Signal Intelligence</span>
-            <span className="text-slate-500">•</span>
-            <span className="text-emerald-400 font-mono">Zero Stale Leads</span>
+            <span className="text-slate-600">•</span>
+            <span className="text-slate-300">Zero Stale Leads</span>
           </div>
 
           {/* Main Headline */}
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white font-display tracking-tight max-w-4xl leading-[1.15] mb-6">
             Turn Breaking Market Catalysts into{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-300 to-emerald-400">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-purple-300 to-indigo-100">
               High-Converting Pipeline
             </span>{' '}
             in Seconds.
@@ -115,7 +112,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button
                 type="button"
                 onClick={onLaunchDeck}
-                className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500 hover:from-indigo-500 hover:to-emerald-400 text-white font-bold text-sm shadow-glow-brand hover:shadow-glow-emerald transition-all transform active:scale-95 flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-sm flex items-center justify-center gap-2"
               >
                 <Zap className="w-4 h-4 text-emerald-300" />
                 <span>Launch Lead Deck</span>
@@ -125,7 +122,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button
                 type="button"
                 onClick={() => onOpenAuth('signup')}
-                className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500 hover:from-indigo-500 hover:to-emerald-400 text-white font-bold text-sm shadow-glow-brand hover:shadow-glow-emerald transition-all transform active:scale-95 flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-sm flex items-center justify-center gap-2"
               >
                 <Sparkles className="w-4 h-4 text-amber-300" />
                 <span>Get Started Free (+500 Credits)</span>
@@ -136,7 +133,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <button
               type="button"
               onClick={() => scrollToSection('demo-section')}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-slate-200 hover:text-white font-semibold text-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-6 py-3 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 text-slate-200 hover:text-white font-medium text-sm transition-all flex items-center justify-center gap-2"
             >
               <MousePointerClick className="w-4 h-4 text-cyan-400" />
               <span>Try Interactive Demo</span>

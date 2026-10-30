@@ -1,23 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Flame,
   Zap,
   HelpCircle,
   Volume2,
   VolumeX,
-  Database,
-  Trophy,
   Radio,
-  Sparkles,
-  Network,
-  User,
-  UserPlus,
   LogOut,
   ChevronDown,
   Compass,
   Building,
   Home,
   ShieldCheck,
+  Coins,
 } from 'lucide-react';
 import type { SwipeStats, UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
@@ -54,7 +48,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAdmin,
   isGhlConnected = false,
   isScouting = false,
-  serverOnline = true,
   user,
   onOpenAuth,
   onLogout,
@@ -77,48 +70,36 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 w-full glass-panel border-b border-white/10 px-4 py-3 sm:px-6">
+    <header className="sticky top-0 z-30 w-full bg-[#0B0F17]/85 backdrop-blur-xl border-b border-white/[0.07] px-4 py-2.5 sm:px-6 transition-colors">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-        {/* Brand & View Switcher */}
-        <div className="flex items-center gap-3 sm:gap-4">
+        {/* Left Side: Brand Logo & Segmented Navigation */}
+        <div className="flex items-center gap-3 sm:gap-6">
           <button
             type="button"
             onClick={() => onNavigate?.('landing')}
             className="flex items-center gap-2.5 text-left group focus:outline-none"
-            title="Go to TwinFlow Home"
+            title="TwinFlow Home"
           >
-            <div className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-emerald-400 p-[1px] shadow-glow-brand group-hover:scale-105 transition-transform">
-              <div className="w-full h-full bg-[#0B0F17] rounded-[11px] flex items-center justify-center">
-                <Zap className="w-5 h-5 text-indigo-400 fill-indigo-400/20" />
-              </div>
-              <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
-              </span>
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/25 text-indigo-400 group-hover:border-indigo-500/40 group-hover:bg-indigo-500/20 transition-all">
+              <Zap className="w-4 h-4 text-indigo-400" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight text-white font-display">
-                  Twin<span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Flow</span>
-                </h1>
-                <span className="hidden md:inline-flex text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
-                  Signals Live
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-400 hidden xl:block">Autonomous Market Signal Engine</p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-base font-bold tracking-tight text-white font-display">
+                Twin<span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-indigo-200">Flow</span>
+              </span>
             </div>
           </button>
 
-          {/* Navigation Pill (Home vs Lead Deck) */}
+          {/* Segmented Navigation (Home vs Lead Deck vs Admin) */}
           {onNavigate && (
-            <nav className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/10 shadow-inner">
+            <nav className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
               <button
                 type="button"
                 onClick={() => onNavigate('landing')}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
                   currentView === 'landing'
-                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-glow-brand'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    ? 'bg-white/[0.08] text-white shadow-sm border border-white/10'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
                 }`}
               >
                 <Home className="w-3.5 h-3.5" />
@@ -127,16 +108,16 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => onNavigate('deck')}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
                   currentView === 'deck'
-                    ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500 text-white shadow-glow-brand'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    ? 'bg-white/[0.08] text-white shadow-sm border border-white/10'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
                 }`}
               >
-                <Zap className="w-3.5 h-3.5 text-emerald-300" />
+                <Zap className="w-3.5 h-3.5 text-indigo-400" />
                 <span>Lead Deck</span>
                 {leadsCount !== undefined && leadsCount > 0 && (
-                  <span className="hidden sm:inline-block px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold">
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-mono font-semibold border border-indigo-500/30">
                     {leadsCount}
                   </span>
                 )}
@@ -145,7 +126,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   type="button"
                   onClick={onOpenAdmin}
-                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold text-amber-300 hover:text-amber-200 hover:bg-amber-500/20 border border-amber-500/30 transition-all shadow-sm"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 transition-all border border-transparent hover:border-amber-500/20"
                   title="Open Admin Console"
                 >
                   <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
@@ -156,266 +137,244 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right side stats & controls */}
+        {/* Right Side: Primary Actions & User Profile */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Scout News Trigger Button */}
+          {/* Scout Signals Action */}
           <button
             onClick={onScoutNews}
             disabled={isScouting}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-sm active:scale-95 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
               isScouting
-                ? 'bg-indigo-900/40 border-indigo-500/50 text-indigo-300 cursor-wait'
-                : 'bg-gradient-to-r from-indigo-500/15 via-purple-500/15 to-emerald-500/15 hover:from-indigo-500/25 hover:to-emerald-500/25 border-indigo-500/30 hover:border-indigo-400 text-slate-200 hover:text-white shadow-glow-brand'
+                ? 'bg-indigo-950/40 border-indigo-500/30 text-indigo-300 cursor-wait'
+                : 'bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.08] hover:border-white/20 text-slate-300 hover:text-white'
             }`}
-            title="Scout live market signals via AI Search & Enrichment"
-            aria-label="Scout News Signals"
+            title="Scout live market signals via AI"
+            aria-label="Scout Market Signals"
           >
-            <Radio className={`w-3.5 h-3.5 ${isScouting ? 'text-indigo-400 animate-spin' : 'text-emerald-400 animate-pulse'}`} />
-            <span className="font-display tracking-wide">{isScouting ? 'Scouting AI...' : 'Scout News'}</span>
-            <Sparkles className="w-3 h-3 text-amber-400 hidden sm:inline" />
+            <Radio className={`w-3.5 h-3.5 ${isScouting ? 'text-indigo-400 animate-spin' : 'text-slate-400'}`} />
+            <span>{isScouting ? 'Scouting AI...' : 'Scout Signals'}</span>
           </button>
 
-          {/* Worker / D1 Health Status */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300">
-            <Database className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="text-[11px] text-slate-400">D1:</span>
-            <span className={`text-[11px] font-medium flex items-center gap-1 ${serverOnline ? 'text-emerald-400' : 'text-amber-400'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${serverOnline ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
-              {serverOnline ? 'Live' : 'Syncing'}
-            </span>
-          </div>
-
-          {/* Branching Streak / Combo Pill */}
-          {stats.branchCombo !== undefined && stats.branchCombo > 0 && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-cyan-500/20 via-indigo-500/20 to-purple-500/20 border border-cyan-400/40 text-cyan-200 shadow-glow-brand animate-pulse">
-              <Network className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="text-xs font-bold font-mono tracking-tight">x{stats.branchCombo} Combo!</span>
-              <span className="text-[10px] font-bold text-amber-300 hidden sm:inline">+{stats.branchCombo * 25} XP</span>
-            </div>
-          )}
-
-          {/* Points Pill */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-950/40 border border-purple-500/30 text-purple-200">
-            <Trophy className="w-3.5 h-3.5 text-purple-400" />
-            <span className="text-xs font-bold font-mono text-purple-300">{stats.totalPoints}</span>
-            <span className="text-[10px] font-medium text-purple-400/80 uppercase hidden sm:inline">pts</span>
-          </div>
-
-          {/* Gamified Streak Pill */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500/10 to-rose-500/10 border border-amber-500/30 text-amber-300 shadow-sm">
-            <Flame className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
-            <span className="text-xs font-bold font-mono tracking-tight">{stats.streak}</span>
-            <span className="text-[10px] font-medium text-amber-400/80 uppercase hidden sm:inline">Streak</span>
-          </div>
-
-          {/* Credits Counter & Upgrade trigger */}
+          {/* Credits Badge & Quick Top-Up */}
           <button
             onClick={onOpenUpgrade}
-            className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all active:scale-95 ${
-              stats.creditsRemaining < 10
-                ? 'bg-rose-950/60 border-rose-500/50 text-rose-300 animate-pulse'
-                : 'bg-indigo-950/40 hover:bg-indigo-900/40 border-indigo-500/30 hover:border-indigo-400 text-indigo-200'
-            }`}
-            title="Click to manage credits / top-up"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/20 text-xs font-medium transition-all"
+            title={`${stats.creditsRemaining} credits available. Click to manage.`}
           >
-            <span className="text-[11px] font-medium text-slate-400 hidden sm:inline">Credits:</span>
-            <span className="text-xs font-bold font-mono text-indigo-300">{stats.creditsRemaining}</span>
+            <Coins className="w-3.5 h-3.5 text-amber-400/80" />
+            <span className="font-mono font-semibold text-slate-200">{stats.creditsRemaining}</span>
+            <span className="text-[11px] text-slate-500 hidden md:inline">credits</span>
           </button>
 
-          {/* CRM Connection Status Button */}
-          {onOpenGhlSettings && (
-            <button
-              onClick={onOpenGhlSettings}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all active:scale-95 ${
-                isGhlConnected
-                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300 hover:border-emerald-400'
-                  : 'bg-amber-950/40 border-amber-500/30 text-amber-300 hover:border-amber-400'
-              }`}
-              title={
-                isGhlConnected
-                  ? 'CRM Workspace Connected (Click to manage)'
-                  : 'CRM Key Not Configured (Click to set private token)'
-              }
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  isGhlConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
-                }`}
-              />
-              <span className="text-[10px] font-bold font-mono tracking-tight">CRM</span>
-              <span className="text-[10px] hidden md:inline text-slate-400">
-                {isGhlConnected ? 'Live' : 'Connect'}
-              </span>
-            </button>
-          )}
-
-          {/* User Account / Profile / Sign Out (Authenticated vs Unauthenticated) */}
+          {/* User Account / Profile / Actions */}
           {user ? (
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <div className="relative" ref={menuRef}>
-                <button
-                  type="button"
-                  onClick={() => setUserMenuOpen((prev) => !prev)}
-                  className="flex items-center gap-2 p-1 pl-2 pr-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-200 transition-all active:scale-95"
-                >
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setUserMenuOpen((prev) => !prev)}
+                className="flex items-center gap-2 py-1 pl-1 pr-2 rounded-lg hover:bg-white/[0.05] border border-transparent hover:border-white/[0.08] text-xs text-slate-200 transition-all focus:outline-none"
+              >
+                <div className="relative">
                   <ExecutiveAvatar
                     name={user.name || user.email || 'Operator'}
                     avatarUrl={user.avatarUrl}
                     size="sm"
-                    className="w-5 h-5 text-[9px]"
+                    className="w-6 h-6 text-[10px]"
                   />
-                  <span className="hidden sm:inline font-semibold text-white max-w-[90px] truncate">
-                    {user.name || 'Operator'}
-                  </span>
-                  <ChevronDown className="w-3 h-3 text-slate-400" />
-                </button>
+                  {/* Subtle CRM connectivity dot on avatar */}
+                  <span
+                    className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[#0B0F17] ${
+                      isGhlConnected ? 'bg-emerald-400' : 'bg-slate-500'
+                    }`}
+                    title={isGhlConnected ? 'CRM Workspace Connected' : 'CRM Not Connected'}
+                  />
+                </div>
+                <span className="hidden sm:inline font-medium text-slate-200 max-w-[100px] truncate">
+                  {user.name || 'Operator'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
+              </button>
 
-                {userMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-64 rounded-2xl glass-card border border-white/10 shadow-2xl p-3 z-50 animate-fade-in space-y-2.5">
-                    <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-bold text-white truncate">
-                          {user.name || 'Operator'}
+              {/* Comprehensive Workspace Command Menu */}
+              {userMenuOpen && (
+                <div className="absolute right-0 mt-2 w-72 rounded-xl bg-[#0F141F] border border-white/10 shadow-2xl p-2.5 z-50 animate-fade-in space-y-2">
+                  {/* Profile Header */}
+                  <div className="p-3 rounded-lg bg-white/[0.03] border border-white/[0.05] space-y-1">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="text-xs font-semibold text-white truncate">
+                        {user.name || 'Operator'}
+                      </span>
+                      {user.isAdmin ? (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                          ADMIN
                         </span>
-                        {user.isAdmin && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                            ADMIN
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-400 truncate font-mono">
-                        {user.email}
-                      </div>
-                      {user.organization && (
-                        <div className="flex items-center gap-1 text-[10px] text-cyan-300 pt-0.5">
-                          <Building className="w-3 h-3 text-cyan-400" />
-                          <span className="truncate">{user.organization}</span>
-                        </div>
-                      )}
-                      {user.ghlSubaccountId && (
-                        <div className="text-[10px] font-mono text-emerald-400 pt-1">
-                          Subaccount: {user.ghlSubaccountId.slice(0, 10)}...
-                        </div>
+                      ) : (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono text-slate-400 bg-white/5 border border-white/10">
+                          PRO
+                        </span>
                       )}
                     </div>
-
-                    <div className="space-y-1">
-                      {user.isAdmin && onOpenAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUserMenuOpen(false);
-                            onOpenAdmin();
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 border border-amber-500/20 transition-colors text-left font-semibold"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Admin Console</span>
-                        </button>
-                      )}
-                      {onOpenOnboarding && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUserMenuOpen(false);
-                            onOpenOnboarding();
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/5 transition-colors text-left"
-                        >
-                          <Compass className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Targeting & Signal ICP</span>
-                        </button>
-                      )}
-
-                      {onOpenGhlSettings && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUserMenuOpen(false);
-                            onOpenGhlSettings();
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/5 transition-colors text-left"
-                        >
-                          <Zap className="w-3.5 h-3.5 text-amber-400" />
-                          <span>CRM Integration Setup</span>
-                        </button>
-                      )}
+                    <div className="text-[11px] text-slate-400 truncate font-mono">
+                      {user.email}
                     </div>
+                    {user.organization && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 pt-0.5">
+                        <Building className="w-3 h-3 text-slate-500" />
+                        <span className="truncate">{user.organization}</span>
+                      </div>
+                    )}
+                  </div>
 
-                    <div className="pt-1 border-t border-white/10">
+                  {/* Activity & Performance Strip */}
+                  <div className="grid grid-cols-3 gap-1.5 p-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
+                    <div className="space-y-0.5">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Credits</div>
+                      <div className="text-xs font-mono font-bold text-white">{stats.creditsRemaining}</div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Streak</div>
+                      <div className="text-xs font-mono font-bold text-amber-300">{stats.streak}d</div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">XP</div>
+                      <div className="text-xs font-mono font-bold text-indigo-300">{stats.totalPoints}</div>
+                    </div>
+                  </div>
+
+                  {/* Workspace & Settings Actions */}
+                  <div className="space-y-0.5">
+                    {onOpenGhlSettings && (
                       <button
                         type="button"
                         onClick={() => {
                           setUserMenuOpen(false);
-                          onLogout?.();
+                          onOpenGhlSettings();
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-rose-300 hover:text-rose-200 hover:bg-rose-500/10 transition-colors text-left font-semibold"
+                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors text-left"
                       >
-                        <LogOut className="w-3.5 h-3.5 text-rose-400" />
-                        <span>Sign Out</span>
+                        <div className="flex items-center gap-2">
+                          <Zap className="w-3.5 h-3.5 text-amber-400" />
+                          <span>CRM Integration</span>
+                        </div>
+                        <span
+                          className={`text-[10px] font-medium flex items-center gap-1 ${
+                            isGhlConnected ? 'text-emerald-400' : 'text-slate-400'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isGhlConnected ? 'bg-emerald-400' : 'bg-slate-500'
+                            }`}
+                          />
+                          {isGhlConnected ? 'Active' : 'Setup'}
+                        </span>
                       </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+                    )}
 
-              {/* Explicit Sign Out button in header - only visible when user is signed in */}
-              <button
-                type="button"
-                onClick={onLogout}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 hover:border-rose-400/50 text-xs font-semibold text-rose-300 hover:text-rose-200 transition-all active:scale-95 shadow-sm"
-                title={`Sign out of ${user.email}`}
-              >
-                <LogOut className="w-3.5 h-3.5 text-rose-400" />
-                <span className="hidden sm:inline">Sign Out</span>
-              </button>
+                    {onOpenOnboarding && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          onOpenOnboarding();
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors text-left"
+                      >
+                        <Compass className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Targeting & Signal ICP</span>
+                      </button>
+                    )}
+
+                    {user.isAdmin && onOpenAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          onOpenAdmin();
+                        }}
+                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 transition-colors text-left font-medium"
+                      >
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Admin Console</span>
+                        </div>
+                        <span className="text-[10px] uppercase font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          Manage
+                        </span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Preferences: Audio & Shortcuts */}
+                  <div className="pt-1 border-t border-white/[0.06] space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={onToggleSound}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        {soundEnabled ? (
+                          <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+                        )}
+                        <span>Sound Effects</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        {soundEnabled ? 'ON' : 'OFF'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        onOpenHelp();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] transition-colors"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Keyboard Shortcuts</span>
+                    </button>
+                  </div>
+
+                  {/* Sign Out */}
+                  <div className="pt-1 border-t border-white/[0.06]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        onLogout?.();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left font-medium"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* Sign In button */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => onOpenAuth?.('login')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-xs font-semibold text-slate-200 hover:text-white transition-all active:scale-95"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors"
               >
-                <User className="w-3.5 h-3.5 text-slate-400" />
-                <span>Sign In</span>
+                Sign In
               </button>
-
-              {/* Register button */}
               <button
                 type="button"
                 onClick={() => onOpenAuth?.('signup')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500 hover:from-indigo-500 hover:to-emerald-400 border border-indigo-400/40 text-xs font-semibold text-white shadow-glow-brand transition-all active:scale-95"
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition-colors shadow-sm"
               >
-                <UserPlus className="w-3.5 h-3.5 text-emerald-200" />
-                <span>Register</span>
+                Get Started
               </button>
             </div>
           )}
-
-          {/* Audio toggle */}
-          <button
-            onClick={onToggleSound}
-            aria-label={soundEnabled ? "Mute audio" : "Enable audio"}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors border border-transparent hover:border-white/10"
-            title={soundEnabled ? "Sound Effects ON" : "Sound Effects OFF"}
-          >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
-          </button>
-
-          {/* Help / Shortcuts */}
-          <button
-            onClick={onOpenHelp}
-            aria-label="Keyboard shortcuts"
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors border border-transparent hover:border-white/10"
-            title="Keyboard shortcuts & gestures"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
         </div>
       </div>
     </header>
   );
 };
-
