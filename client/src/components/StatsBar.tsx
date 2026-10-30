@@ -33,7 +33,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
   const progressPercent = totalCards > 0 ? Math.round((processed / totalCards) * 100) : 100;
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-2">
+    <div className="w-full max-w-6xl mx-auto px-4 py-2">
       <div className="flex items-center justify-between gap-3 text-xs flex-wrap">
         {/* Left Side: Campaign Switcher & Queue Indicator */}
         <div className="flex items-center gap-3">

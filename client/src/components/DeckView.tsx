@@ -74,11 +74,11 @@ export const DeckView: React.FC<DeckViewProps> = ({
   }
 
   return (
-    <div className="relative w-full max-w-4xl h-[540px] sm:h-[560px] mx-auto">
+    <div className="relative w-full max-w-6xl mx-auto">
       {/* 3rd Card in Stack (Visual depth) */}
       {thirdLead && (
         <div
-          className="absolute inset-0 w-full rounded-2xl bg-[#090E17] border border-white/5 opacity-40 scale-[0.92] translate-y-6 pointer-events-none transition-all duration-300"
+          className="absolute inset-0 w-full rounded-2xl bg-[#090E17] border border-white/5 opacity-40 scale-[0.98] translate-y-3 pointer-events-none transition-all duration-300"
           aria-hidden="true"
         />
       )}
@@ -86,7 +86,7 @@ export const DeckView: React.FC<DeckViewProps> = ({
       {/* 2nd Card in Stack (Visual depth) */}
       {nextLead && (
         <div
-          className="absolute inset-0 w-full rounded-2xl bg-[#0E1522] border border-white/10 opacity-70 scale-[0.96] translate-y-3 pointer-events-none transition-all duration-300 shadow-xl"
+          className="absolute inset-0 w-full rounded-2xl bg-[#0E1522] border border-white/10 opacity-70 scale-[0.99] translate-y-1.5 pointer-events-none transition-all duration-300 shadow-xl"
           aria-hidden="true"
         />
       )}

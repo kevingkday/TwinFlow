@@ -22,3 +22,4 @@ export interface CampaignsResponse {
   campaigns: Campaign[];
   error?: string;
 }
+

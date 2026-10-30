@@ -93,18 +93,18 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
         x: isFront ? x : 0,
         rotate: isFront ? rotate : 0,
         opacity: isFront ? opacity : 1,
-        touchAction: 'none',
+        touchAction: 'pan-y',
       }}
       drag={isFront ? 'x' : false}
       dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.7}
       onDragEnd={isFront ? handleDragEnd : undefined}
       whileTap={isFront ? { cursor: 'grabbing' } : undefined}
-      className={`absolute inset-0 w-full rounded-2xl select-none cursor-grab active:cursor-grabbing ${
+      className={`relative w-full rounded-2xl select-none cursor-grab active:cursor-grabbing ${
         isFront ? 'z-20' : 'z-10'
       }`}
     >
-      <div className="relative w-full h-full bg-[#101622] rounded-2xl border border-white/10 shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative w-full min-h-[460px] bg-[#101622] rounded-2xl border border-white/10 shadow-2xl flex flex-col overflow-hidden">
         {/* Swipe Overlays */}
         {isFront && (
           <>
@@ -202,7 +202,7 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
         </div>
 
         {/* Card Body: 2 Spacious Columns on md+ screens */}
-        <div className="flex-1 p-4 sm:p-5 overflow-y-auto grid grid-cols-1 md:grid-cols-12 gap-5 items-stretch">
+        <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-5 lg:gap-6 items-stretch">
           {/* Left Column (md:col-span-5): Decision-Maker & Signal Intelligence */}
           <div className="md:col-span-5 flex flex-col gap-4">
             {/* Extracted Decision-Maker Card */}
@@ -274,18 +274,18 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
             </div>
 
             {/* Key Signal Intelligence (3-Point Summary) */}
-            <div className="flex-1 flex flex-col justify-start">
+            <div className="flex flex-col justify-start">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
                   Key Signal Intelligence
                 </span>
               </div>
-              <ul className="space-y-2">
+              <ul className="space-y-2.5">
                 {lead.summaryBullets.map((bullet, idx) => (
                   <li
                     key={idx}
-                    className="flex items-start gap-2.5 text-xs text-slate-300 bg-white/[0.02] p-2.5 rounded-lg border border-white/[0.05]"
+                    className="flex items-start gap-2.5 text-xs text-slate-300 bg-white/[0.02] p-2.5 sm:p-3 rounded-lg border border-white/[0.05]"
                   >
                     <span className="flex-shrink-0 w-4 h-4 rounded-full bg-indigo-500/15 text-indigo-300 flex items-center justify-center text-[10px] font-mono font-bold mt-0.5">
                       {idx + 1}
@@ -298,59 +298,61 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
           </div>
 
           {/* Right Column (md:col-span-7): Pitch Studio */}
-          <div className="md:col-span-7 flex flex-col rounded-xl bg-black/30 p-4 border border-white/[0.08] relative">
-            <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-white/[0.06]">
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
-                <Mail className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Customizable Outbound Pitch</span>
-                <span className="text-[10px] text-slate-500 font-mono font-normal">
-                  ({lead.emailDraft.estimatedReadTime})
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleCopyPitch}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 hover:text-white transition-colors"
-                  title="Copy subject & body"
-                >
-                  {copiedPitch ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span className="text-emerald-300">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3 text-slate-400" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-                {onOpenPitchEditor && (
+          <div className="md:col-span-7 flex flex-col justify-between rounded-xl bg-black/30 p-4 sm:p-5 border border-white/[0.08] relative">
+            <div>
+              <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-white/[0.06]">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                  <Mail className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Customizable Outbound Pitch</span>
+                  <span className="text-[10px] text-slate-500 font-mono font-normal">
+                    ({lead.emailDraft.estimatedReadTime})
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenPitchEditor(lead);
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/25 transition-colors"
+                    onClick={handleCopyPitch}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 hover:text-white transition-colors"
+                    title="Copy subject & body"
                   >
-                    <Edit3 className="w-3 h-3" />
-                    <span>Edit</span>
+                    {copiedPitch ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-300">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 text-slate-400" />
+                        <span>Copy</span>
+                      </>
+                    )}
                   </button>
-                )}
+                  {onOpenPitchEditor && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenPitchEditor(lead);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/25 transition-colors"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>Edit</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {/* Subject Line */}
-            <div className="text-xs mb-2">
-              <span className="text-slate-500 font-medium">Subject: </span>
-              <span className="text-slate-200 font-semibold">{lead.emailDraft.subject}</span>
-            </div>
+              {/* Subject Line */}
+              <div className="text-xs mb-2.5">
+                <span className="text-slate-500 font-medium">Subject: </span>
+                <span className="text-slate-200 font-semibold">{lead.emailDraft.subject}</span>
+              </div>
 
-            {/* Body */}
-            <div className="flex-1 p-3 rounded-lg bg-[#080C14] border border-white/[0.05] text-xs text-slate-300 font-mono leading-relaxed whitespace-pre-wrap select-text min-h-[160px]">
-              {lead.emailDraft.body}
+              {/* Body */}
+              <div className="p-3.5 sm:p-4 rounded-xl bg-[#080C14] border border-white/[0.05] text-xs sm:text-[13px] text-slate-300 font-mono leading-relaxed whitespace-pre-wrap select-text">
+                {lead.emailDraft.body}
+              </div>
             </div>
 
             {lead.industryTags && lead.industryTags.length > 0 && (

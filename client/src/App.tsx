@@ -845,7 +845,7 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            <div className="flex-1 w-full max-w-4xl mx-auto flex flex-col items-center">
+            <div className="flex-1 w-full max-w-6xl mx-auto flex flex-col items-center">
               <DeckView
                 leads={leads}
                 onSwipe={handleSwipe}
@@ -859,7 +859,7 @@ export const App: React.FC = () => {
 
               {/* Deck Action Controls */}
               {leads.length > 0 && (
-                <div className="w-full max-w-4xl mt-3">
+                <div className="w-full max-w-6xl mt-4">
                   <ActionControls
                     onAction={handleSwipe}
                     onEditPitch={() => activeLead && setEditingLead(activeLead)}
