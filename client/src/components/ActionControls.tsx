@@ -24,7 +24,7 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
   const isOutOfCredits = creditBalance !== undefined && creditBalance < 10;
 
   return (
-    <div className="w-full max-w-md mx-auto px-4 py-3 flex items-center justify-center gap-4">
+    <div className="w-full max-w-4xl mx-auto px-4 py-3 flex items-center justify-center gap-4">
       {/* Pass Button */}
       <button
         type="button"

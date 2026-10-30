@@ -757,22 +757,21 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-              {/* Left Column: Gamified Swipeable Deck View */}
-              <div className="md:col-span-6 lg:col-span-5 flex flex-col items-center justify-center">
-                <DeckView
-                  leads={leads}
-                  onSwipe={handleSwipe}
-                  onOpenPitchEditor={(lead) => setEditingLead(lead)}
-                  onSelectForDetail={(lead) => setMobileDetailLead(lead)}
-                  onReset={handleReset}
-                  onScoutNews={handleScoutNews}
-                  isScouting={isScouting}
-                  onOpenBranchOut={(lead) => setBranchModalLead(lead)}
-                />
+            <div className="flex-1 w-full max-w-4xl mx-auto flex flex-col items-center">
+              <DeckView
+                leads={leads}
+                onSwipe={handleSwipe}
+                onOpenPitchEditor={(lead) => setEditingLead(lead)}
+                onSelectForDetail={(lead) => setMobileDetailLead(lead)}
+                onReset={handleReset}
+                onScoutNews={handleScoutNews}
+                isScouting={isScouting}
+                onOpenBranchOut={(lead) => setBranchModalLead(lead)}
+              />
 
-                {/* Mobile / Deck Action Controls */}
-                {leads.length > 0 && (
+              {/* Deck Action Controls */}
+              {leads.length > 0 && (
+                <div className="w-full max-w-4xl mt-3">
                   <ActionControls
                     onAction={handleSwipe}
                     onEditPitch={() => activeLead && setEditingLead(activeLead)}
@@ -782,22 +781,8 @@ export const App: React.FC = () => {
                     isCrmConnected={Boolean(userProfile?.hasCustomGhlKey || userProfile?.isGhlConnected)}
                     onOpenCrmSettings={() => setGhlSettingsOpen(true)}
                   />
-                )}
-              </div>
-
-              {/* Right Column: Full Context Details (Visible on >= md screens) */}
-              <div className="hidden md:block md:col-span-6 lg:col-span-7 h-[590px]">
-                <LeadDetailPane
-                  lead={activeLead}
-                  onSwipe={handleSwipe}
-                  onUpdateDraft={handleUpdateDraft}
-                  creditBalance={stats.creditsRemaining}
-                  onUpgradePrompt={() => setUpgradeModalOpen(true)}
-                  onOpenBranchOut={(lead) => setBranchModalLead(lead)}
-                  isCrmConnected={Boolean(userProfile?.hasCustomGhlKey || userProfile?.isGhlConnected)}
-                  onOpenCrmSettings={() => setGhlSettingsOpen(true)}
-                />
-              </div>
+                </div>
+              )}
             </div>
           </main>
         </>
