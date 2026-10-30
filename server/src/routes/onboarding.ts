@@ -141,6 +141,7 @@ onboardingRouter.post('/', async (c) => {
           title: enriched.decisionMaker.role,
           email: apollo.email || null,
           linkedinUrl: apollo.linkedinUrl || null,
+          avatarUrl: apollo.avatarUrl || null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });

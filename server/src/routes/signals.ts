@@ -27,7 +27,7 @@ async function getOrCreateUser(db: ReturnType<typeof getDb>): Promise<typeof sch
     organization: 'TwinFlow Demo',
     passwordHash: null,
     googleId: null,
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    avatarUrl: null,
     ghlSubaccountId: 'y3KLRBUZzf2t45o7rzp9',
     ghlApiKey: null,
     creditBalance: 500,
@@ -166,6 +166,7 @@ signalsRouter.get('/deck', async (c) => {
               title: primaryContact.title,
               email: primaryContact.email,
               linkedinUrl: primaryContact.linkedinUrl,
+              avatarUrl: primaryContact.avatarUrl || null,
               ghlContactId: primaryContact.ghlContactId,
             }
           : null,
@@ -333,6 +334,7 @@ signalsRouter.post('/ingest', async (c) => {
         title: enriched.decisionMaker.role,
         email: apolloMatch.email || null,
         linkedinUrl: apolloMatch.linkedinUrl || null,
+        avatarUrl: apolloMatch.avatarUrl || null,
         createdAt: now,
         updatedAt: now,
       });

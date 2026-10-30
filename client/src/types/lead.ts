@@ -110,6 +110,7 @@ export interface ApiSignalItem {
     title: string;
     email?: string | null;
     linkedinUrl?: string | null;
+    avatarUrl?: string | null;
   } | null;
   outreachDraft: {
     id: string;

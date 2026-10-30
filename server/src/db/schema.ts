@@ -112,6 +112,7 @@ export const contacts = sqliteTable('contacts', {
   title: text('title').notNull(),
   email: text('email'),
   linkedinUrl: text('linkedin_url'),
+  avatarUrl: text('avatar_url'),
   ghlContactId: text('ghl_contact_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

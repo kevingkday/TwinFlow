@@ -38,12 +38,6 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
   const bodyWords = item.outreachDraft?.body ? item.outreachDraft.body.split(/\s+/).length : 50;
   const readSeconds = Math.max(25, Math.ceil((bodyWords / 180) * 60));
 
-  const defaultAvatar = item.id.includes('001')
-    ? 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
-    : item.id.includes('002')
-    ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
-    : 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80';
-
   return {
     id: item.id,
     parentSignalId: item.parentSignalId || null,
@@ -69,7 +63,7 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
       company: item.companyName,
       email: item.contact?.email || undefined,
       linkedinUrl: item.contact?.linkedinUrl || undefined,
-      avatarUrl: defaultAvatar,
+      avatarUrl: item.contact?.avatarUrl || undefined,
     },
     emailDraft: {
       id: item.outreachDraft?.id,

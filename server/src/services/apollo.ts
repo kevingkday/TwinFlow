@@ -7,6 +7,7 @@
 export interface ApolloContactResult {
   email?: string;
   linkedinUrl?: string;
+  avatarUrl?: string;
   matched: boolean;
   status: 'verified' | 'inferred' | 'fallback';
 }
@@ -31,9 +32,9 @@ export async function findApolloContact(
         headers: {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache',
+          'X-Api-Key': cleanKey,
         },
         body: JSON.stringify({
-          api_key: cleanKey,
           first_name: firstName,
           last_name: lastName,
           domain: cleanDomain,
@@ -46,14 +47,30 @@ export async function findApolloContact(
           person?: {
             email?: string;
             linkedin_url?: string;
+            photo_url?: string;
             id?: string;
           };
         };
+
+        let avatarUrl: string | undefined;
+        if (json.person?.photo_url) {
+          const p = json.person.photo_url.trim();
+          // Filter out LinkedIn / social default silhouette placeholder SVGs
+          const isPlaceholder =
+            p.includes('licdn.com/aero-v1/sc/h/') ||
+            p.includes('ghost_person') ||
+            p.includes('default-avatar') ||
+            p.includes('static.licdn.com');
+          if (!isPlaceholder && p.startsWith('http')) {
+            avatarUrl = p;
+          }
+        }
 
         if (json.person?.email) {
           return {
             email: json.person.email,
             linkedinUrl: json.person.linkedin_url || `https://linkedin.com/in/${firstName.toLowerCase()}-${lastName.toLowerCase()}`,
+            avatarUrl,
             matched: true,
             status: 'verified',
           };

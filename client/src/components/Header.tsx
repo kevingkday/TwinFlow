@@ -19,6 +19,7 @@ import {
   Home,
 } from 'lucide-react';
 import type { SwipeStats, UserProfile } from '../types/lead';
+import { ExecutiveAvatar } from './ExecutiveAvatar';
 
 interface HeaderProps {
   stats: SwipeStats;
@@ -243,13 +244,11 @@ export const Header: React.FC<HeaderProps> = ({
                   onClick={() => setUserMenuOpen((prev) => !prev)}
                   className="flex items-center gap-2 p-1 pl-2 pr-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-200 transition-all active:scale-95"
                 >
-                  <img
-                    src={
-                      user.avatarUrl ||
-                      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
-                    }
-                    alt={user.name || 'User'}
-                    className="w-5 h-5 rounded-full object-cover ring-1 ring-indigo-500/40"
+                  <ExecutiveAvatar
+                    name={user.name || user.email || 'Operator'}
+                    avatarUrl={user.avatarUrl}
+                    size="sm"
+                    className="w-5 h-5 text-[9px]"
                   />
                   <span className="hidden sm:inline font-semibold text-white max-w-[90px] truncate">
                     {user.name || 'Operator'}

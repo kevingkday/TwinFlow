@@ -15,6 +15,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
+import { ExecutiveAvatar } from './ExecutiveAvatar';
 import type { LeadCardData, SwipeAction } from '../types/lead';
 
 interface LeadDetailPaneProps {
@@ -236,10 +237,10 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
           <div className="space-y-4">
             {/* Decision maker profile card */}
             <div className="p-4 rounded-xl bg-[#090D14] border border-white/10 flex items-start gap-4">
-              <img
-                src={lead.decisionMaker.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                alt={lead.decisionMaker.name}
-                className="w-16 h-16 rounded-full object-cover ring-2 ring-indigo-500/40"
+              <ExecutiveAvatar
+                name={lead.decisionMaker.name}
+                avatarUrl={lead.decisionMaker.avatarUrl}
+                size="lg"
               />
               <div className="flex-1">
                 <h3 className="text-base font-bold text-white">{lead.decisionMaker.name}</h3>

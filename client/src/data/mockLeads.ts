@@ -21,7 +21,6 @@ export const INITIAL_LEADS: LeadCardData[] = [
       company: 'HyperScale AI',
       email: 'elena.rostova@hyperscale.ai',
       linkedinUrl: 'https://linkedin.com/in/elena-rostova-growth',
-      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
     },
     emailDraft: {
       subject: 'Scaling HyperScale\'s GTM outbound after the $42M Series B',
@@ -52,7 +51,6 @@ export const INITIAL_LEADS: LeadCardData[] = [
       company: 'FinMatrix',
       email: 'm.vance@finmatrix.io',
       linkedinUrl: 'https://linkedin.com/in/marcus-vance-fintech',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
     },
     emailDraft: {
       subject: 'Congrats on the CCO role at FinMatrix + trigger-based sales orchestration',
@@ -83,7 +81,6 @@ export const INITIAL_LEADS: LeadCardData[] = [
       company: 'Nexus Robotics',
       email: 'devin@nexusrobotics.ai',
       linkedinUrl: 'https://linkedin.com/in/devin-thorne-robotics',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
     },
     emailDraft: {
       subject: 'Partner ecosystem orchestration for Nexus\'s 14 new distribution hubs',
@@ -114,7 +111,6 @@ export const INITIAL_LEADS: LeadCardData[] = [
       company: 'CognitiveBio',
       email: 's.lin@cognitivebio.health',
       linkedinUrl: 'https://linkedin.com/in/dr-sarah-lin-bio',
-      avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80'
     },
     emailDraft: {
       subject: 'Protecting CognitiveBio\'s molecular IP during compute cluster scaling',
@@ -145,7 +141,6 @@ export const INITIAL_LEADS: LeadCardData[] = [
       company: 'CloudVault Technologies',
       email: 'j.sterling@cloudvault.tech',
       linkedinUrl: 'https://linkedin.com/in/julian-sterling-k8s',
-      avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80'
     },
     emailDraft: {
       subject: 'Outreach strategy for regional bank CISOs following CloudVault\'s FedRAMP status',

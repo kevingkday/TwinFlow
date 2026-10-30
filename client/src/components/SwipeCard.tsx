@@ -18,6 +18,7 @@ import {
   Network
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
+import { ExecutiveAvatar } from './ExecutiveAvatar';
 import type { LeadCardData, SwipeAction } from '../types/lead';
 
 interface SwipeCardProps {
@@ -216,10 +217,10 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
             </div>
 
             <div className="flex items-center gap-3">
-              <img
-                src={lead.decisionMaker.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                alt={lead.decisionMaker.name}
-                className="w-11 h-11 rounded-full object-cover ring-2 ring-indigo-500/30 flex-shrink-0"
+              <ExecutiveAvatar
+                name={lead.decisionMaker.name}
+                avatarUrl={lead.decisionMaker.avatarUrl}
+                size="md"
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">

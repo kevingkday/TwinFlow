@@ -21,7 +21,7 @@ export async function getOrCreateUser(db: ReturnType<typeof getDb>): Promise<typ
     organization: 'TwinFlow Demo',
     passwordHash: null,
     googleId: null,
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    avatarUrl: null,
     ghlSubaccountId: 'y3KLRBUZzf2t45o7rzp9',
     ghlApiKey: null,
     creditBalance: 500,
