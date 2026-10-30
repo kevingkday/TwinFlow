@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `ghl_api_key` text;

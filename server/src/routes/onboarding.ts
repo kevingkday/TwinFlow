@@ -1,0 +1,201 @@
+import { Hono } from 'hono';
+import type { Bindings } from '../db';
+import { getDb, schema } from '../db';
+import { eq } from 'drizzle-orm';
+import { getSessionUser } from './auth';
+import { getOrCreateUser } from './user';
+import { fetchSerpNews } from '../services/serpNews';
+import { crawlArticle } from '../services/firecrawl';
+import { enrichSignalWithLLM } from '../services/llmEnricher';
+import { findApolloContact } from '../services/apollo';
+import { planNewsQueryWithAI } from '../services/aiQueryPlanner';
+
+export const onboardingRouter = new Hono<{ Bindings: Bindings }>();
+
+// POST /api/user/onboarding - Save ICP preferences & trigger initial news scout
+onboardingRouter.post('/', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Database unavailable' }, 500);
+  }
+  const db = getDb(c.env.DB);
+
+  // Authenticated user or fallback
+  const authUser = (await getSessionUser(c)) || (await getOrCreateUser(db));
+
+  let body: {
+    targetLocation?: string;
+    userIntent?: string;
+    userMission?: string;
+    targetIndustries?: string[];
+    targetTriggers?: string[];
+    targetRoles?: string[];
+    valueProp?: string;
+  };
+
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ success: false, error: 'Invalid JSON body' }, 400);
+  }
+
+  const targetLocation = (body.targetLocation || '').trim();
+  const userIntent = (body.userIntent || 'sales_client_acquisition').trim();
+  const userMission = (body.userMission || '').trim();
+  const targetIndustries = Array.isArray(body.targetIndustries) ? body.targetIndustries : [];
+  const targetTriggers = Array.isArray(body.targetTriggers) ? body.targetTriggers : [];
+  const targetRoles = Array.isArray(body.targetRoles) ? body.targetRoles : [];
+  const valueProp = (body.valueProp || '').trim();
+
+  // 1. Synthesize precision Google News query using GPT-4o Goldilocks calibration
+  const queryPlan = await planNewsQueryWithAI(
+    {
+      location: targetLocation,
+      userIntent,
+      userMission,
+      targetIndustries,
+      targetTriggers,
+      valueProp,
+    },
+    c.env.OPENAI_API_KEY
+  );
+
+  const now = new Date().toISOString();
+
+  // 2. Update user record in D1
+  await db
+    .update(schema.users)
+    .set({
+      targetLocation: targetLocation || null,
+      userIntent: userIntent || 'sales_client_acquisition',
+      userMission: userMission || null,
+      icpQuery: queryPlan.primaryQuery,
+      targetIndustries: JSON.stringify(targetIndustries),
+      targetTriggers: JSON.stringify(targetTriggers),
+      targetRoles: JSON.stringify(targetRoles),
+      valueProp: valueProp || queryPlan.missionSummary,
+      onboardingCompleted: true,
+      updatedAt: now,
+    })
+    .where(eq(schema.users.id, authUser.id));
+
+  // Fetch updated user
+  const updatedUser = await db.query.users.findFirst({
+    where: eq(schema.users.id, authUser.id),
+  });
+
+  // 3. Launch initial personalized news ingestion using calibrated query
+  let ingestedCount = 0;
+  try {
+    const newsArticles = await fetchSerpNews(
+      queryPlan.primaryQuery,
+      c.env.SERP_API_KEY,
+      3,
+      queryPlan.geographicFocus.gl,
+      queryPlan.fallbackQueries
+    );
+
+    for (const art of newsArticles) {
+      try {
+        const crawl = await crawlArticle(art.url, c.env.FIRECRAWL_API_KEY);
+        const enriched = await enrichSignalWithLLM(
+          art.title,
+          crawl.markdown,
+          art.publisher || 'Google News',
+          c.env.OPENAI_API_KEY,
+          queryPlan.recommendedPitchAngle || valueProp,
+          userIntent
+        );
+
+        const domain = enriched.companyDomain || `${enriched.companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+        const apollo = await findApolloContact(
+          enriched.decisionMaker.name,
+          enriched.decisionMaker.role,
+          domain,
+          c.env.APOLLO_API_KEY
+        );
+
+        const signalId = `sig_onb_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const contactId = `cnt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const draftId = `drf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+        await db.insert(schema.signals).values({
+          id: signalId,
+          userId: authUser.id,
+          parentSignalId: null,
+          title: art.title,
+          sourceUrl: art.url,
+          publishedAt: art.publishedAt || new Date().toISOString(),
+          summaryBullets: JSON.stringify(enriched.summaryBullets),
+          companyName: enriched.companyName,
+          signalType: enriched.signalType,
+          industryTags: JSON.stringify(enriched.industryTags || targetIndustries),
+          status: 'queued',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+
+        await db.insert(schema.contacts).values({
+          id: contactId,
+          signalId,
+          name: enriched.decisionMaker.name,
+          title: enriched.decisionMaker.role,
+          email: apollo.email || null,
+          linkedinUrl: apollo.linkedinUrl || null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+
+        await db.insert(schema.outreachDrafts).values({
+          id: draftId,
+          signalId,
+          contactId,
+          subject: enriched.pitchSubject,
+          body: enriched.pitchBody,
+          status: 'draft',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+
+        // Insert initial branch entities
+        if (enriched.competitors) {
+          for (const comp of enriched.competitors) {
+            await db.insert(schema.relatedEntities).values({
+              id: `rel_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              signalId,
+              entityType: 'competitor',
+              name: comp.name,
+              domain: comp.domain,
+              reason: comp.reason,
+              status: 'unexplored',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+
+        ingestedCount++;
+      } catch (itemErr) {
+        console.warn('Error ingesting item during onboarding:', itemErr);
+      }
+    }
+  } catch (ingestErr) {
+    console.warn('Onboarding news ingest encountered issue:', ingestErr);
+  }
+
+  const { passwordHash: _, ...safeUser } = (updatedUser || {}) as any;
+
+  return c.json({
+    success: true,
+    user: safeUser,
+    queryPlan: {
+      primaryQuery: queryPlan.primaryQuery,
+      fallbackQueries: queryPlan.fallbackQueries,
+      geographicFocus: queryPlan.geographicFocus,
+      missionSummary: queryPlan.missionSummary,
+      modelUsed: queryPlan.modelUsed,
+    },
+    icpQuery: queryPlan.primaryQuery,
+    ingestedCount,
+    message: `Onboarding complete! Initialized your deck with ${ingestedCount} tailored signals.`,
+  });
+});

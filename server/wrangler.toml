@@ -1,0 +1,22 @@
+name = "twinflow"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "../client/dist"
+binding = "ASSETS"
+
+# Cloudflare D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "twinflow-d1"
+database_id = "487ac1e9-fac6-46a7-b5a1-246e0b0be96b"
+migrations_dir = "./drizzle/migrations"
+
+[dev]
+port = 8788
+
+[vars]
+ENVIRONMENT = "production"
+APP_NAME = "TwinFlow"

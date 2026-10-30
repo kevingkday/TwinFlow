@@ -1,0 +1,23 @@
+# TwinFlow Local Secrets for Ingestion, AI Enrichment & GoHighLevel CRM
+# Copy this file to .dev.vars to supply live API keys.
+# If left blank, mock intelligence data and simulated responses will be used.
+
+SERP_API_KEY=
+FIRECRAWL_API_KEY=
+OPENAI_API_KEY=
+APOLLO_API_KEY=
+
+# GoHighLevel (GHL) API v2 Configuration
+# 1. Agency Credentials (used to list and manage sub-accounts)
+GHL_AGENCY_API_KEY=
+GHL_COMPANY_ID=
+GHL_DEFAULT_COUNTRY=CA
+GHL_DEFAULT_TIMEZONE=America/Vancouver
+
+# 2. Sub-Account Target for Approved Leads (e.g. Eagle1 location ID)
+GHL_LOCATION_ID=
+# 3. Sub-Account Private Integration Token (created in Sub-Account -> Settings -> Private Integrations with contacts.write)
+GHL_API_KEY=
+GHL_PIPELINE_ID=
+GHL_STAGE_ID=
+
