@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../db';
 import { getDb, schema } from '../db';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, sql } from 'drizzle-orm';
 import { fetchSerpNews } from '../services/serpNews';
 import { crawlArticle } from '../services/firecrawl';
 import {
@@ -121,20 +121,51 @@ signalsRouter.get('/deck', async (c) => {
     const db = getDb(c.env.DB);
     const user = await getUser(c, db);
 
-    // Fetch up to 10 unreviewed signals with linked contacts and outreach drafts
-    const queuedSignals = await db.query.signals.findMany({
-      where: eq(schema.signals.status, 'queued'),
-      limit: 10,
-      orderBy: [desc(schema.signals.createdAt)],
-      with: {
-        contacts: {
-          with: {
-            outreachDrafts: true,
+    // Fetch up to 10 unreviewed signals with linked contacts and outreach drafts, scoped to active campaign
+    const targetCampaignId = c.req.query('campaignId') || user.activeCampaignId;
+    let queuedSignals: any[] = [];
+
+    if (targetCampaignId) {
+      queuedSignals = await db.query.signals.findMany({
+        where: and(
+          eq(schema.signals.status, 'queued'),
+          eq(schema.signals.campaignId, targetCampaignId)
+        ),
+        limit: 10,
+        orderBy: [desc(schema.signals.createdAt)],
+        with: {
+          contacts: {
+            with: {
+              outreachDrafts: true,
+            },
           },
+          outreachDrafts: true,
         },
-        outreachDrafts: true,
-      },
-    });
+      });
+    }
+
+    if (queuedSignals.length < 10) {
+      const remaining = 10 - queuedSignals.length;
+      const genericSignals = await db.query.signals.findMany({
+        where: and(
+          eq(schema.signals.status, 'queued'),
+          targetCampaignId
+            ? sql`(${schema.signals.campaignId} IS NULL OR ${schema.signals.campaignId} != ${targetCampaignId})`
+            : sql`1=1`
+        ),
+        limit: remaining,
+        orderBy: [desc(schema.signals.createdAt)],
+        with: {
+          contacts: {
+            with: {
+              outreachDrafts: true,
+            },
+          },
+          outreachDrafts: true,
+        },
+      });
+      queuedSignals = [...queuedSignals, ...genericSignals];
+    }
 
     // Format cards for the frontend deck
     const formattedCards = queuedSignals.map((sig) => {
@@ -284,6 +315,7 @@ signalsRouter.post('/ingest', async (c) => {
       await db.insert(schema.signals).values({
         id: signalId,
         userId: user.id,
+        campaignId: user.activeCampaignId || null,
         parentSignalId: null,
         title: article.title,
         sourceUrl: article.url,
@@ -878,6 +910,7 @@ signalsRouter.post('/:id/branch-scout', async (c) => {
       await db.insert(schema.signals).values({
         id: newSignalId,
         userId: user.id,
+        campaignId: parentSignal.campaignId || user.activeCampaignId || null,
         parentSignalId: parentSignal.id,
         title: articleTitle,
         sourceUrl: articleUrl,
@@ -917,6 +950,7 @@ signalsRouter.post('/:id/branch-scout', async (c) => {
       await ensureBranchesForSignal(db, {
         id: newSignalId,
         userId: user.id,
+        campaignId: parentSignal.campaignId || user.activeCampaignId || null,
         parentSignalId: parentSignal.id,
         title: articleTitle,
         sourceUrl: articleUrl,

@@ -16,12 +16,15 @@ import {
   X,
 } from 'lucide-react';
 import type { UserProfile } from '../types/lead';
+import type { Campaign } from '../types/campaign';
 import { playSound } from '../utils/audio';
 
 interface OnboardingModalProps {
   isOpen: boolean;
   user: UserProfile | null;
-  onComplete: (updatedUser: UserProfile) => void;
+  campaign?: Campaign | null;
+  mode?: 'create' | 'edit';
+  onComplete: (updatedUser: UserProfile, campaign?: Campaign) => void;
   onClose?: () => void;
 }
 
@@ -233,12 +236,15 @@ export const BROAD_ROLES = [
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   isOpen,
-  user: _user,
+  user,
+  campaign,
+  mode = 'create',
   onComplete,
   onClose,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [targetLocation, setTargetLocation] = useState('Dallas-Fort Worth, TX');
+  const [campaignName, setCampaignName] = useState(campaign?.name || '');
+  const [targetLocation, setTargetLocation] = useState('Vancouver, BC');
   const [userIntent, setUserIntent] = useState('sales_client_acquisition');
   const [userMission, setUserMission] = useState(
     'I help commercial general contractors and developers streamline subcontractor bidding and reduce procurement costs.'
@@ -260,6 +266,32 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     'President / General Manager (GM)',
     'VP of Sales / Business Development',
   ]);
+
+    React.useEffect(() => {
+    if (campaign) {
+      setCampaignName(campaign.name || '');
+      if (campaign.targetLocation) setTargetLocation(campaign.targetLocation);
+      if (campaign.userIntent) setUserIntent(campaign.userIntent);
+      if (campaign.userMission) setUserMission(campaign.userMission);
+      if (campaign.targetIndustries && campaign.targetIndustries.length > 0) {
+        setSelectedIndustries(campaign.targetIndustries);
+      }
+      if (campaign.targetTriggers && campaign.targetTriggers.length > 0) {
+        setSelectedTriggers(campaign.targetTriggers);
+      }
+      if (campaign.targetRoles && campaign.targetRoles.length > 0) {
+        setSelectedRoles(campaign.targetRoles);
+      }
+    } else if (user) {
+      setCampaignName('');
+      if (user.targetLocation) setTargetLocation(user.targetLocation);
+      if (user.userIntent) setUserIntent(user.userIntent);
+      if (user.userMission) setUserMission(user.userMission);
+      if (user.targetIndustries && user.targetIndustries.length > 0) {
+        setSelectedIndustries(user.targetIndustries);
+      }
+    }
+  }, [campaign, user, isOpen]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [progressStatus, setProgressStatus] = useState<string>('');
@@ -290,31 +322,59 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     setProgressStatus('AI analyzing your mission, intent, and target location...');
     playSound('approve');
 
+    const token = typeof window !== 'undefined' ? localStorage.getItem('twinflow_session_token') : null;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     try {
-      const res = await fetch('/api/user/onboarding', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetLocation,
-          userIntent,
-          userMission,
-          targetIndustries: selectedIndustries,
-          targetTriggers: selectedTriggers,
-          targetRoles: selectedRoles,
-          valueProp: userMission,
-        }),
-      });
+      let res: Response;
+      if (mode === 'edit' && campaign?.id) {
+        res = await fetch(`/api/campaigns/${campaign.id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({
+            name: campaignName.trim() || undefined,
+            targetLocation,
+            userIntent,
+            userMission,
+            targetIndustries: selectedIndustries,
+            targetTriggers: selectedTriggers,
+            targetRoles: selectedRoles,
+            valueProp: userMission,
+          }),
+        });
+      } else {
+        res = await fetch('/api/campaigns', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            name: campaignName.trim() || undefined,
+            targetLocation,
+            userIntent,
+            userMission,
+            targetIndustries: selectedIndustries,
+            targetTriggers: selectedTriggers,
+            targetRoles: selectedRoles,
+            valueProp: userMission,
+            makeActive: true,
+          }),
+        });
+      }
 
       const data = await res.json();
-      if (res.ok && data.success && data.user) {
-        setProgressStatus('Synthesizing calibrated Google News query & seeding deck...');
+      if (res.ok && data.success) {
+        setProgressStatus('Calibrated query & seeded campaign signals...');
         playSound('streak');
         setTimeout(() => {
-          onComplete(data.user);
-        }, 1200);
+          onComplete(data.user || user, data.campaign);
+        }, 1000);
       } else {
         setIsSubmitting(false);
-        alert(data.error || 'Failed to complete onboarding. Please try again.');
+        alert(data.error || 'Failed to save campaign. Please try again.');
       }
     } catch (err: unknown) {
       setIsSubmitting(false);
@@ -344,7 +404,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-white font-display">
-                  Market Signal Intelligence Setup
+                  {mode === 'edit' ? (campaign?.name ? `Edit: ${campaign.name}` : 'Edit Campaign') : 'New Market Campaign Setup'}
                 </h2>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase tracking-wider">
                   Step {step} of 4
@@ -421,6 +481,19 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                     <p className="text-xs text-slate-400 mt-0.5">
                       Tell us what you sell or seek so our AI can formulate the perfect targeted news search.
                     </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                      Campaign Name
+                    </label>
+                    <input
+                      type="text"
+                      value={campaignName}
+                      onChange={(e) => setCampaignName(e.target.value)}
+                      placeholder="e.g. Pacific Northwest Commercial Expansion"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400 transition-colors"
+                    />
                   </div>
 
                   {/* Intent Selection Cards */}

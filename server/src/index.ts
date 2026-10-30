@@ -8,6 +8,7 @@ import { userRouter } from './routes/user';
 import { authRouter } from './routes/auth';
 import { onboardingRouter } from './routes/onboarding';
 import { adminRouter } from './routes/admin';
+import { campaignsRouter } from './routes/campaigns';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -27,6 +28,9 @@ app.route('/api/health', healthRouter);
 
 // Authentication endpoints (/api/auth/signup, /api/auth/login, /api/auth/google, /api/auth/me, /api/auth/logout)
 app.route('/api/auth', authRouter);
+
+// Campaigns management endpoints (/api/campaigns)
+app.route('/api/campaigns', campaignsRouter);
 
 // User onboarding questionnaire & signal trigger
 app.route('/api/user/onboarding', onboardingRouter);
@@ -51,6 +55,7 @@ app.get('*', async (c) => {
     endpoints: {
       health: '/api/health',
       signals: '/api/signals',
+      campaigns: '/api/campaigns',
       auth: '/api/auth',
     },
   });

@@ -19,6 +19,7 @@ export const users = sqliteTable('users', {
   creditBalance: integer('credit_balance').notNull().default(500),
   streakCount: integer('streak_count').notNull().default(0),
   totalPoints: integer('total_points').notNull().default(0),
+  activeCampaignId: text('active_campaign_id'),
   icpQuery: text('icp_query'),
   targetIndustries: text('target_industries'), // JSON array string e.g. ["B2B SaaS", "AI & Robotics"]
   targetTriggers: text('target_triggers'), // JSON array string e.g. ["Series A Funding", "Executive Hire"]
@@ -28,6 +29,30 @@ export const users = sqliteTable('users', {
   userMission: text('user_mission'), // Free-form statement of what they sell or what opportunity they seek
   valueProp: text('value_prop'),
   onboardingCompleted: integer('onboarding_completed', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+/**
+ * Campaigns Table
+ * User-configured signal intelligence and outreach campaigns with dedicated targeting criteria
+ */
+export const campaigns = sqliteTable('campaigns', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  targetLocation: text('target_location'),
+  userIntent: text('user_intent').default('sales_client_acquisition'),
+  userMission: text('user_mission'),
+  targetIndustries: text('target_industries'), // JSON array string
+  targetTriggers: text('target_triggers'), // JSON array string
+  targetRoles: text('target_roles'), // JSON array string
+  valueProp: text('value_prop'),
+  icpQuery: text('icp_query'),
+  isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+  status: text('status', { enum: ['active', 'archived'] }).notNull().default('active'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -69,6 +94,7 @@ export const creditTransactions = sqliteTable('credit_transactions', {
 export const signals = sqliteTable('signals', {
   id: text('id').primaryKey(),
   userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  campaignId: text('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),
   parentSignalId: text('parent_signal_id'),
   title: text('title').notNull(),
   sourceUrl: text('source_url').notNull(),
@@ -141,9 +167,22 @@ export const outreachDrafts = sqliteTable('outreach_drafts', {
 /**
  * Drizzle ORM Relations
  */
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ many, one }) => ({
   creditTransactions: many(creditTransactions),
   sessions: many(sessions),
+  signals: many(signals),
+  campaigns: many(campaigns),
+  activeCampaign: one(campaigns, {
+    fields: [users.activeCampaignId],
+    references: [campaigns.id],
+  }),
+}));
+
+export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
+  user: one(users, {
+    fields: [campaigns.userId],
+    references: [users.id],
+  }),
   signals: many(signals),
 }));
 
@@ -165,6 +204,10 @@ export const signalsRelations = relations(signals, ({ one, many }) => ({
   user: one(users, {
     fields: [signals.userId],
     references: [users.id],
+  }),
+  campaign: one(campaigns, {
+    fields: [signals.campaignId],
+    references: [campaigns.id],
   }),
   contacts: many(contacts),
   outreachDrafts: many(outreachDrafts),
@@ -208,6 +251,9 @@ export const outreachDraftsRelations = relations(outreachDrafts, ({ one }) => ({
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+export type Campaign = typeof campaigns.$inferSelect;
+export type InsertCampaign = typeof campaigns.$inferInsert;
+
 export type Session = typeof sessions.$inferSelect;
 export type InsertSession = typeof sessions.$inferInsert;
 
@@ -225,4 +271,3 @@ export type InsertContact = typeof contacts.$inferInsert;
 
 export type OutreachDraft = typeof outreachDrafts.$inferSelect;
 export type InsertOutreachDraft = typeof outreachDrafts.$inferInsert;
-

@@ -11,6 +11,7 @@ import type {
   SignalCategory,
   UserProfile,
 } from './types/lead';
+import type { Campaign, CampaignsResponse } from './types/campaign';
 import { Header } from './components/Header';
 import { StatsBar } from './components/StatsBar';
 import { DeckView } from './components/DeckView';
@@ -102,6 +103,11 @@ export const App: React.FC = () => {
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'signup' | 'login'>('login');
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [activeCampaignId, setActiveCampaignId] = useState<string | null>(null);
+  const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+  const [campaignModalMode, setCampaignModalMode] = useState<'create' | 'edit'>('create');
+  const [selectedCampaignForEdit, setSelectedCampaignForEdit] = useState<Campaign | null>(null);
   const [serverOnline, setServerOnline] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isScouting, setIsScouting] = useState(false);
@@ -130,11 +136,8 @@ export const App: React.FC = () => {
       if (typeof window !== 'undefined') {
         window.location.hash = view === 'deck' ? '#deck' : '';
       }
-      if (view === 'deck' && userProfile && userProfile.onboardingCompleted === false) {
-        setOnboardingOpen(true);
-      }
     },
-    [userProfile]
+    []
   );
 
   const handleLaunchDeck = useCallback(() => {
@@ -156,7 +159,7 @@ export const App: React.FC = () => {
   // Fetch operator profile & CRM connection status
   const fetchUserProfile = useCallback(async () => {
     try {
-      const token = localStorage.getItem('twinflow_session_token');
+      const token = sessionToken || localStorage.getItem('twinflow_session_token');
       if (!token) {
         setUserProfile(null);
         return;
@@ -174,9 +177,6 @@ export const App: React.FC = () => {
             streak: data.user!.streakCount,
             totalPoints: data.user!.totalPoints,
           }));
-          if (data.user.onboardingCompleted === false && window.location.hash === '#deck') {
-            setOnboardingOpen(true);
-          }
         } else {
           setUserProfile(null);
         }
@@ -188,14 +188,38 @@ export const App: React.FC = () => {
     } catch {
       // Local fallback
     }
-  }, []);
+  }, [sessionToken]);
+
+  // Fetch user campaigns from GET /api/campaigns
+  const fetchCampaigns = useCallback(async (customToken?: string) => {
+    const token = customToken || sessionToken || localStorage.getItem('twinflow_session_token');
+    try {
+      const res = await fetch('/api/campaigns', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as CampaignsResponse;
+      if (data.success && Array.isArray(data.campaigns)) {
+        setCampaigns(data.campaigns);
+        const active =
+          data.activeCampaignId ||
+          data.campaigns.find((c) => c.isActive)?.id ||
+          (data.campaigns[0] ? data.campaigns[0].id : null);
+        setActiveCampaignId(active);
+      }
+    } catch (err) {
+      console.warn('Could not fetch campaigns:', err);
+    }
+  }, [sessionToken]);
 
   // Fetch signals deck from GET /api/signals/deck
-  const fetchDeck = useCallback(async (customToken?: string) => {
+  const fetchDeck = useCallback(async (customToken?: string, campaignIdOverride?: string) => {
     setIsLoading(true);
-    const token = customToken || localStorage.getItem('twinflow_session_token');
+    const token = customToken || sessionToken || localStorage.getItem('twinflow_session_token');
+    const targetCampId = campaignIdOverride !== undefined ? campaignIdOverride : activeCampaignId;
     try {
-      const res = await fetch('/api/signals/deck', {
+      const queryParam = targetCampId ? `?campaignId=${encodeURIComponent(targetCampId)}` : '';
+      const res = await fetch(`/api/signals/deck${queryParam}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -237,12 +261,13 @@ export const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [activeCampaignId]);
 
   useEffect(() => {
     fetchDeck();
     fetchUserProfile();
-  }, [fetchDeck, fetchUserProfile]);
+    fetchCampaigns();
+  }, [fetchDeck, fetchUserProfile, fetchCampaigns]);
 
   const triggerConfetti = () => {
     confetti({
@@ -347,13 +372,7 @@ export const App: React.FC = () => {
       message: `Signed in as ${user.name || user.email}!`,
       type: 'success',
     });
-    if (user.onboardingCompleted === false) {
-      setCurrentView('deck');
-      if (typeof window !== 'undefined') {
-        window.location.hash = '#deck';
-      }
-      setOnboardingOpen(true);
-    }
+    fetchCampaigns(token);
     fetchDeck(token);
   };
 
@@ -368,6 +387,8 @@ export const App: React.FC = () => {
     localStorage.removeItem('twinflow_session_token');
     setSessionToken(null);
     setUserProfile(null);
+    setCampaigns([]);
+    setActiveCampaignId(null);
     setStats({
       approvedCount: 0,
       passedCount: 0,
@@ -375,6 +396,7 @@ export const App: React.FC = () => {
       streak: 0,
       creditsRemaining: 500,
       totalPoints: 0,
+      branchCombo: 0,
     });
     setLeads(INITIAL_LEADS);
     setScoutToast({
@@ -383,19 +405,73 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleOnboardingComplete = (updatedUser: UserProfile) => {
+  const handleSelectCampaign = async (campaignId: string) => {
+    setActiveCampaignId(campaignId);
+    setCampaigns((prev) =>
+      prev.map((c) => ({ ...c, isActive: c.id === campaignId }))
+    );
+    const token = localStorage.getItem('twinflow_session_token');
+    try {
+      await fetch(`/api/campaigns/${campaignId}/activate`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    } catch (err) {
+      console.warn('Failed to persist active campaign:', err);
+    }
+    await fetchDeck(token || undefined, campaignId);
+    const selected = campaigns.find((c) => c.id === campaignId);
+    if (selected) {
+      setScoutToast({
+        message: `Campaign switched to: "${selected.name}"`,
+        type: 'info',
+      });
+    }
+  };
+
+  const handleOpenCreateCampaign = () => {
+    setSelectedCampaignForEdit(null);
+    setCampaignModalMode('create');
+    setCampaignModalOpen(true);
+  };
+
+  const handleOpenEditCampaign = (campaign: Campaign) => {
+    setSelectedCampaignForEdit(campaign);
+    setCampaignModalMode('edit');
+    setCampaignModalOpen(true);
+  };
+
+  const handleCampaignModalComplete = async (
+    updatedUser: UserProfile,
+    savedCampaign?: Campaign
+  ) => {
     setUserProfile(updatedUser);
+    setCampaignModalOpen(false);
     setOnboardingOpen(false);
     setStats((prev) => ({
       ...prev,
       creditsRemaining: updatedUser.creditBalance,
     }));
-    setScoutToast({
-      message: 'Onboarding completed! Initialized your personalized signal deck.',
-      type: 'success',
-    });
+    const token = localStorage.getItem('twinflow_session_token') || undefined;
+    await fetchCampaigns(token);
+    if (savedCampaign) {
+      setActiveCampaignId(savedCampaign.id);
+      await fetchDeck(token, savedCampaign.id);
+      setScoutToast({
+        message:
+          campaignModalMode === 'edit'
+            ? `Campaign "${savedCampaign.name}" updated!`
+            : `Campaign "${savedCampaign.name}" created and loaded!`,
+        type: 'success',
+      });
+    } else {
+      await fetchDeck(token);
+      setScoutToast({
+        message: 'Targeting calibrated! Initialized signal deck.',
+        type: 'success',
+      });
+    }
     triggerConfetti();
-    fetchDeck(sessionToken || undefined);
   };
 
   // Branch Out Scout multiplier handler
@@ -696,7 +772,14 @@ export const App: React.FC = () => {
           setAuthModalOpen(true);
         }}
         onLogout={handleLogout}
-        onOpenOnboarding={() => setOnboardingOpen(true)}
+        onOpenOnboarding={() => {
+          const current = campaigns.find((c) => c.id === activeCampaignId) || campaigns[0] || null;
+          if (current) {
+            handleOpenEditCampaign(current);
+          } else {
+            handleOpenCreateCampaign();
+          }
+        }}
         currentView={currentView}
         onNavigate={handleNavigate}
         leadsCount={leads.length}
@@ -729,6 +812,11 @@ export const App: React.FC = () => {
             onUndo={handleUndo}
             onReset={handleReset}
             totalCards={Math.max(leads.length + stats.approvedCount + stats.passedCount, 1)}
+            campaigns={campaigns}
+            activeCampaignId={activeCampaignId || undefined}
+            onSelectCampaign={handleSelectCampaign}
+            onCreateNewCampaign={handleOpenCreateCampaign}
+            onEditCampaign={handleOpenEditCampaign}
           />
 
           {/* Main Content Area */}
@@ -862,12 +950,17 @@ export const App: React.FC = () => {
         onAuthSuccess={handleAuthSuccess}
       />
 
-      {/* ICP Targeting & Onboarding Questionnaire Modal */}
+      {/* ICP Targeting & Multi-Campaign Modal */}
       <OnboardingModal
-        isOpen={onboardingOpen}
+        isOpen={campaignModalOpen || onboardingOpen}
         user={userProfile}
-        onComplete={handleOnboardingComplete}
-        onClose={() => setOnboardingOpen(false)}
+        campaign={selectedCampaignForEdit}
+        mode={campaignModalMode}
+        onComplete={handleCampaignModalComplete}
+        onClose={() => {
+          setCampaignModalOpen(false);
+          setOnboardingOpen(false);
+        }}
       />
 
       {/* Help & Keyboard Shortcuts Modal */}
