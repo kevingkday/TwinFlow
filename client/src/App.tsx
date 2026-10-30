@@ -18,6 +18,7 @@ import { ActionControls } from './components/ActionControls';
 import { LeadDetailPane } from './components/LeadDetailPane';
 import { PitchEditorModal } from './components/PitchEditorModal';
 import { HelpModal } from './components/HelpModal';
+import { AdminModal } from './components/AdminModal';
 import { UpgradeModal } from './components/UpgradeModal';
 import { GhlSettingsModal } from './components/GhlSettingsModal';
 import { BranchOutModal } from './components/BranchOutModal';
@@ -98,6 +99,7 @@ export const App: React.FC = () => {
     typeof window !== 'undefined' ? localStorage.getItem('twinflow_session_token') : null
   );
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'signup' | 'login'>('login');
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [serverOnline, setServerOnline] = useState(false);
@@ -683,6 +685,7 @@ export const App: React.FC = () => {
         onOpenHelp={() => setHelpOpen(true)}
         onOpenUpgrade={() => setUpgradeModalOpen(true)}
         onOpenGhlSettings={() => setGhlSettingsOpen(true)}
+        onOpenAdmin={() => setAdminModalOpen(true)}
         isGhlConnected={userProfile?.isGhlConnected}
         onScoutNews={handleScoutNews}
         isScouting={isScouting}
@@ -884,6 +887,13 @@ export const App: React.FC = () => {
 
       {/* Help & Keyboard Shortcuts Modal */}
       <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      {/* System Administrator Console */}
+      <AdminModal
+        isOpen={adminModalOpen}
+        onClose={() => setAdminModalOpen(false)}
+        currentUserEmail={userProfile?.email}
+      />
     </div>
   );
 };

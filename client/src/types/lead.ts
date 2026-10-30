@@ -164,6 +164,8 @@ export interface UserProfile {
   id: string;
   email: string;
   name?: string;
+  role?: 'admin' | 'user';
+  isAdmin?: boolean;
   organization?: string | null;
   avatarUrl?: string | null;
   ghlSubaccountId?: string | null;

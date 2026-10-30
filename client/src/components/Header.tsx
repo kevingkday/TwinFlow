@@ -17,6 +17,7 @@ import {
   Compass,
   Building,
   Home,
+  ShieldCheck,
 } from 'lucide-react';
 import type { SwipeStats, UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
@@ -29,6 +30,7 @@ interface HeaderProps {
   onScoutNews: () => void;
   onOpenUpgrade?: () => void;
   onOpenGhlSettings?: () => void;
+  onOpenAdmin?: () => void;
   isGhlConnected?: boolean;
   isScouting?: boolean;
   serverOnline?: boolean;
@@ -49,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   onScoutNews,
   onOpenUpgrade,
   onOpenGhlSettings,
+  onOpenAdmin,
   isGhlConnected = false,
   isScouting = false,
   serverOnline = true,
@@ -138,6 +141,17 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 )}
               </button>
+              {user?.isAdmin && onOpenAdmin && (
+                <button
+                  type="button"
+                  onClick={onOpenAdmin}
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold text-amber-300 hover:text-amber-200 hover:bg-amber-500/20 border border-amber-500/30 transition-all shadow-sm"
+                  title="Open Admin Console"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Admin</span>
+                </button>
+              )}
             </nav>
           )}
         </div>
@@ -259,8 +273,15 @@ export const Header: React.FC<HeaderProps> = ({
                 {userMenuOpen && (
                   <div className="absolute right-0 mt-2 w-64 rounded-2xl glass-card border border-white/10 shadow-2xl p-3 z-50 animate-fade-in space-y-2.5">
                     <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
-                      <div className="text-xs font-bold text-white truncate">
-                        {user.name || 'Operator'}
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-bold text-white truncate">
+                          {user.name || 'Operator'}
+                        </span>
+                        {user.isAdmin && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            ADMIN
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-slate-400 truncate font-mono">
                         {user.email}
@@ -279,6 +300,19 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
 
                     <div className="space-y-1">
+                      {user.isAdmin && onOpenAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            onOpenAdmin();
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 border border-amber-500/20 transition-colors text-left font-semibold"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Admin Console</span>
+                        </button>
+                      )}
                       {onOpenOnboarding && (
                         <button
                           type="button"

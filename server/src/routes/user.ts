@@ -56,6 +56,7 @@ userRouter.get('/profile', async (c) => {
     user.ghlApiKey && user.ghlApiKey.length > 10 && !user.ghlApiKey.includes('your_')
   );
   const isGhlConnected = hasCustomGhlKey;
+  const isAdmin = user.role === 'admin' || user.email.toLowerCase() === 'kevingkday@gmail.com';
 
   return c.json({
     success: true,
@@ -63,6 +64,8 @@ userRouter.get('/profile', async (c) => {
       id: user.id,
       email: user.email,
       name: user.name || 'Operator',
+      role: isAdmin ? 'admin' : (user.role || 'user'),
+      isAdmin,
       organization: user.organization || null,
       avatarUrl: user.avatarUrl || null,
       ghlSubaccountId: user.ghlSubaccountId || c.env.GHL_LOCATION_ID || 'y3KLRBUZzf2t45o7rzp9',

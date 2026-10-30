@@ -7,6 +7,7 @@ import { signalsRouter } from './routes/signals';
 import { userRouter } from './routes/user';
 import { authRouter } from './routes/auth';
 import { onboardingRouter } from './routes/onboarding';
+import { adminRouter } from './routes/admin';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -35,6 +36,9 @@ app.route('/api/user', userRouter);
 
 // Signals & Outbound Pipeline endpoint
 app.route('/api/signals', signalsRouter);
+
+// Admin Management Console (/api/admin/stats, /api/admin/users)
+app.route('/api/admin', adminRouter);
 
 // Fallback to client-side static assets / SPA frontend
 app.get('*', async (c) => {

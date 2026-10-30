@@ -59,7 +59,14 @@ export async function getSessionUser(c: Context<{ Bindings: Bindings }>) {
 
 function sanitizeUser(user: typeof schema.users.$inferSelect) {
   const { passwordHash, ...safe } = user;
-  return safe;
+  const isAdmin = safe.role === 'admin' || safe.email.toLowerCase() === 'kevingkday@gmail.com';
+  return {
+    ...safe,
+    role: isAdmin ? 'admin' : (safe.role || 'user'),
+    isAdmin,
+    isGhlConnected: Boolean(safe.ghlApiKey && safe.ghlApiKey.length > 10),
+    hasCustomGhlKey: Boolean(safe.ghlApiKey && safe.ghlApiKey.length > 10),
+  };
 }
 
 // POST /api/auth/signup - Create new account & provision GHL sub-account
@@ -129,7 +136,8 @@ authRouter.post('/signup', async (c) => {
     name,
     organization,
     passwordHash: hashedPassword,
-    avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+    role: email === 'kevingkday@gmail.com' ? 'admin' : 'user',
+    avatarUrl: null,
     ghlSubaccountId: subaccount.id,
     creditBalance: 500,
     streakCount: 0,
@@ -332,7 +340,8 @@ authRouter.post('/google', async (c) => {
       name,
       googleId,
       organization: null,
-      avatarUrl: avatarUrl || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+      role: email === 'kevingkday@gmail.com' ? 'admin' : 'user',
+      avatarUrl: avatarUrl || null,
       ghlSubaccountId: subaccount.id,
       creditBalance: 500,
       streakCount: 0,
