@@ -3,16 +3,25 @@
   "version": "1.0.0",
   "private": true,
   "description": "TwinFlow - Gamified Lead Card Deck & Signal Intelligence Pipeline",
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
+    "build": "npm --prefix client run build",
+    "dev": "npm run dev --prefix client",
     "dev:client": "npm run dev --prefix client",
     "dev:server": "npm run dev --prefix server",
     "build:client": "npm run build --prefix client",
-    "deploy": "npm --prefix server run deploy",
+    "deploy": "npm run build && wrangler deploy --minify",
     "typecheck": "npm run build --prefix client && npm run typecheck --prefix server",
     "db:generate": "npm run db:generate --prefix server",
     "db:migrate": "npm run db:migrate --prefix server",
     "db:seed": "npm run db:seed --prefix server",
     "db:setup": "npm run db:setup --prefix server"
+  },
+  "devDependencies": {
+    "wrangler": "^3.101.0"
   },
   "keywords": [
     "lead-generation",
