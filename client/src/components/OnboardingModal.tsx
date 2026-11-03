@@ -390,27 +390,25 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       onClick={(e) => {
         if (e.target === e.currentTarget && onClose) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in"
     >
-      <div className="relative w-full max-w-2xl rounded-2xl glass-card border border-white/10 shadow-2xl overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-2xl rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col text-slate-800">
         {/* Header */}
-        <div className="p-5 sm:p-6 border-b border-white/10 bg-gradient-to-r from-cyan-950/40 via-indigo-950/40 to-purple-950/40 flex items-center justify-between">
+        <div className="p-5 sm:p-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-indigo-500 to-purple-500 p-[1px] shadow-glow-brand flex-shrink-0">
-              <div className="w-full h-full bg-[#0B0F17] rounded-[11px] flex items-center justify-center">
-                <Compass className="w-5 h-5 text-cyan-400" />
-              </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs flex-shrink-0">
+              <Compass className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-white font-display">
+                <h2 className="text-lg font-bold text-slate-900 font-display">
                   {mode === 'edit' ? (campaign?.name ? `Edit: ${campaign.name}` : 'Edit Campaign') : 'New Market Campaign Setup'}
                 </h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase tracking-wider">
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wider">
                   Step {step} of 4
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 AI-Calibrated for local & industry-specific opportunity discovery
               </p>
             </div>
@@ -420,7 +418,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -428,9 +426,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         </div>
 
         {/* Progress Bar */}
-        <div className="w-full bg-white/5 h-1">
+        <div className="w-full bg-slate-100 h-1.5">
           <div
-            className="bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-500 h-1 transition-all duration-300"
+            className="bg-blue-600 h-1.5 transition-all duration-300"
             style={{ width: `${(step / 4) * 100}%` }}
           />
         </div>
@@ -440,30 +438,30 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           {isSubmitting ? (
             <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
               <div className="relative">
-                <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center shadow-glow-brand">
-                  <Radio className="w-8 h-8 text-indigo-400 animate-spin" />
+                <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center shadow-xs">
+                  <Radio className="w-8 h-8 text-blue-600 animate-spin" />
                 </div>
-                <Sparkles className="w-5 h-5 text-amber-300 absolute -top-1 -right-1 animate-pulse" />
+                <Sparkles className="w-5 h-5 text-amber-500 absolute -top-1 -right-1 animate-pulse" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white font-display mb-1">
+                <h3 className="text-base font-bold text-slate-900 font-display mb-1">
                   Synthesizing Market Intelligence with AI
                 </h3>
-                <p className="text-xs text-slate-400 max-w-sm">
+                <p className="text-xs text-slate-500 max-w-sm">
                   {progressStatus || 'Generating optimal 3-6 word targeted query and matching local decision-makers...'}
                 </p>
               </div>
-              <div className="space-y-2 pt-3 text-left w-full max-w-xs text-xs text-slate-300">
-                <div className="flex items-center gap-2 text-emerald-400">
+              <div className="space-y-2 pt-3 text-left w-full max-w-xs text-xs text-slate-600">
+                <div className="flex items-center gap-2 text-emerald-700">
                   <Check className="w-4 h-4" />
                   <span>CRM Sub-Account Provisioned</span>
                 </div>
-                <div className="flex items-center gap-2 text-cyan-300 animate-pulse">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                <div className="flex items-center gap-2 text-blue-700">
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
                   <span>AI Search Calibration active</span>
                 </div>
-                <div className="flex items-center gap-2 text-indigo-300 animate-pulse">
-                  <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                <div className="flex items-center gap-2 text-slate-700">
+                  <span className="w-2 h-2 rounded-full bg-slate-400" />
                   <span>Localizing catalysts for {targetLocation}</span>
                 </div>
               </div>
@@ -474,17 +472,17 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               {step === 1 && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Target className="w-4 h-4 text-cyan-400" />
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Target className="w-4 h-4 text-blue-600" />
                       What opportunity are you hunting for?
                     </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       Tell us what you sell or seek so our AI can formulate the perfect targeted news search.
                     </p>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                       Campaign Name
                     </label>
                     <input
@@ -492,13 +490,13 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                       value={campaignName}
                       onChange={(e) => setCampaignName(e.target.value)}
                       placeholder="e.g. Pacific Northwest Commercial Expansion"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400 transition-colors"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-xs transition-colors"
                     />
                   </div>
 
                   {/* Intent Selection Cards */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                       Your Primary Goal
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -506,17 +504,17 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                         <div
                           key={opt.id}
                           onClick={() => setUserIntent(opt.id)}
-                          className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                          className={`p-3 rounded-xl border cursor-pointer transition-all ${
                             userIntent === opt.id
-                              ? 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200 shadow-glow-brand'
-                              : 'bg-white/[0.02] border-white/10 text-slate-300 hover:bg-white/[0.05]'
+                              ? 'bg-blue-50/70 border-blue-600 text-blue-900 shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                           }`}
                         >
                           <div className="flex items-center gap-2 font-semibold text-xs mb-0.5">
                             <span>{opt.emoji}</span>
-                            <span className="text-white">{opt.title}</span>
+                            <span className="text-slate-900">{opt.title}</span>
                           </div>
-                          <p className="text-[11px] text-slate-400 leading-tight">
+                          <p className="text-[11px] text-slate-500 leading-tight">
                             {opt.desc}
                           </p>
                         </div>
@@ -526,9 +524,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
                   {/* Location Intake */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
                       <span className="flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                        <MapPin className="w-3.5 h-3.5 text-blue-600" />
                         Target Location / Geography *
                       </span>
                     </label>
@@ -539,7 +537,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                         placeholder="e.g. Dallas-Fort Worth, TX or Greater Vancouver, BC"
                         value={targetLocation}
                         onChange={(e) => setTargetLocation(e.target.value)}
-                        className="w-full bg-[#090D14] text-slate-200 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 placeholder:text-slate-600"
+                        className="w-full bg-white text-slate-900 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 placeholder:text-slate-400 shadow-xs"
                       />
                     </div>
                     {/* Quick location presets */}
@@ -550,10 +548,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                           key={loc}
                           type="button"
                           onClick={() => setTargetLocation(loc)}
-                          className={`text-[10px] px-2 py-0.5 rounded-md border transition-colors ${
+                          className={`text-[10px] px-2.5 py-0.5 rounded-md border transition-colors ${
                             targetLocation === loc
-                              ? 'bg-amber-500/20 border-amber-500/40 text-amber-200 font-semibold'
-                              : 'bg-white/5 border-white/5 text-slate-400 hover:text-white'
+                              ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-xs'
+                              : 'bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900'
                           }`}
                         >
                           {loc}
@@ -565,11 +563,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                   {/* Free-form Mission Description */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                         Describe What You Offer or What You Seek *
                       </label>
-                      <span className="text-[10px] font-mono text-cyan-400 flex items-center gap-1">
-                        <Sparkles className="w-3 h-3 text-cyan-400" />
+                      <span className="text-[10px] font-mono text-blue-600 flex items-center gap-1 font-semibold">
+                        <Sparkles className="w-3 h-3 text-blue-600" />
                         Analyzed by Market AI
                       </span>
                     </div>
@@ -578,7 +576,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                       value={userMission}
                       onChange={(e) => setUserMission(e.target.value)}
                       placeholder="e.g. I run a commercial roofing and waterproofing company looking for new construction projects and facility expansions in North Texas... OR I am an executive looking for VP Operations or COO roles at rapidly growing regional logistics firms..."
-                      className="w-full bg-[#090D14] text-slate-200 border border-white/10 rounded-xl p-3 text-xs focus:outline-none focus:border-cyan-500 placeholder:text-slate-600 leading-relaxed resize-none"
+                      className="w-full bg-white text-slate-900 border border-slate-300 rounded-xl p-3 text-xs focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 placeholder:text-slate-400 leading-relaxed resize-none shadow-xs"
                     />
                     <p className="text-[10px] text-slate-500 mt-1">
                       Be natural. Our AI will dissect this to find the high-intent keywords that return active opportunities.
@@ -591,21 +589,21 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               {step === 2 && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Target className="w-4 h-4 text-cyan-400" />
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Target className="w-4 h-4 text-blue-600" />
                       What industries or market sectors do you target?
                     </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       Explore presets across major economic sectors, or add your specific niche below.
                     </p>
                   </div>
 
                   {/* Active Selected Badge Counter */}
                   {selectedIndustries.length > 0 && (
-                    <div className="p-2.5 rounded-xl bg-cyan-950/20 border border-cyan-500/20">
-                      <div className="flex items-center justify-between text-[11px] text-cyan-300 font-semibold mb-1.5">
+                    <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200">
+                      <div className="flex items-center justify-between text-[11px] text-blue-800 font-semibold mb-1.5">
                         <span>Selected Sectors ({selectedIndustries.length}):</span>
-                        <span className="text-[10px] text-slate-400 font-normal">Click any tag to remove</span>
+                        <span className="text-[10px] text-slate-500 font-normal">Click any tag to remove</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                         {selectedIndustries.map((ind) => (
@@ -613,11 +611,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                             key={ind}
                             type="button"
                             onClick={() => toggleItem(selectedIndustries, setSelectedIndustries, ind)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-xs hover:bg-rose-500/20 hover:border-rose-500/40 hover:text-rose-200 transition-colors group"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-xs hover:bg-rose-600 transition-colors group shadow-xs"
                             title="Click to remove"
                           >
                             <span>{ind}</span>
-                            <span className="text-[10px] opacity-60 group-hover:opacity-100">×</span>
+                            <span className="text-[10px] opacity-75 group-hover:opacity-100">×</span>
                           </button>
                         ))}
                       </div>
@@ -633,8 +631,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                         onClick={() => setActiveSectorTab(sec.id)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
                           activeSectorTab === sec.id
-                            ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-glow-brand'
-                            : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
                         }`}
                       >
                         <span>{sec.emoji}</span>
@@ -644,8 +642,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                   </div>
 
                   {/* Sector Pills Grid */}
-                  <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
                       {currentSector.emoji} {currentSector.name}
                     </span>
                     <div className="flex flex-wrap gap-2 pt-1">
@@ -658,11 +656,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                             onClick={() => toggleItem(selectedIndustries, setSelectedIndustries, ind)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all active:scale-95 ${
                               isSelected
-                                ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 shadow-glow-brand'
-                                : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                             }`}
                           >
-                            {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                            {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
                             <span>{ind}</span>
                           </button>
                         );
@@ -677,12 +675,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                       placeholder="Add custom vertical (e.g. Commercial Roofing, Veterinary, PropTech)..."
                       value={customIndustry}
                       onChange={(e) => setCustomIndustry(e.target.value)}
-                      className="flex-1 bg-[#090D14] text-slate-200 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 placeholder:text-slate-600"
+                      className="flex-1 bg-white text-slate-900 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 placeholder:text-slate-400 shadow-xs"
                     />
                     <button
                       type="submit"
                       disabled={!customIndustry.trim()}
-                      className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 transition-colors"
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40 transition-colors shadow-xs"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Add</span>
@@ -695,11 +693,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               {step === 3 && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-amber-400" />
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-blue-600" />
                       What buying catalysts indicate intent for you?
                     </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       We scan business news and announcements for these exact operational events.
                     </p>
                   </div>
@@ -713,23 +711,23 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                           onClick={() => toggleItem(selectedTriggers, setSelectedTriggers, trigger.name)}
                           className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
                             isSelected
-                              ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
-                              : 'bg-white/[0.02] border-white/10 text-slate-300 hover:bg-white/[0.05]'
+                              ? 'bg-blue-50/70 border-blue-600 text-blue-900 shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <span
                               className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
                                 isSelected
-                                  ? 'bg-indigo-500 border-indigo-400 text-white'
-                                  : 'border-white/20 bg-black/30'
+                                  ? 'bg-blue-600 border-blue-600 text-white'
+                                  : 'border-slate-300 bg-white'
                               }`}
                             >
-                              {isSelected && <Check className="w-3 h-3" />}
+                              {isSelected && <Check className="w-3 h-3 text-white" />}
                             </span>
-                            <span className="text-xs font-medium truncate">{trigger.name}</span>
+                            <span className="text-xs font-medium truncate text-slate-900">{trigger.name}</span>
                           </div>
-                          <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0 ml-1">
+                          <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0 ml-1">
                             {trigger.tag}
                           </span>
                         </div>
@@ -743,11 +741,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               {step === 4 && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Briefcase className="w-4 h-4 text-purple-400" />
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Briefcase className="w-4 h-4 text-blue-600" />
                       Which decision-maker titles do you pitch?
                     </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       Verified corporate emails and LinkedIn profiles will prioritize these roles.
                     </p>
                   </div>
@@ -761,23 +759,23 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                           onClick={() => toggleItem(selectedRoles, setSelectedRoles, role.name)}
                           className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
                             isSelected
-                              ? 'bg-purple-500/15 border-purple-500/40 text-purple-200'
-                              : 'bg-white/[0.02] border-white/10 text-slate-300 hover:bg-white/[0.05]'
+                              ? 'bg-blue-50/70 border-blue-600 text-blue-900 shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                           }`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span
                               className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
                                 isSelected
-                                  ? 'bg-purple-500 border-purple-400 text-white'
-                                  : 'border-white/20 bg-black/30'
+                                  ? 'bg-blue-600 border-blue-600 text-white'
+                                  : 'border-slate-300 bg-white'
                               }`}
                             >
-                              {isSelected && <Check className="w-3 h-3" />}
+                              {isSelected && <Check className="w-3 h-3 text-white" />}
                             </span>
-                            <span className="text-xs font-medium truncate">{role.name}</span>
+                            <span className="text-xs font-medium truncate text-slate-900">{role.name}</span>
                           </div>
-                          <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0 ml-1">
+                          <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0 ml-1">
                             {role.category}
                           </span>
                         </div>
@@ -786,30 +784,30 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                   </div>
 
                   {/* AI Search Strategy & Goldilocks Rule Explainer */}
-                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/30 to-purple-950/20 border border-indigo-500/30 space-y-2">
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <Flame className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Flame className="w-3.5 h-3.5 text-blue-600" />
                         AI Search Calibration (The Goldilocks Rule)
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono font-medium">
                         3 to 6 words
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
                       Single words are too broad; full sentences return 0 news results. Our AI synthesizes the optimal query:
                     </p>
-                    <div className="p-2 rounded-lg bg-black/40 border border-white/10 font-mono text-[11px] text-cyan-300 flex items-center gap-2 overflow-x-auto">
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-200 font-mono text-[11px] text-slate-800 flex items-center gap-2 overflow-x-auto shadow-2xs">
                       <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="text-amber-300 font-semibold">{targetLocation.split(',')[0]}</span>
-                      <span className="text-slate-500">+</span>
-                      <span className="text-cyan-300 font-semibold">{selectedIndustries[0] || 'Commercial'}</span>
-                      <span className="text-slate-500">+</span>
-                      <span className="text-indigo-300">"{selectedTriggers[0]?.split(' ')[0] || 'Expansion'}"</span>
+                      <span className="text-blue-700 font-semibold">{targetLocation.split(',')[0]}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-slate-900 font-semibold">{selectedIndustries[0] || 'Commercial'}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-slate-700">"{selectedTriggers[0]?.split(' ')[0] || 'Expansion'}"</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 flex items-center justify-between pt-1">
-                      <span>Targeting: <strong className="text-slate-200">{targetLocation}</strong></span>
-                      <span>Intent: <strong className="text-slate-200">{userIntent.replace(/_/g, ' ')}</strong></span>
+                    <div className="text-[10px] text-slate-500 flex items-center justify-between pt-1">
+                      <span>Targeting: <strong className="text-slate-800">{targetLocation}</strong></span>
+                      <span>Intent: <strong className="text-slate-800">{userIntent.replace(/_/g, ' ')}</strong></span>
                     </div>
                   </div>
                 </div>
@@ -820,13 +818,13 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
         {/* Wizard Footer Controls */}
         {!isSubmitting && (
-          <div className="p-4 sm:p-5 border-t border-white/10 bg-gradient-to-t from-white/[0.03] to-transparent flex items-center justify-between gap-3">
+          <div className="p-4 sm:p-5 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3">
             {step > 1 ? (
               <button
                 type="button"
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => setStep((prev) => (prev - 1) as any)}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold transition-colors"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
               >
                 Back
               </button>
@@ -839,7 +837,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 type="button"
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => setStep((prev) => (prev + 1) as any)}
-                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-bold shadow-glow-brand transition-all active:scale-95"
+                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
               >
                 <span>Continue</span>
                 <ChevronRight className="w-4 h-4" />
@@ -848,9 +846,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               <button
                 type="button"
                 onClick={handleFinish}
-                className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-bold tracking-wider uppercase shadow-glow-emerald transition-all active:scale-95"
+                className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold tracking-wide shadow-xs transition-all active:scale-95"
               >
-                <Sparkles className="w-4 h-4 text-amber-300" />
+                <Sparkles className="w-4 h-4 text-blue-200" />
                 <span>Launch My Deck</span>
                 <ArrowRight className="w-4 h-4" />
               </button>

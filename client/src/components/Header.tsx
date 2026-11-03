@@ -7,11 +7,11 @@ import {
   Radio,
   LogOut,
   ChevronDown,
-  Compass,
   Building,
   Home,
   ShieldCheck,
   Coins,
+  Compass,
 } from 'lucide-react';
 import type { SwipeStats, UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
@@ -70,36 +70,36 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 w-full bg-[#0B0F17]/85 backdrop-blur-xl border-b border-white/[0.07] px-4 py-2.5 sm:px-6 transition-colors">
+    <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-2.5 sm:px-6 transition-colors shadow-xs">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-        {/* Left Side: Brand Logo & Segmented Navigation */}
+        {/* Left Side: Brand Logo & Navigation */}
         <div className="flex items-center gap-3 sm:gap-6">
           <button
             type="button"
             onClick={() => onNavigate?.('landing')}
-            className="flex items-center gap-2.5 text-left group focus:outline-none"
+            className="flex items-center gap-2.5 text-left group focus:outline-none cursor-pointer"
             title="TwinFlow Home"
           >
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/25 text-indigo-400 group-hover:border-indigo-500/40 group-hover:bg-indigo-500/20 transition-all">
-              <Zap className="w-4 h-4 text-indigo-400" />
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600 text-white font-bold text-sm shadow-xs group-hover:bg-blue-700 transition-all">
+              <Zap className="w-4 h-4 text-white" />
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-base font-bold tracking-tight text-white font-display">
-                Twin<span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-indigo-200">Flow</span>
+              <span className="text-base font-bold tracking-tight text-slate-900 font-sans">
+                Twin<span className="text-blue-600">Flow</span>
               </span>
             </div>
           </button>
 
           {/* Segmented Navigation (Home vs Lead Deck vs Admin) */}
           {onNavigate && (
-            <nav className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <nav className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/80">
               <button
                 type="button"
                 onClick={() => onNavigate('landing')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                   currentView === 'landing'
-                    ? 'bg-white/[0.08] text-white shadow-sm border border-white/10'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
               >
                 <Home className="w-3.5 h-3.5" />
@@ -108,16 +108,16 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => onNavigate('deck')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                   currentView === 'deck'
-                    ? 'bg-white/[0.08] text-white shadow-sm border border-white/10'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
               >
-                <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                <Zap className="w-3.5 h-3.5 text-blue-600" />
                 <span>Lead Deck</span>
                 {leadsCount !== undefined && leadsCount > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-mono font-semibold border border-indigo-500/30">
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 text-[10px] font-mono font-bold">
                     {leadsCount}
                   </span>
                 )}
@@ -126,10 +126,10 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   type="button"
                   onClick={onOpenAdmin}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 transition-all border border-transparent hover:border-amber-500/20"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-amber-800 hover:text-amber-950 hover:bg-amber-100 transition-all cursor-pointer"
                   title="Open Admin Console"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
                   <span>Admin</span>
                 </button>
               )}
@@ -143,26 +143,26 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onScoutNews}
             disabled={isScouting}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
               isScouting
-                ? 'bg-indigo-950/40 border-indigo-500/30 text-indigo-300 cursor-wait'
-                : 'bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.08] hover:border-white/20 text-slate-300 hover:text-white'
+                ? 'bg-blue-50 border-blue-200 text-blue-700 cursor-wait'
+                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:text-slate-900 shadow-xs'
             }`}
             title="Scout live market signals via AI"
             aria-label="Scout Market Signals"
           >
-            <Radio className={`w-3.5 h-3.5 ${isScouting ? 'text-indigo-400 animate-spin' : 'text-slate-400'}`} />
+            <Radio className={`w-3.5 h-3.5 ${isScouting ? 'text-blue-600 animate-spin' : 'text-slate-500'}`} />
             <span>{isScouting ? 'Scouting AI...' : 'Scout Signals'}</span>
           </button>
 
-          {/* Credits Badge & Quick Top-Up */}
+          {/* Credits Badge */}
           <button
             onClick={onOpenUpgrade}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/20 text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700 shadow-xs transition-all cursor-pointer"
             title={`${stats.creditsRemaining} credits available. Click to manage.`}
           >
-            <Coins className="w-3.5 h-3.5 text-amber-400/80" />
-            <span className="font-mono font-semibold text-slate-200">{stats.creditsRemaining}</span>
+            <Coins className="w-3.5 h-3.5 text-amber-500" />
+            <span className="font-mono font-bold text-slate-900">{stats.creditsRemaining}</span>
             <span className="text-[11px] text-slate-500 hidden md:inline">credits</span>
           </button>
 
@@ -172,7 +172,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => setUserMenuOpen((prev) => !prev)}
-                className="flex items-center gap-2 py-1 pl-1 pr-2 rounded-lg hover:bg-white/[0.05] border border-transparent hover:border-white/[0.08] text-xs text-slate-200 transition-all focus:outline-none"
+                className="flex items-center gap-2 py-1 pl-1 pr-2.5 rounded-xl hover:bg-slate-100 border border-slate-200 text-xs text-slate-700 transition-all focus:outline-none cursor-pointer bg-white shadow-xs"
               >
                 <div className="relative">
                   <ExecutiveAvatar
@@ -183,13 +183,13 @@ export const Header: React.FC<HeaderProps> = ({
                   />
                   {/* Subtle CRM connectivity dot on avatar */}
                   <span
-                    className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[#0B0F17] ${
-                      isGhlConnected ? 'bg-emerald-400' : 'bg-slate-500'
+                    className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white ${
+                      isGhlConnected ? 'bg-emerald-500' : 'bg-slate-300'
                     }`}
-                    title={isGhlConnected ? 'CRM Workspace Connected' : 'CRM Not Connected'}
+                    title={isGhlConnected ? 'CRM Connected' : 'CRM Not Connected'}
                   />
                 </div>
-                <span className="hidden sm:inline font-medium text-slate-200 max-w-[100px] truncate">
+                <span className="hidden sm:inline font-semibold text-slate-800 max-w-[120px] truncate">
                   {user.name || 'Operator'}
                 </span>
                 <ChevronDown className="w-3 h-3 text-slate-400" />
@@ -197,47 +197,43 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* Comprehensive Workspace Command Menu */}
               {userMenuOpen && (
-                <div className="absolute right-0 mt-2 w-72 rounded-xl bg-[#0F141F] border border-white/10 shadow-2xl p-2.5 z-50 animate-fade-in space-y-2">
+                <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-white border border-slate-200 shadow-xl p-3 z-50 animate-fade-in space-y-2 text-slate-800">
                   {/* Profile Header */}
-                  <div className="p-3 rounded-lg bg-white/[0.03] border border-white/[0.05] space-y-1">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1">
                     <div className="flex items-center justify-between gap-1.5">
-                      <span className="text-xs font-semibold text-white truncate">
+                      <span className="text-xs font-bold text-slate-900 truncate">
                         {user.name || 'Operator'}
                       </span>
                       {user.isAdmin ? (
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-200">
                           ADMIN
                         </span>
                       ) : (
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono text-slate-400 bg-white/5 border border-white/10">
-                          PRO
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono text-slate-600 bg-white border border-slate-200">
+                          MEMBER
                         </span>
                       )}
                     </div>
-                    <div className="text-[11px] text-slate-400 truncate font-mono">
+                    <div className="text-[11px] text-slate-500 truncate font-mono">
                       {user.email}
                     </div>
                     {user.organization && (
-                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 pt-0.5">
-                        <Building className="w-3 h-3 text-slate-500" />
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-600 pt-0.5">
+                        <Building className="w-3 h-3 text-slate-400" />
                         <span className="truncate">{user.organization}</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Activity & Performance Strip */}
-                  <div className="grid grid-cols-3 gap-1.5 p-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
+                  {/* Summary Metric Strip */}
+                  <div className="grid grid-cols-2 gap-1.5 p-2 rounded-xl bg-slate-50 border border-slate-200/70 text-center">
                     <div className="space-y-0.5">
-                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Credits</div>
-                      <div className="text-xs font-mono font-bold text-white">{stats.creditsRemaining}</div>
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Available Credits</div>
+                      <div className="text-xs font-mono font-bold text-slate-900">{stats.creditsRemaining}</div>
                     </div>
                     <div className="space-y-0.5">
-                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Streak</div>
-                      <div className="text-xs font-mono font-bold text-amber-300">{stats.streak}d</div>
-                    </div>
-                    <div className="space-y-0.5">
-                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">XP</div>
-                      <div className="text-xs font-mono font-bold text-indigo-300">{stats.totalPoints}</div>
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Leads Approved</div>
+                      <div className="text-xs font-mono font-bold text-emerald-600">{stats.approvedCount}</div>
                     </div>
                   </div>
 
@@ -250,23 +246,23 @@ export const Header: React.FC<HeaderProps> = ({
                           setUserMenuOpen(false);
                           onOpenGhlSettings();
                         }}
-                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors text-left"
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors text-left cursor-pointer"
                       >
-                        <div className="flex items-center gap-2">
-                          <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        <div className="flex items-center gap-2 font-medium">
+                          <Zap className="w-3.5 h-3.5 text-blue-600" />
                           <span>CRM Integration</span>
                         </div>
                         <span
-                          className={`text-[10px] font-medium flex items-center gap-1 ${
-                            isGhlConnected ? 'text-emerald-400' : 'text-slate-400'
+                          className={`text-[10px] font-semibold flex items-center gap-1 ${
+                            isGhlConnected ? 'text-emerald-600' : 'text-slate-400'
                           }`}
                         >
                           <span
                             className={`w-1.5 h-1.5 rounded-full ${
-                              isGhlConnected ? 'bg-emerald-400' : 'bg-slate-500'
+                              isGhlConnected ? 'bg-emerald-500' : 'bg-slate-300'
                             }`}
                           />
-                          {isGhlConnected ? 'Active' : 'Setup'}
+                          {isGhlConnected ? 'Connected' : 'Setup'}
                         </span>
                       </button>
                     )}
@@ -278,10 +274,10 @@ export const Header: React.FC<HeaderProps> = ({
                           setUserMenuOpen(false);
                           onOpenOnboarding();
                         }}
-                        className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors text-left cursor-pointer font-medium"
                       >
-                        <Compass className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Targeting & Signal ICP</span>
+                        <Compass className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Campaign Targeting</span>
                       </button>
                     )}
 
@@ -292,35 +288,35 @@ export const Header: React.FC<HeaderProps> = ({
                           setUserMenuOpen(false);
                           onOpenAdmin();
                         }}
-                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 transition-colors text-left font-medium"
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-amber-800 hover:text-amber-900 hover:bg-amber-50 transition-colors text-left font-semibold cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
-                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
                           <span>Admin Console</span>
                         </div>
-                        <span className="text-[10px] uppercase font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          Manage
+                        <span className="text-[10px] font-bold bg-amber-100 px-1.5 py-0.5 rounded text-amber-800">
+                          Admin
                         </span>
                       </button>
                     )}
                   </div>
 
                   {/* Preferences: Audio & Shortcuts */}
-                  <div className="pt-1 border-t border-white/[0.06] space-y-0.5">
+                  <div className="pt-1 border-t border-slate-200 space-y-0.5">
                     <button
                       type="button"
                       onClick={onToggleSound}
-                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] transition-colors"
+                      className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center gap-2">
                         {soundEnabled ? (
-                          <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <Volume2 className="w-3.5 h-3.5 text-emerald-600" />
                         ) : (
-                          <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+                          <VolumeX className="w-3.5 h-3.5 text-slate-400" />
                         )}
-                        <span>Sound Effects</span>
+                        <span>Sound Feedback</span>
                       </div>
-                      <span className="text-[11px] font-mono text-slate-500">
+                      <span className="text-[11px] font-mono text-slate-500 font-semibold">
                         {soundEnabled ? 'ON' : 'OFF'}
                       </span>
                     </button>
@@ -331,27 +327,29 @@ export const Header: React.FC<HeaderProps> = ({
                         setUserMenuOpen(false);
                         onOpenHelp();
                       }}
-                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] transition-colors"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
                     >
-                      <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
+                      <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
                       <span>Keyboard Shortcuts</span>
                     </button>
                   </div>
 
                   {/* Sign Out */}
-                  <div className="pt-1 border-t border-white/[0.06]">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        onLogout?.();
-                      }}
-                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left font-medium"
-                    >
-                      <LogOut className="w-3.5 h-3.5 text-rose-400" />
-                      <span>Sign Out</span>
-                    </button>
-                  </div>
+                  {onLogout && (
+                    <div className="pt-1.5 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          onLogout();
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-rose-600 hover:bg-rose-50 transition-colors text-left cursor-pointer font-medium"
+                      >
+                        <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -360,14 +358,14 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => onOpenAuth?.('login')}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors"
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-all cursor-pointer"
               >
                 Sign In
               </button>
               <button
                 type="button"
                 onClick={() => onOpenAuth?.('signup')}
-                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition-colors shadow-sm"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all cursor-pointer"
               >
                 Get Started
               </button>

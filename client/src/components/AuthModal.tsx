@@ -79,7 +79,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               theme: 'outline',
               size: 'large',
               type: 'standard',
-              shape: 'pill',
+              shape: 'rectangular',
               text: mode === 'signup' ? 'signup_with' : 'signin_with',
               width: 380,
               logo_alignment: 'left',
@@ -98,7 +98,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setupGoogleGsi();
         clearInterval(interval);
       }
-    }, 300);
+    }, 400);
 
     return () => {
       mounted = false;
@@ -119,14 +119,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       const data: AuthResponse = await res.json();
       if (res.ok && data.success && data.user && data.token) {
-        playSound('streak');
+        playSound('approve');
         onAuthSuccess(data.user, data.token);
         onClose();
       } else {
-        setErrorMessage(data.error || 'Google authentication failed.');
+        setErrorMessage(data.error || 'Google authentication failed. Please try again.');
       }
     } catch {
-      setErrorMessage('Could not complete Google authentication.');
+      setErrorMessage('Network connection error with Google authentication.');
     } finally {
       setIsLoading(false);
     }
@@ -140,19 +140,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const res = await fetch('/api/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, redirectUri: 'postmessage' }),
+        body: JSON.stringify({ code }),
       });
 
       const data: AuthResponse = await res.json();
       if (res.ok && data.success && data.user && data.token) {
-        playSound('streak');
+        playSound('approve');
         onAuthSuccess(data.user, data.token);
         onClose();
       } else {
-        setErrorMessage(data.error || 'Google authentication failed.');
+        setErrorMessage(data.error || 'Google authentication encountered an issue.');
       }
     } catch {
-      setErrorMessage('Could not complete Google authentication.');
+      setErrorMessage('Network connection error with Google authentication.');
     } finally {
       setIsLoading(false);
     }
@@ -164,11 +164,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
 
     try {
-      const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+      const endpoint = mode === 'signup' ? '/api/auth/register' : '/api/auth/login';
       const payload =
         mode === 'signup'
-          ? { name, email, password, organization }
-          : { email, password };
+          ? {
+              email: email.trim().toLowerCase(),
+              password,
+              name: name.trim(),
+              organization: organization.trim() || undefined,
+            }
+          : {
+              email: email.trim().toLowerCase(),
+              password,
+            };
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -179,24 +187,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const data: AuthResponse = await res.json();
 
       if (res.ok && data.success && data.user && data.token) {
-        playSound('streak');
+        playSound('approve');
         onAuthSuccess(data.user, data.token);
         onClose();
       } else {
-        setErrorMessage(data.error || 'Authentication failed. Please try again.');
+        setErrorMessage(data.error || 'Authentication failed. Please verify credentials.');
       }
     } catch (err: unknown) {
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Network error connecting to auth server.'
-      );
+      setErrorMessage(err instanceof Error ? err.message : 'Server communication failed.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleCustomGoogleClick = () => {
-    setErrorMessage(null);
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const g = (window as any).google;
     if (g?.accounts?.oauth2) {
@@ -253,7 +257,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       const data: AuthResponse = await res.json();
       if (res.ok && data.success && data.user && data.token) {
-        playSound('streak');
+        playSound('approve');
         onAuthSuccess(data.user, data.token);
         onClose();
       } else {
@@ -273,25 +277,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in"
     >
-      <div className="relative w-full max-w-md rounded-2xl glass-card border border-white/10 shadow-2xl overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-md rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col text-slate-800">
         {/* Top Header */}
-        <div className="p-6 border-b border-white/10 bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-emerald-950/20 flex items-center justify-between">
+        <div className="p-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-emerald-400 p-[1px] shadow-glow-brand flex-shrink-0">
-              <div className="w-full h-full bg-[#0B0F17] rounded-[11px] flex items-center justify-center">
-                <Zap className="w-5 h-5 text-indigo-400 fill-indigo-400/20" />
-              </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs flex-shrink-0">
+              <Zap className="w-5 h-5 fill-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white font-display">
-                {mode === 'signup' ? 'Register TwinFlow Account' : 'Welcome Back'}
+              <h2 className="text-lg font-bold text-slate-900 font-display">
+                {mode === 'signup' ? 'Create TwinFlow Account' : 'Welcome Back'}
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 {mode === 'signup'
                   ? 'Includes 500 starter credits + dedicated CRM workspace'
-                  : 'Access your lead triage deck and credits'}
+                  : 'Access your lead deck and saved campaigns'}
               </p>
             </div>
           </div>
@@ -299,49 +301,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab switch: Register vs Sign In */}
-        <div className="grid grid-cols-2 border-b border-white/10 bg-white/[0.02]">
-          <button
-            type="button"
-            onClick={() => {
-              setMode('signup');
-              setErrorMessage(null);
-            }}
-            className={`py-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 ${
-              mode === 'signup'
-                ? 'border-indigo-500 text-indigo-300 bg-indigo-500/10'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Register
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode('login');
-              setErrorMessage(null);
-            }}
-            className={`py-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 ${
-              mode === 'login'
-                ? 'border-indigo-500 text-indigo-300 bg-indigo-500/10'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Sign In
-          </button>
+        <div className="p-2 border-b border-slate-100 bg-slate-50/50">
+          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-xl">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('signup');
+                setErrorMessage(null);
+              }}
+              className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                mode === 'signup'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Register
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setErrorMessage(null);
+              }}
+              className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                mode === 'login'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Sign In
+            </button>
+          </div>
         </div>
 
         {/* Form Body */}
         <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {errorMessage && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5 text-xs text-rose-300">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-xs text-rose-800">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <span>{errorMessage}</span>
             </div>
           )}
@@ -357,7 +361,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 type="button"
                 onClick={handleCustomGoogleClick}
                 disabled={isLoading}
-                className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-semibold text-xs transition-all shadow-md active:scale-95 disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold text-xs transition-all shadow-xs active:scale-95 disabled:opacity-50"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
@@ -389,75 +393,75 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-[1px] bg-white/10" />
-            <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">or email</span>
-            <div className="flex-1 h-[1px] bg-white/10" />
+            <div className="flex-1 h-[1px] bg-slate-200" />
+            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">or email</span>
+            <div className="flex-1 h-[1px] bg-slate-200" />
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-3.5">
             {mode === 'signup' && (
               <>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Your Name *
                   </label>
                   <div className="relative">
-                    <User className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                     <input
                       type="text"
                       required
                       placeholder="e.g. Sarah Connor"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-[#090D14] text-slate-200 border border-white/10 rounded-xl text-xs focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+                      className="w-full pl-9 pr-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 placeholder:text-slate-400 shadow-xs"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Organization / Agency Name <span className="text-slate-500 font-normal">(Optional)</span>
                   </label>
                   <div className="relative">
-                    <Building className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                    <Building className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                     <input
                       type="text"
-                      placeholder="e.g. Cyberdyne Outbound or Acme Corp"
+                      placeholder="e.g. Acme Corp"
                       value={organization}
                       onChange={(e) => setOrganization(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-[#090D14] text-slate-200 border border-white/10 rounded-xl text-xs focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+                      className="w-full pl-9 pr-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 placeholder:text-slate-400 shadow-xs"
                     />
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    We will auto-provision a dedicated CRM workspace with this name.
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    We will configure your default CRM workspace with this name.
                   </p>
                 </div>
               </>
             )}
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Work Email *
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="email"
                   required
                   placeholder="name@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-[#090D14] text-slate-200 border border-white/10 rounded-xl text-xs focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+                  className="w-full pl-9 pr-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 placeholder:text-slate-400 shadow-xs"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Password *
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="password"
                   required
@@ -465,7 +469,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-[#090D14] text-slate-200 border border-white/10 rounded-xl text-xs focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+                  className="w-full pl-9 pr-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 placeholder:text-slate-400 shadow-xs"
                 />
               </div>
             </div>
@@ -473,16 +477,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-glow-brand transition-all active:scale-95 disabled:opacity-50 mt-2"
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs shadow-xs transition-all active:scale-95 disabled:opacity-50 mt-2 cursor-pointer"
             >
               {isLoading ? (
                 <>
                   <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>{mode === 'signup' ? 'Registering Account & CRM...' : 'Signing In...'}</span>
+                  <span>{mode === 'signup' ? 'Setting up workspace...' : 'Signing In...'}</span>
                 </>
               ) : (
                 <>
-                  <span>{mode === 'signup' ? 'Register (+500 Credits)' : 'Sign In to Deck'}</span>
+                  <span>{mode === 'signup' ? 'Create Account (+500 Credits)' : 'Sign In to Deck'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -490,17 +494,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </form>
 
           {/* Quick Features Highlight */}
-          <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5 text-[11px] text-slate-400">
-            <div className="flex items-center gap-2 text-slate-300">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Dedicated CRM Workspace</span>
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs text-slate-600">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Dedicated CRM Workspace Integration</span>
             </div>
-            <div className="flex items-center gap-2 text-slate-300">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>500 Starter Lead Triage Credits</span>
             </div>
-            <div className="flex items-center gap-2 text-slate-300">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>Personalized Market Signal Ingestion</span>
             </div>
           </div>

@@ -69,38 +69,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#070A0F] text-slate-100 flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
-      {/* Background ambient lighting */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-[-15%] left-[20%] w-[600px] h-[600px] rounded-full bg-gradient-to-br from-indigo-600/15 via-purple-600/10 to-transparent blur-3xl" />
-        <div className="absolute top-[35%] right-[-10%] w-[500px] h-[500px] rounded-full bg-gradient-to-br from-cyan-600/10 via-emerald-600/10 to-transparent blur-3xl" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[700px] h-[700px] rounded-full bg-gradient-to-tr from-purple-900/15 to-transparent blur-3xl" />
-      </div>
-
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col selection:bg-blue-100 selection:text-blue-900">
       <div className="relative z-10 flex-1 flex flex-col">
         {/* =========================================================================
             HERO SECTION
            ========================================================================= */}
         <section className="pt-12 pb-16 sm:pt-20 sm:pb-24 px-4 sm:px-6 max-w-7xl mx-auto w-full text-center flex flex-col items-center">
           {/* Eyebrow Pill */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-medium mb-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mb-6 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-blue-600" />
             <span>Autonomous Market Signal Intelligence</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-slate-300">Zero Stale Leads</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-slate-600 font-medium">Zero Stale Leads</span>
           </div>
 
           {/* Main Headline */}
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white font-display tracking-tight max-w-4xl leading-[1.15] mb-6">
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 font-display tracking-tight max-w-4xl leading-[1.15] mb-6">
             Turn Breaking Market Catalysts into{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-purple-300 to-indigo-100">
+            <span className="text-blue-600">
               High-Converting Pipeline
             </span>{' '}
             in Seconds.
           </h1>
 
           {/* Subtitle */}
-          <p className="text-base sm:text-lg text-slate-300 max-w-2xl leading-relaxed mb-8">
+          <p className="text-base sm:text-lg text-slate-600 max-w-2xl leading-relaxed mb-8">
             Stop cold emailing stale databases. TwinFlow's AI monitors live regional business news,
             detects high-intent expansion events, enriches verified executive decision-makers, and drafts
             bespoke outbound pitches ready to push into your CRM with a single swipe.
@@ -112,9 +105,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button
                 type="button"
                 onClick={onLaunchDeck}
-                className="w-full sm:w-auto px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-sm flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm transition-all shadow-xs flex items-center justify-center gap-2"
               >
-                <Zap className="w-4 h-4 text-emerald-300" />
+                <Zap className="w-4 h-4 text-white fill-white" />
                 <span>Launch Lead Deck</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
@@ -122,9 +115,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button
                 type="button"
                 onClick={() => onOpenAuth('signup')}
-                className="w-full sm:w-auto px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-sm flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm transition-all shadow-xs flex items-center justify-center gap-2"
               >
-                <Sparkles className="w-4 h-4 text-amber-300" />
+                <Sparkles className="w-4 h-4 text-blue-200" />
                 <span>Get Started Free (+500 Credits)</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
@@ -133,51 +126,51 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <button
               type="button"
               onClick={() => scrollToSection('demo-section')}
-              className="w-full sm:w-auto px-6 py-3 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 text-slate-200 hover:text-white font-medium text-sm transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-semibold text-sm transition-all shadow-xs flex items-center justify-center gap-2"
             >
-              <MousePointerClick className="w-4 h-4 text-cyan-400" />
+              <MousePointerClick className="w-4 h-4 text-blue-600" />
               <span>Try Interactive Demo</span>
             </button>
           </div>
 
           {/* Trust Highlights Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 w-full max-w-4xl text-left">
-            <div className="p-3.5 rounded-xl glass-card border border-white/5 bg-white/[0.02]">
-              <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold mb-1">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
+              <div className="flex items-center gap-2 text-emerald-700 text-xs font-bold mb-1">
                 <TrendingUp className="w-4 h-4" />
                 <span>Real-Time Catalysts</span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-tight">
+              <p className="text-[11px] text-slate-500 leading-normal">
                 Expansions, hires, funding rounds & contracts surfaced hours after happening.
               </p>
             </div>
 
-            <div className="p-3.5 rounded-xl glass-card border border-white/5 bg-white/[0.02]">
-              <div className="flex items-center gap-2 text-cyan-400 text-xs font-bold mb-1">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
+              <div className="flex items-center gap-2 text-blue-700 text-xs font-bold mb-1">
                 <ShieldCheck className="w-4 h-4" />
                 <span>Verified Dossiers</span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-tight">
+              <p className="text-[11px] text-slate-500 leading-normal">
                 Direct executive emails and LinkedIn profiles auto-matched to the catalyst.
               </p>
             </div>
 
-            <div className="p-3.5 rounded-xl glass-card border border-white/5 bg-white/[0.02]">
-              <div className="flex items-center gap-2 text-purple-400 text-xs font-bold mb-1">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
+              <div className="flex items-center gap-2 text-indigo-700 text-xs font-bold mb-1">
                 <Mail className="w-4 h-4" />
                 <span>Contextual Pitches</span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-tight">
+              <p className="text-[11px] text-slate-500 leading-normal">
                 AI drafts personalized outreach referencing the exact article hook.
               </p>
             </div>
 
-            <div className="p-3.5 rounded-xl glass-card border border-white/5 bg-white/[0.02]">
-              <div className="flex items-center gap-2 text-amber-400 text-xs font-bold mb-1">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
+              <div className="flex items-center gap-2 text-amber-700 text-xs font-bold mb-1">
                 <Database className="w-4 h-4" />
                 <span>1-Click CRM Sync</span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-tight">
+              <p className="text-[11px] text-slate-500 leading-normal">
                 Pushes leads directly into your dedicated CRM workspace with full context.
               </p>
             </div>
@@ -189,30 +182,30 @@ export const LandingPage: React.FC<LandingPageProps> = ({
            ========================================================================= */}
         <section
           id="demo-section"
-          className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-white/10 scroll-mt-12"
+          className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-slate-200 bg-white scroll-mt-12 rounded-3xl my-6 shadow-xs"
         >
           <div className="text-center max-w-2xl mx-auto mb-10">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-bold mb-3">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mb-3">
               <Zap className="w-3.5 h-3.5" />
               <span>Interactive Lead Triage Simulator</span>
             </div>
-            <h2 className="text-2xl sm:text-4xl font-extrabold text-white font-display mb-3">
+            <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 font-display mb-3">
               Experience the Swipe-to-Pipeline Flow
             </h2>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               Drag right to approve and queue into your CRM, or drag left to pass. You can also edit pitches
               or branch out to explore competitor intelligence.
             </p>
           </div>
 
-          <div className="max-w-xl mx-auto flex flex-col items-center">
+          <div className="max-w-4xl mx-auto flex flex-col items-center">
             {activeDemoLead ? (
               <div className="w-full flex flex-col items-center">
                 {/* Embedded Card Container */}
-                <div className="relative w-full max-w-md h-[510px] sm:h-[550px] mb-4">
+                <div className="relative w-full max-w-4xl mb-4">
                   {leads[1] && (
                     <div
-                      className="absolute inset-0 w-full rounded-2xl bg-[#0E1522] border border-white/10 opacity-70 scale-[0.95] translate-y-3.5 pointer-events-none transition-all duration-300 shadow-lg"
+                      className="absolute inset-0 w-full rounded-2xl bg-slate-100 border border-slate-200 opacity-60 scale-[0.98] translate-y-3.5 pointer-events-none transition-all duration-300 shadow-xs"
                       aria-hidden="true"
                     />
                   )}
@@ -228,7 +221,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </div>
 
                 {/* Demo Action Buttons */}
-                <div className="w-full max-w-md">
+                <div className="w-full max-w-4xl mt-3">
                   <ActionControls
                     onAction={onSwipe}
                     onEditPitch={() => onOpenPitchEditor(activeDemoLead)}
@@ -241,12 +234,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="w-full max-w-md h-[460px] rounded-2xl glass-card flex flex-col items-center justify-center p-8 text-center border border-white/10">
-                <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mb-4 shadow-glow-emerald">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+              <div className="w-full max-w-md h-[420px] rounded-2xl bg-slate-50 flex flex-col items-center justify-center p-8 text-center border border-slate-200 shadow-xs">
+                <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mb-4 text-emerald-600">
+                  <CheckCircle2 className="w-8 h-8" />
                 </div>
-                <h3 className="text-xl font-bold text-white font-display mb-2">Demo Batch Cleared!</h3>
-                <p className="text-xs text-slate-400 mb-6 max-w-xs leading-relaxed">
+                <h3 className="text-xl font-bold text-slate-900 font-display mb-2">Demo Batch Cleared!</h3>
+                <p className="text-xs text-slate-600 mb-6 max-w-xs leading-relaxed">
                   You just experienced the triage velocity. In production, TwinFlow streams continuous new signals
                   matching your targeting profile directly into your deck.
                 </p>
@@ -254,17 +247,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   <button
                     type="button"
                     onClick={onReset}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 text-xs font-semibold transition-all active:scale-95"
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold transition-all active:scale-95 shadow-2xs"
                   >
-                    <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
                     <span>Reset Demo Cards</span>
                   </button>
                   <button
                     type="button"
                     onClick={onLaunchDeck}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500 text-white text-xs font-bold shadow-glow-brand transition-all active:scale-95"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
                   >
-                    <Zap className="w-3.5 h-3.5 text-emerald-200" />
+                    <Zap className="w-3.5 h-3.5 text-white" />
                     <span>Open Full Workspace</span>
                   </button>
                 </div>
@@ -272,19 +265,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             )}
 
             {/* Quick Helper below demo */}
-            <div className="mt-6 flex items-center justify-between w-full max-w-md px-4 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-[11px] text-slate-400">
+            <div className="mt-6 flex items-center justify-between w-full max-w-4xl px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
               <span className="flex items-center gap-1.5">
-                <Flame className="w-3.5 h-3.5 text-amber-400" />
-                <span>Streak: <strong className="text-white">{stats.streak}</strong></span>
+                <Flame className="w-3.5 h-3.5 text-blue-600" />
+                <span>Reviewed: <strong className="text-slate-900">{stats.approvedCount + stats.passedCount}</strong></span>
               </span>
               <span className="flex items-center gap-1.5">
-                <Trophy className="w-3.5 h-3.5 text-purple-400" />
-                <span>Points: <strong className="text-white">{stats.totalPoints}</strong></span>
+                <Trophy className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Approved: <strong className="text-slate-900">{stats.approvedCount}</strong></span>
               </span>
               <button
                 type="button"
                 onClick={onLaunchDeck}
-                className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors"
+                className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 transition-colors"
               >
                 <span>Launch Deck</span>
                 <ChevronRight className="w-3 h-3" />
@@ -296,12 +289,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* =========================================================================
             OLD WAY VS TWINFLOW COMPARISON
            ========================================================================= */}
-        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-white/10">
+        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-slate-200">
           <div className="text-center max-w-2xl mx-auto mb-12">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-display mb-3">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display mb-3">
               Why Cold Outbound is Broken — And How Catalysts Win
             </h2>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               Buying static contact lists produces sub-1% response rates. Reaching out right after a public
               catalyst creates urgent, welcome conversations.
             </p>
@@ -309,63 +302,66 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
             {/* The Old Way */}
-            <div className="p-6 rounded-2xl bg-rose-950/15 border border-rose-500/20 flex flex-col justify-between">
+            <div className="p-6 rounded-2xl bg-white border border-rose-200 flex flex-col justify-between shadow-xs">
               <div>
-                <div className="flex items-center gap-2 text-rose-400 font-bold text-sm uppercase tracking-wider mb-4">
+                <div className="flex items-center gap-2 text-rose-700 font-bold text-xs uppercase tracking-wider mb-4">
                   <span className="w-2 h-2 rounded-full bg-rose-500" />
                   <span>The Legacy Way (Static B2B Databases)</span>
                 </div>
-                <ul className="space-y-3.5 text-xs text-slate-300">
+                <ul className="space-y-3.5 text-xs text-slate-700">
                   <li className="flex items-start gap-2.5">
-                    <span className="text-rose-400 font-bold">✕</span>
+                    <span className="text-rose-500 font-bold">✕</span>
                     <span><strong>Stale data:</strong> Contacts who left companies 6-12 months ago.</span>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <span className="text-rose-400 font-bold">✕</span>
+                    <span className="text-rose-500 font-bold">✕</span>
                     <span><strong>Generic spray & pray:</strong> "Hope you're having a good week" templates that hit spam folders.</span>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <span className="text-rose-400 font-bold">✕</span>
+                    <span className="text-rose-500 font-bold">✕</span>
                     <span><strong>Zero timing:</strong> Reaching out with no trigger or reason why they should buy right now.</span>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <span className="text-rose-400 font-bold">✕</span>
+                    <span className="text-rose-500 font-bold">✕</span>
                     <span><strong>Manual CRM entry:</strong> Tedious copy-pasting across browser tabs and CSV spreadsheets.</span>
                   </li>
                 </ul>
               </div>
-              <div className="mt-6 pt-4 border-t border-rose-500/20 text-[11px] text-rose-300 font-medium">
+              <div className="mt-6 pt-4 border-t border-rose-100 text-[11px] text-rose-700 font-medium">
                 Average reply rate: <strong>0.5% - 1.2%</strong>
               </div>
             </div>
 
             {/* The TwinFlow Way */}
-            <div className="p-6 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 flex flex-col justify-between shadow-glow-emerald">
+            <div className="p-6 rounded-2xl bg-white border-2 border-blue-600 flex flex-col justify-between shadow-md relative">
+              <div className="absolute top-0 right-0 px-2.5 py-0.5 bg-blue-600 text-[10px] font-bold text-white uppercase rounded-bl">
+                Recommended
+              </div>
               <div>
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm uppercase tracking-wider mb-4">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <div className="flex items-center gap-2 text-blue-700 font-bold text-xs uppercase tracking-wider mb-4">
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
                   <span>The TwinFlow Way (Live Catalyst Engine)</span>
                 </div>
-                <ul className="space-y-3.5 text-xs text-slate-200">
+                <ul className="space-y-3.5 text-xs text-slate-800">
                   <li className="flex items-start gap-2.5">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                     <span><strong>Real-time breaking triggers:</strong> Commercial expansions, office relocations, hiring surges, and funding events.</span>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                     <span><strong>Context-tailored pitches:</strong> High-converting drafts referencing the exact catalyst and executive milestone.</span>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                     <span><strong>Verified key executives:</strong> Direct emails and LinkedIn URLs auto-discovered for immediate outreach.</span>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                     <span><strong>1-swipe CRM synchronization:</strong> Seamlessly transfers contacts, notes, and custom fields to your CRM.</span>
                   </li>
                 </ul>
               </div>
-              <div className="mt-6 pt-4 border-t border-emerald-500/30 text-[11px] text-emerald-300 font-medium">
+              <div className="mt-6 pt-4 border-t border-slate-100 text-[11px] text-blue-700 font-medium">
                 Average reply rate: <strong>14% - 28%</strong> (10x lift on trigger-based outreach)
               </div>
             </div>
@@ -375,71 +371,68 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* =========================================================================
             HOW IT WORKS (3-STEP PIPELINE)
            ========================================================================= */}
-        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-white/10">
+        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-slate-200 bg-white">
           <div className="text-center max-w-2xl mx-auto mb-12">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-bold mb-3">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mb-3">
               <Layers className="w-3.5 h-3.5" />
               <span>Three-Step Workflow</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-display mb-3">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display mb-3">
               How TwinFlow Works
             </h2>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               From fresh news trigger to scheduled outbound in your CRM within 60 seconds.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {/* Step 1 */}
-            <div className="p-6 rounded-2xl glass-card border border-white/10 relative overflow-hidden flex flex-col justify-between">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/10 rounded-full blur-xl pointer-events-none" />
+            <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 flex items-center justify-center font-bold text-sm mb-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-bold text-sm mb-4">
                   01
                 </div>
-                <h3 className="text-base font-bold text-white mb-2 font-display">Define Your Radar</h3>
-                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                <h3 className="text-base font-bold text-slate-900 mb-2 font-display">Define Your Radar</h3>
+                <p className="text-xs text-slate-600 leading-relaxed mb-4">
                   Select your target industries (Healthcare, Construction, SaaS, Manufacturing, etc.)
                   and specify your geographic target — local metro, state, or nationwide.
                 </p>
               </div>
-              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 text-[11px] text-cyan-300 font-mono">
+              <div className="p-3 rounded-xl bg-white border border-slate-200 text-[11px] text-blue-700 font-mono">
                 AI crafts calibrated 3-6 word semantic news queries.
               </div>
             </div>
 
             {/* Step 2 */}
-            <div className="p-6 rounded-2xl glass-card border border-white/10 relative overflow-hidden flex flex-col justify-between">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl pointer-events-none" />
+            <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 flex items-center justify-center font-bold text-sm mb-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-bold text-sm mb-4">
                   02
                 </div>
-                <h3 className="text-base font-bold text-white mb-2 font-display">Autonomous AI Scouting</h3>
-                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                <h3 className="text-base font-bold text-slate-900 mb-2 font-display">Autonomous AI Scouting</h3>
+                <p className="text-xs text-slate-600 leading-relaxed mb-4">
                   Our pipeline crawls local business journals and news outlets, extracts the company milestone,
                   finds the verified decision-maker, and drafts a customized outreach pitch.
                 </p>
               </div>
-              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 text-[11px] text-indigo-300 font-mono">
+              <div className="p-3 rounded-xl bg-white border border-slate-200 text-[11px] text-blue-700 font-mono">
                 Verified email, LinkedIn & bullet point dossier ready.
               </div>
             </div>
 
             {/* Step 3 */}
-            <div className="p-6 rounded-2xl glass-card border border-white/10 relative overflow-hidden flex flex-col justify-between">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-xl pointer-events-none" />
+            <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center font-bold text-sm mb-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-bold text-sm mb-4">
                   03
                 </div>
-                <h3 className="text-base font-bold text-white mb-2 font-display">Swipe, Branch & Sync</h3>
-                <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                  Triage cards in the gamified deck. Swipe right to automatically push the contact and pitch into
+                <h3 className="text-base font-bold text-slate-900 mb-2 font-display">Review, Branch & Sync</h3>
+                <p className="text-xs text-slate-600 leading-relaxed mb-4">
+                  Review cards in the executive deck. Swipe right or click approve to automatically push the contact and pitch into
                   your CRM pipeline. One-click Branch Out exposes sister executives & market rivals.
                 </p>
               </div>
-              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 text-[11px] text-emerald-300 font-mono">
+              <div className="p-3 rounded-xl bg-white border border-slate-200 text-[11px] text-emerald-700 font-mono">
                 100% automated CRM sync with custom tags.
               </div>
             </div>
@@ -449,80 +442,80 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* =========================================================================
             FEATURE PILLARS GRID
            ========================================================================= */}
-        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-white/10">
+        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-slate-200">
           <div className="text-center max-w-2xl mx-auto mb-12">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-display mb-3">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display mb-3">
               Engineered for Modern Revenue Teams
             </h2>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               Everything you need to turn raw public intelligence into warm, inbound-like sales conversations.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-5xl mx-auto">
             {/* Feature 1 */}
-            <div className="p-5 rounded-2xl glass-card border border-white/5 hover:border-indigo-500/30 transition-all group">
-              <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-blue-400 transition-all group">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
                 <Radio className="w-5 h-5" />
               </div>
-              <h3 className="text-sm font-bold text-white mb-1.5 font-display">Hyper-Local Market Radar</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <h3 className="text-sm font-bold text-slate-900 mb-1.5 font-display">Hyper-Local Market Radar</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
                 Filter news signals down to specific cities, metropolitan areas, or regional economic zones.
               </p>
             </div>
 
             {/* Feature 2 */}
-            <div className="p-5 rounded-2xl glass-card border border-white/5 hover:border-purple-500/30 transition-all group">
-              <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-blue-400 transition-all group">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
                 <Sparkles className="w-5 h-5" />
               </div>
-              <h3 className="text-sm font-bold text-white mb-1.5 font-display">Bespoke Outbound Copy</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <h3 className="text-sm font-bold text-slate-900 mb-1.5 font-display">Bespoke Outbound Copy</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
                 AI produces contextual cold emails that cite the exact news event, reading like 30 minutes of human research.
               </p>
             </div>
 
             {/* Feature 3 */}
-            <div className="p-5 rounded-2xl glass-card border border-white/5 hover:border-cyan-500/30 transition-all group">
-              <div className="w-9 h-9 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-blue-400 transition-all group">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
                 <ShieldCheck className="w-5 h-5" />
               </div>
-              <h3 className="text-sm font-bold text-white mb-1.5 font-display">Verified Contact Enrichment</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <h3 className="text-sm font-bold text-slate-900 mb-1.5 font-display">Verified Contact Enrichment</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
                 Auto-enriches decision-maker names, titles, direct emails, and LinkedIn links to ensure zero bounce rates.
               </p>
             </div>
 
             {/* Feature 4 */}
-            <div className="p-5 rounded-2xl glass-card border border-white/5 hover:border-emerald-500/30 transition-all group">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-blue-400 transition-all group">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
                 <Database className="w-5 h-5" />
               </div>
-              <h3 className="text-sm font-bold text-white mb-1.5 font-display">Dedicated CRM Workspaces</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <h3 className="text-sm font-bold text-slate-900 mb-1.5 font-display">Dedicated CRM Workspaces</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
                 Connect your CRM private token to push contacts, dossiers, and generated pitches directly into your pipelines.
               </p>
             </div>
 
             {/* Feature 5 */}
-            <div className="p-5 rounded-2xl glass-card border border-white/5 hover:border-amber-500/30 transition-all group">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-blue-400 transition-all group">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
                 <Network className="w-5 h-5" />
               </div>
-              <h3 className="text-sm font-bold text-white mb-1.5 font-display">Branch Out Knowledge Graph</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <h3 className="text-sm font-bold text-slate-900 mb-1.5 font-display">Branch Out Knowledge Graph</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
                 Instantly discover peer competitors or additional internal stakeholders with one click from any card.
               </p>
             </div>
 
             {/* Feature 6 */}
-            <div className="p-5 rounded-2xl glass-card border border-white/5 hover:border-rose-500/30 transition-all group">
-              <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-blue-400 transition-all group">
+              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-3">
                 <Flame className="w-5 h-5" />
               </div>
-              <h3 className="text-sm font-bold text-white mb-1.5 font-display">Gamified Flow State</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Combos, streaks, XP milestones, and satisfying tactile audio transform lead triage into a high-energy routine.
+              <h3 className="text-sm font-bold text-slate-900 mb-1.5 font-display">High-Velocity Workflow</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Streamlined gestures, tactile shortcuts, and responsive triage turn account review into an executive routine.
               </p>
             </div>
           </div>
@@ -531,12 +524,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* =========================================================================
             TARGET SECTORS SHOWCASE
            ========================================================================= */}
-        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-white/10">
+        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-slate-200 bg-white">
           <div className="text-center max-w-2xl mx-auto mb-10">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-display mb-3">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display mb-3">
               Broad Industry & Localized Coverage
             </h2>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               TwinFlow works for any business hunting for local or national growth signals.
             </p>
           </div>
@@ -558,7 +551,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             ].map((sector) => (
               <span
                 key={sector}
-                className="px-3.5 py-1.5 rounded-full bg-white/[0.03] border border-white/10 text-xs text-slate-300 font-medium hover:bg-white/[0.08] hover:border-cyan-400/40 hover:text-white transition-all cursor-default"
+                className="px-3.5 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-xs text-slate-700 font-medium hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-all cursor-default"
               >
                 {sector}
               </span>
@@ -569,45 +562,45 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* =========================================================================
             PRICING / CREDITS SECTION
            ========================================================================= */}
-        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-white/10">
+        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-slate-200">
           <div className="text-center max-w-2xl mx-auto mb-12">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold mb-3">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mb-3">
               <DollarSign className="w-3.5 h-3.5" />
               <span>Transparent Credit Pricing</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-display mb-3">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display mb-3">
               Pay Only When You Find Signal
             </h2>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               Start with 500 free credits upon registration. Only 10 credits per approved lead pushed to CRM.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto items-stretch">
             {/* Starter Plan */}
-            <div className="p-6 rounded-2xl glass-card border border-white/10 flex flex-col justify-between">
+            <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
               <div>
-                <h3 className="text-base font-bold text-white mb-1">Starter Tier</h3>
-                <p className="text-xs text-slate-400 mb-4">Ideal for individual SDRs or testing local signals.</p>
+                <h3 className="text-base font-bold text-slate-900 mb-1">Starter Tier</h3>
+                <p className="text-xs text-slate-500 mb-4">Ideal for individual SDRs or testing local signals.</p>
                 <div className="flex items-baseline gap-1 mb-6">
-                  <span className="text-3xl font-extrabold text-white font-display">$0</span>
-                  <span className="text-xs text-slate-400">/ free on signup</span>
+                  <span className="text-3xl font-extrabold text-slate-900 font-display">$0</span>
+                  <span className="text-xs text-slate-500">/ free on signup</span>
                 </div>
-                <ul className="space-y-2.5 text-xs text-slate-300">
+                <ul className="space-y-2.5 text-xs text-slate-700">
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>500 Starter Credits included</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>Live AI news scouting</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>Direct CRM subaccount sync</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>Verified decision-maker dossiers</span>
                   </li>
                 </ul>
@@ -615,39 +608,39 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button
                 type="button"
                 onClick={() => onOpenAuth('signup')}
-                className="mt-6 w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white transition-all active:scale-95"
+                className="mt-6 w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold text-slate-700 transition-all active:scale-95"
               >
                 Claim 500 Credits Free
               </button>
             </div>
 
             {/* Growth Plan (Popular) */}
-            <div className="p-6 rounded-2xl glass-card border border-indigo-500/50 relative flex flex-col justify-between shadow-glow-brand">
-              <div className="absolute -top-3 right-6 px-3 py-0.5 rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 text-[10px] font-bold text-white uppercase tracking-wider shadow-sm">
+            <div className="p-6 rounded-2xl bg-white border-2 border-blue-600 relative flex flex-col justify-between shadow-md">
+              <div className="absolute -top-3 right-6 px-3 py-0.5 rounded-full bg-blue-600 text-[10px] font-bold text-white uppercase tracking-wider shadow-xs">
                 Most Popular
               </div>
               <div>
-                <h3 className="text-base font-bold text-white mb-1">Growth Operator</h3>
-                <p className="text-xs text-slate-400 mb-4">For active founders, agencies & outbound teams.</p>
+                <h3 className="text-base font-bold text-slate-900 mb-1">Growth Operator</h3>
+                <p className="text-xs text-slate-500 mb-4">For active founders, agencies & outbound teams.</p>
                 <div className="flex items-baseline gap-1 mb-6">
-                  <span className="text-3xl font-extrabold text-white font-display">$49</span>
-                  <span className="text-xs text-slate-400">/ month</span>
+                  <span className="text-3xl font-extrabold text-slate-900 font-display">$49</span>
+                  <span className="text-xs text-slate-500">/ month</span>
                 </div>
-                <ul className="space-y-2.5 text-xs text-slate-200">
+                <ul className="space-y-2.5 text-xs text-slate-800">
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span><strong>2,500 Credits</strong> per month</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>Continuous automated background radar</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>Unlimited Branch Out competitor graphs</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>Custom CRM pipeline routing</span>
                   </li>
                 </ul>
@@ -655,36 +648,36 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button
                 type="button"
                 onClick={onOpenUpgrade}
-                className="mt-6 w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500 hover:from-indigo-500 hover:to-emerald-400 text-xs font-bold text-white shadow-glow-brand transition-all active:scale-95"
+                className="mt-6 w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-xs font-semibold text-white shadow-xs transition-all active:scale-95"
               >
                 Upgrade to Growth
               </button>
             </div>
 
             {/* Agency / Enterprise */}
-            <div className="p-6 rounded-2xl glass-card border border-white/10 flex flex-col justify-between">
+            <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
               <div>
-                <h3 className="text-base font-bold text-white mb-1">Agency Scale</h3>
-                <p className="text-xs text-slate-400 mb-4">Multi-client subaccount routing and custom webhooks.</p>
+                <h3 className="text-base font-bold text-slate-900 mb-1">Agency Scale</h3>
+                <p className="text-xs text-slate-500 mb-4">Multi-client subaccount routing and custom webhooks.</p>
                 <div className="flex items-baseline gap-1 mb-6">
-                  <span className="text-3xl font-extrabold text-white font-display">$149</span>
-                  <span className="text-xs text-slate-400">/ month</span>
+                  <span className="text-3xl font-extrabold text-slate-900 font-display">$149</span>
+                  <span className="text-xs text-slate-500">/ month</span>
                 </div>
-                <ul className="space-y-2.5 text-xs text-slate-300">
+                <ul className="space-y-2.5 text-xs text-slate-700">
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span><strong>10,000 Credits</strong> per month</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>Multi-subaccount CRM routing</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>Dedicated priority intelligence feeds</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-4 h-4 text-emerald-600" />
                     <span>Team seats & shared signal decks</span>
                   </li>
                 </ul>
@@ -692,7 +685,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button
                 type="button"
                 onClick={onOpenUpgrade}
-                className="mt-6 w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white transition-all active:scale-95"
+                className="mt-6 w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold text-slate-700 transition-all active:scale-95"
               >
                 Upgrade to Agency
               </button>
@@ -703,12 +696,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* =========================================================================
             FAQ ACCORDION
            ========================================================================= */}
-        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-white/10">
+        <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-slate-200 bg-white">
           <div className="text-center max-w-2xl mx-auto mb-10">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-display mb-3">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-display mb-3">
               Frequently Asked Questions
             </h2>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               Clear answers to how TwinFlow fits into your outbound sales workflow.
             </p>
           </div>
@@ -742,22 +735,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             ].map((faq, idx) => (
               <div
                 key={idx}
-                className="rounded-xl glass-card border border-white/5 overflow-hidden transition-colors"
+                className="rounded-xl bg-slate-50 border border-slate-200 overflow-hidden transition-colors"
               >
                 <button
                   type="button"
                   onClick={() => toggleFaq(idx)}
-                  className="w-full p-4 text-left flex items-center justify-between gap-4 hover:bg-white/[0.02]"
+                  className="w-full p-4 text-left flex items-center justify-between gap-4 hover:bg-slate-100/70"
                 >
-                  <span className="text-sm font-semibold text-white">{faq.q}</span>
+                  <span className="text-sm font-semibold text-slate-900">{faq.q}</span>
                   <ChevronDown
-                    className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
-                      activeFaq === idx ? 'rotate-180 text-cyan-400' : ''
+                    className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${
+                      activeFaq === idx ? 'rotate-180 text-blue-600' : ''
                     }`}
                   />
                 </button>
                 {activeFaq === idx && (
-                  <div className="p-4 pt-0 text-xs text-slate-400 leading-relaxed border-t border-white/5 bg-white/[0.01]">
+                  <div className="p-4 pt-0 text-xs text-slate-600 leading-relaxed border-t border-slate-200/50 bg-white">
                     {faq.a}
                   </div>
                 )}
@@ -769,14 +762,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* =========================================================================
             BOTTOM CALL TO ACTION
            ========================================================================= */}
-        <section className="py-20 px-4 sm:px-6 max-w-7xl mx-auto w-full text-center border-t border-white/10">
-          <div className="max-w-3xl mx-auto p-8 sm:p-12 rounded-3xl bg-gradient-to-b from-indigo-950/40 via-purple-950/30 to-[#0B0F17] border border-indigo-500/30 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-[-50%] left-[20%] w-[400px] h-[400px] rounded-full bg-indigo-500/20 blur-3xl pointer-events-none" />
-
+        <section className="py-20 px-4 sm:px-6 max-w-7xl mx-auto w-full text-center border-t border-slate-200">
+          <div className="max-w-3xl mx-auto p-8 sm:p-12 rounded-3xl bg-blue-600 text-white shadow-xl relative overflow-hidden">
             <h2 className="text-2xl sm:text-4xl font-extrabold text-white font-display mb-4">
               Ready to Accelerate Your Outbound Pipeline?
             </h2>
-            <p className="text-sm text-slate-300 max-w-xl mx-auto mb-8 leading-relaxed">
+            <p className="text-sm text-blue-100 max-w-xl mx-auto mb-8 leading-relaxed">
               Join founders, SDRs, and agencies using real-time market catalysts to book more meetings with less effort.
             </p>
 
@@ -784,18 +775,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button
                 type="button"
                 onClick={() => onOpenAuth('signup')}
-                className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-500 hover:from-indigo-500 hover:to-emerald-400 text-white font-bold text-sm shadow-glow-brand transition-all active:scale-95 flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-white hover:bg-slate-50 text-blue-700 font-bold text-sm shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2"
               >
-                <Sparkles className="w-4 h-4 text-amber-300" />
+                <Sparkles className="w-4 h-4 text-blue-600" />
                 <span>Create Free Account (+500 Credits)</span>
               </button>
 
               <button
                 type="button"
                 onClick={onLaunchDeck}
-                className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 hover:text-white font-semibold text-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-blue-700 hover:bg-blue-800 border border-blue-500 text-white font-semibold text-sm transition-all active:scale-95 flex items-center justify-center gap-2"
               >
-                <Zap className="w-4 h-4 text-emerald-400" />
+                <Zap className="w-4 h-4 text-white" />
                 <span>Launch Lead Deck</span>
               </button>
             </div>
@@ -805,15 +796,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         {/* =========================================================================
             FOOTER
            ========================================================================= */}
-        <footer className="py-8 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+        <footer className="py-8 px-4 sm:px-6 max-w-7xl mx-auto w-full border-t border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-indigo-600 to-emerald-400 p-[1px] flex items-center justify-center">
-              <div className="w-full h-full bg-[#0B0F17] rounded-[7px] flex items-center justify-center">
-                <Zap className="w-3.5 h-3.5 text-indigo-400" />
-              </div>
+            <div className="w-6 h-6 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+              <Zap className="w-3.5 h-3.5 fill-white" />
             </div>
-            <span className="font-bold text-white font-display">TwinFlow</span>
-            <span className="text-slate-600">•</span>
+            <span className="font-bold text-slate-900 font-display">Twin<span className="text-blue-600">Flow</span></span>
+            <span className="text-slate-300">•</span>
             <span>Autonomous Market Signal Intelligence & CRM Orchestration</span>
           </div>
 
@@ -821,14 +810,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <button
               type="button"
               onClick={onLaunchDeck}
-              className="hover:text-white transition-colors"
+              className="hover:text-slate-900 transition-colors"
             >
               Lead Deck
             </button>
             <button
               type="button"
               onClick={() => scrollToSection('demo-section')}
-              className="hover:text-white transition-colors"
+              className="hover:text-slate-900 transition-colors"
             >
               Live Demo
             </button>
@@ -836,7 +825,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button
                 type="button"
                 onClick={onOpenCrmSettings}
-                className="hover:text-white transition-colors"
+                className="hover:text-slate-900 transition-colors"
               >
                 CRM Setup
               </button>
@@ -844,7 +833,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <button
               type="button"
               onClick={() => onOpenAuth('login')}
-              className="hover:text-white transition-colors"
+              className="hover:text-slate-900 transition-colors"
             >
               Sign In
             </button>

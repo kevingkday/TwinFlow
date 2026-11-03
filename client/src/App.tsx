@@ -832,25 +832,25 @@ export const App: React.FC = () => {
   const activeLead = leads[0] || null;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0B0F17] text-slate-100 relative">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 relative">
       {/* Toast Notification */}
       {scoutToast && (
         <div className="fixed top-20 right-6 z-50 animate-bounce transition-all">
           <div
-            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border backdrop-blur-md shadow-2xl text-xs font-medium ${
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border shadow-lg text-xs font-medium ${
               scoutToast.type === 'success'
-                ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200 shadow-glow-emerald'
+                ? 'bg-white border-emerald-300 text-emerald-800'
                 : scoutToast.type === 'error'
-                ? 'bg-rose-950/90 border-rose-500/50 text-rose-200 shadow-glow-rose'
-                : 'bg-indigo-950/90 border-indigo-500/50 text-indigo-200'
+                ? 'bg-white border-rose-300 text-rose-800'
+                : 'bg-white border-blue-300 text-slate-800'
             }`}
           >
             {scoutToast.type === 'success' ? (
-              <Check className="w-4 h-4 text-emerald-400" />
+              <Check className="w-4 h-4 text-emerald-600" />
             ) : scoutToast.type === 'info' ? (
-              <Radio className="w-4 h-4 text-indigo-400 animate-spin" />
+              <Radio className="w-4 h-4 text-blue-600 animate-spin" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-rose-400" />
+              <AlertCircle className="w-4 h-4 text-rose-600" />
             )}
             <span>{scoutToast.message}</span>
           </div>
@@ -926,23 +926,23 @@ export const App: React.FC = () => {
           {/* Main Content Area */}
           <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col">
             {isLoading && (
-              <div className="flex items-center justify-center py-2 text-xs text-indigo-400 gap-2">
-                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
+              <div className="flex items-center justify-center py-2 text-xs text-slate-500 gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping"></span>
                 Syncing cards from Cloudflare D1 deck...
               </div>
             )}
 
             {stats.creditsRemaining < 10 && (
-              <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 text-amber-300">
-                  <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <div className="mb-4 p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-amber-900">
+                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                   <span>
                     <strong>Low Credit Balance:</strong> You have {stats.creditsRemaining} credits left (minimum 10 credits required per approved lead).
                   </span>
                 </div>
                 <button
                   onClick={() => setUpgradeModalOpen(true)}
-                  className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 font-semibold transition-all"
+                  className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold transition-all shadow-xs"
                 >
                   Top Up
                 </button>
@@ -984,7 +984,7 @@ export const App: React.FC = () => {
 
       {/* Mobile Drawer/Modal for Full Context Details */}
       {mobileDetailLead && (
-        <div className="fixed inset-0 z-50 md:hidden bg-black/85 backdrop-blur-md p-4 flex flex-col justify-end">
+        <div className="fixed inset-0 z-50 md:hidden bg-slate-900/60 backdrop-blur-xs p-4 flex flex-col justify-end">
           <div className="h-[85vh] w-full">
             <LeadDetailPane
               lead={mobileDetailLead}

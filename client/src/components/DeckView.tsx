@@ -38,38 +38,38 @@ export const DeckView: React.FC<DeckViewProps> = ({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-xl min-h-[460px] mx-auto rounded-2xl glass-card flex flex-col items-center justify-center p-8 sm:p-12 text-center border border-white/10"
+        className="w-full max-w-xl min-h-[460px] mx-auto rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col items-center justify-center p-8 sm:p-12 text-center text-slate-800"
       >
-        <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center mb-4">
-          <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+        <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mb-4">
+          <CheckCircle2 className="w-8 h-8 text-emerald-600" />
         </div>
-        <h3 className="text-xl font-bold text-white font-display mb-2">
+        <h3 className="text-xl font-bold text-slate-900 mb-2 font-sans">
           Queue Cleared!
         </h3>
-        <p className="text-sm text-slate-400 mb-6 max-w-sm">
-          All intelligence signals have been triaged. Your approved pitches are queued and synced to your CRM.
+        <p className="text-sm text-slate-600 mb-6 max-w-sm leading-relaxed">
+          All intelligence signals have been triaged. Approved pitches are saved and synchronized directly to your CRM.
         </p>
         <div className="flex flex-col sm:flex-row items-center gap-3">
           {onScoutNews && (
             <button
               onClick={onScoutNews}
               disabled={isScouting}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all active:scale-95 ${
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all active:scale-95 cursor-pointer ${
                 isScouting
-                  ? 'bg-indigo-900/40 text-indigo-300 border border-indigo-500/40 cursor-wait'
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200 cursor-wait'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
               }`}
             >
-              <Radio className={`w-4 h-4 ${isScouting ? 'animate-spin text-white' : 'animate-pulse text-indigo-200'}`} />
+              <Radio className={`w-4 h-4 ${isScouting ? 'animate-spin text-white' : 'text-blue-200'}`} />
               <span>{isScouting ? 'Scouting AI...' : 'Scout Live Signals'}</span>
               <Sparkles className="w-4 h-4 text-amber-300" />
             </button>
           )}
           <button
             onClick={onReset}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all active:scale-95"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+            <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
             <span>Reset Demo Batch</span>
           </button>
         </div>
@@ -82,7 +82,7 @@ export const DeckView: React.FC<DeckViewProps> = ({
       {/* 3rd Card in Stack (Visual depth) */}
       {thirdLead && (
         <div
-          className="absolute inset-0 w-full rounded-2xl bg-[#090E17] border border-white/5 opacity-40 scale-[0.98] translate-y-3 pointer-events-none transition-all duration-300"
+          className="absolute inset-0 w-full rounded-2xl bg-slate-100 border border-slate-200/80 opacity-60 scale-[0.98] translate-y-3 pointer-events-none transition-all duration-300 shadow-xs"
           aria-hidden="true"
         />
       )}
@@ -90,7 +90,7 @@ export const DeckView: React.FC<DeckViewProps> = ({
       {/* 2nd Card in Stack (Visual depth) */}
       {nextLead && (
         <div
-          className="absolute inset-0 w-full rounded-2xl bg-[#0E1522] border border-white/10 opacity-70 scale-[0.99] translate-y-1.5 pointer-events-none transition-all duration-300 shadow-xl"
+          className="absolute inset-0 w-full rounded-2xl bg-white border border-slate-200 opacity-90 scale-[0.99] translate-y-1.5 pointer-events-none transition-all duration-300 shadow-xs"
           aria-hidden="true"
         />
       )}
