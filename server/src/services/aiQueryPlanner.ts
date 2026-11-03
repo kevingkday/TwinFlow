@@ -12,6 +12,10 @@ export interface QueryPlannerInput {
   targetIndustries?: string[];
   targetTriggers?: string[];
   valueProp?: string;
+  companyDescription?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  website?: string;
 }
 
 export interface QueryPlanResult {
@@ -104,13 +108,17 @@ You must respond with valid JSON adhering to this schema:
       const userPrompt = `USER PROFILE & SEARCH MISSION:
 - Target Location / Geography: ${location || 'Nationwide US'}
 - User Intent: ${intent}
+- Company Description / Bio: ${input.companyDescription || 'Commercial business'}
+- Services Offered: ${input.servicesOffered && input.servicesOffered.length > 0 ? input.servicesOffered.join(', ') : 'Not specified'}
+- Products Offered: ${input.productsOffered && input.productsOffered.length > 0 ? input.productsOffered.join(', ') : 'Not specified'}
+- Website: ${input.website || 'Not specified'}
 - Free-form Description / What they do or seek:
 "${mission || valueProp || (industries.length > 0 ? `Targeting ${industries.join(', ')}` : 'B2B commercial growth')}"
 - Selected Industries: ${industries.length > 0 ? industries.join(', ') : 'Not specified'}
 - Selected Triggers: ${triggers.length > 0 ? triggers.join(', ') : 'Not specified'}
 - Core Value Proposition: ${valueProp || 'Commercial solutions provider'}
 
-Generate the structured JSON query plan using the Goldilocks rule.`;
+Generate the structured JSON query plan using the Goldilocks rule, ensuring the query targets buyer companies experiencing market triggers who need the specific services and products listed above.`;
 
       // Try flagship gpt-4o first
       let response = await fetch('https://api.openai.com/v1/chat/completions', {

@@ -27,6 +27,8 @@ import { BranchOutModal } from './components/BranchOutModal';
 import { AuthModal } from './components/AuthModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { LandingPage } from './components/LandingPage';
+import { ProfilePage } from './components/ProfilePage';
+import { MakeNewsModal } from './components/MakeNewsModal';
 import { playSound } from './utils/audio';
 import { authFetch } from './utils/api';
 import { Radio, Check, AlertCircle } from 'lucide-react';
@@ -136,6 +138,7 @@ export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isScouting, setIsScouting] = useState(false);
   const [scoutToast, setScoutToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [makeNewsModalOpen, setMakeNewsModalOpen] = useState(false);
 
   const [stats, setStats] = useState<SwipeStats>({
     approvedCount: 0,
@@ -147,18 +150,19 @@ export const App: React.FC = () => {
     branchCombo: 0,
   });
 
-  const [currentView, setCurrentView] = useState<'landing' | 'deck'>(() => {
-    if (typeof window !== 'undefined' && window.location.hash === '#deck') {
-      return 'deck';
+  const [currentView, setCurrentView] = useState<'landing' | 'deck' | 'profile'>(() => {
+    if (typeof window !== 'undefined') {
+      if (window.location.hash === '#deck') return 'deck';
+      if (window.location.hash === '#profile') return 'profile';
     }
     return 'landing';
   });
 
   const handleNavigate = useCallback(
-    (view: 'landing' | 'deck') => {
+    (view: 'landing' | 'deck' | 'profile') => {
       setCurrentView(view);
       if (typeof window !== 'undefined') {
-        window.location.hash = view === 'deck' ? '#deck' : '';
+        window.location.hash = view === 'deck' ? '#deck' : view === 'profile' ? '#profile' : '';
       }
     },
     []
@@ -172,6 +176,8 @@ export const App: React.FC = () => {
     const handleHash = () => {
       if (window.location.hash === '#deck') {
         setCurrentView('deck');
+      } else if (window.location.hash === '#profile') {
+        setCurrentView('profile');
       } else if (!window.location.hash || window.location.hash === '#home') {
         setCurrentView('landing');
       }
@@ -866,6 +872,7 @@ export const App: React.FC = () => {
         onOpenUpgrade={() => setUpgradeModalOpen(true)}
         onOpenGhlSettings={() => setGhlSettingsOpen(true)}
         onOpenAdmin={() => setAdminModalOpen(true)}
+        onOpenMakeNews={() => setMakeNewsModalOpen(true)}
         isGhlConnected={userProfile?.isGhlConnected}
         onScoutNews={handleScoutNews}
         isScouting={isScouting}
@@ -906,6 +913,18 @@ export const App: React.FC = () => {
           stats={stats}
           isCrmConnected={Boolean(userProfile?.hasCustomGhlKey || userProfile?.isGhlConnected)}
           onOpenCrmSettings={() => setGhlSettingsOpen(true)}
+        />
+      ) : currentView === 'profile' ? (
+        <ProfilePage
+          user={userProfile}
+          onProfileUpdated={(updated) => {
+            setUserProfile((prev) => (prev ? { ...prev, ...updated } : updated));
+            fetchCampaigns();
+            fetchUserProfile();
+          }}
+          onOpenCrmSettings={() => setGhlSettingsOpen(true)}
+          onOpenMakeNews={() => setMakeNewsModalOpen(true)}
+          onNavigateDeck={() => handleNavigate('deck')}
         />
       ) : (
         <>
@@ -1035,6 +1054,17 @@ export const App: React.FC = () => {
             streak: updated.streakCount,
             totalPoints: updated.totalPoints,
           }));
+        }}
+      />
+
+      {/* Make News & Multi-Channel Social Broadcast Modal */}
+      <MakeNewsModal
+        isOpen={makeNewsModalOpen}
+        onClose={() => setMakeNewsModalOpen(false)}
+        user={userProfile}
+        onNewsPublished={() => {
+          fetchDeck(undefined, activeCampaignId || undefined);
+          fetchUserProfile();
         }}
       />
 

@@ -12,6 +12,8 @@ import {
   ShieldCheck,
   Coins,
   Compass,
+  User,
+  Share2,
 } from 'lucide-react';
 import type { SwipeStats, UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
@@ -25,6 +27,7 @@ interface HeaderProps {
   onOpenUpgrade?: () => void;
   onOpenGhlSettings?: () => void;
   onOpenAdmin?: () => void;
+  onOpenMakeNews?: () => void;
   isGhlConnected?: boolean;
   isScouting?: boolean;
   serverOnline?: boolean;
@@ -32,8 +35,8 @@ interface HeaderProps {
   onOpenAuth?: (initialMode?: 'signup' | 'login') => void;
   onLogout?: () => void;
   onOpenOnboarding?: () => void;
-  currentView?: 'landing' | 'deck';
-  onNavigate?: (view: 'landing' | 'deck') => void;
+  currentView?: 'landing' | 'deck' | 'profile';
+  onNavigate?: (view: 'landing' | 'deck' | 'profile') => void;
   leadsCount?: number;
 }
 
@@ -46,6 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenUpgrade,
   onOpenGhlSettings,
   onOpenAdmin,
+  onOpenMakeNews,
   isGhlConnected = false,
   isScouting = false,
   user,
@@ -122,6 +126,18 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('profile')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  currentView === 'profile'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <User className="w-3.5 h-3.5 text-blue-600" />
+                <span>Profile</span>
+              </button>
               {user?.isAdmin && onOpenAdmin && (
                 <button
                   type="button"
@@ -139,6 +155,19 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Side: Primary Actions & User Profile */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Make News (Social Broadcast) Action */}
+          {onOpenMakeNews && (
+            <button
+              type="button"
+              onClick={onOpenMakeNews}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-200/80 bg-blue-50/70 hover:bg-blue-100/70 text-blue-700 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+              title="Make News & Broadcast to CRM Social Channels"
+            >
+              <Share2 className="w-3.5 h-3.5 text-blue-600" />
+              <span>Make News</span>
+            </button>
+          )}
+
           {/* Scout Signals Action */}
           <button
             onClick={onScoutNews}
@@ -239,6 +268,40 @@ export const Header: React.FC<HeaderProps> = ({
 
                   {/* Workspace & Settings Actions */}
                   <div className="space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        onNavigate?.('profile');
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors text-left cursor-pointer font-medium"
+                    >
+                      <div className="flex items-center gap-2">
+                        <User className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Profile & Offerings</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium">Edit</span>
+                    </button>
+
+                    {onOpenMakeNews && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          onOpenMakeNews();
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors text-left cursor-pointer font-medium"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Share2 className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Make News (Push Social)</span>
+                        </div>
+                        <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.2 rounded">
+                          Broadcast
+                        </span>
+                      </button>
+                    )}
+
                     {onOpenGhlSettings && (
                       <button
                         type="button"

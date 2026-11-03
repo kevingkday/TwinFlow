@@ -554,4 +554,215 @@ export async function createSubaccount(
   };
 }
 
+export interface GhlSocialAccount {
+  id: string;
+  name: string;
+  platform: 'linkedin' | 'facebook' | 'twitter' | 'instagram' | 'google' | 'tiktok' | 'youtube' | 'bluesky';
+  type?: 'profile' | 'page' | 'group' | 'location';
+  avatarUrl?: string;
+  connected: boolean;
+}
+
+export interface GhlSocialPostInput {
+  accountIds: string[];
+  summary: string;
+  media?: Array<{ url: string; type?: string }>;
+  scheduledAt?: string; // ISO date string if scheduling
+}
+
+export interface GhlSocialPostResult {
+  id: string;
+  success: boolean;
+  mock: boolean;
+  channelsCount: number;
+  message: string;
+  error?: string;
+}
+
+/**
+ * Retrieves connected social media accounts/channels for a location.
+ * Endpoint: GET https://services.leadconnectorhq.com/social-media-posting/:locationId/accounts
+ */
+export async function getSocialAccounts(
+  subaccountId: string,
+  apiKey?: string
+): Promise<{ success: boolean; accounts: GhlSocialAccount[]; mock: boolean; error?: string }> {
+  const cleanKey = (apiKey || '').trim();
+
+  if (cleanKey && !cleanKey.includes('your_') && cleanKey.length > 15) {
+    try {
+      const response = await fetch(`${GHL_API_BASE}/social-media-posting/${encodeURIComponent(subaccountId)}/accounts`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${cleanKey}`,
+          Version: GHL_API_VERSION,
+        },
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as {
+          accounts?: Array<{
+            id: string;
+            name: string;
+            platform: string;
+            avatar?: string;
+            type?: string;
+          }>;
+        };
+
+        const accounts: GhlSocialAccount[] = (data.accounts || []).map((acc) => ({
+          id: acc.id,
+          name: acc.name || 'Social Account',
+          platform: (acc.platform?.toLowerCase() || 'linkedin') as GhlSocialAccount['platform'],
+          type: (acc.type as GhlSocialAccount['type']) || 'page',
+          avatarUrl: acc.avatar,
+          connected: true,
+        }));
+
+        return {
+          success: true,
+          accounts,
+          mock: false,
+        };
+      } else {
+        const errText = await response.text();
+        console.warn(`[GHL Social Planner] Failed to fetch accounts (${response.status}):`, errText);
+      }
+    } catch (err: unknown) {
+      console.warn('[GHL Social Planner] Network error fetching accounts:', err);
+    }
+  }
+
+  // Realistic mock channels for testing & demonstration
+  return {
+    success: true,
+    mock: true,
+    accounts: [
+      {
+        id: 'acc_linkedin_company',
+        name: 'LinkedIn Company Page',
+        platform: 'linkedin',
+        type: 'page',
+        avatarUrl: 'https://cdn-icons-png.flaticon.com/512/174/174857.png',
+        connected: true,
+      },
+      {
+        id: 'acc_linkedin_personal',
+        name: 'LinkedIn Executive Profile',
+        platform: 'linkedin',
+        type: 'profile',
+        avatarUrl: 'https://cdn-icons-png.flaticon.com/512/174/174857.png',
+        connected: true,
+      },
+      {
+        id: 'acc_twitter_x',
+        name: 'X (formerly Twitter)',
+        platform: 'twitter',
+        type: 'profile',
+        avatarUrl: 'https://cdn-icons-png.flaticon.com/512/5969/5969020.png',
+        connected: true,
+      },
+      {
+        id: 'acc_facebook_biz',
+        name: 'Facebook Business Page',
+        platform: 'facebook',
+        type: 'page',
+        avatarUrl: 'https://cdn-icons-png.flaticon.com/512/733/733547.png',
+        connected: true,
+      },
+      {
+        id: 'acc_google_biz',
+        name: 'Google Business Profile',
+        platform: 'google',
+        type: 'location',
+        avatarUrl: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png',
+        connected: true,
+      },
+    ],
+  };
+}
+
+/**
+ * Creates and publishes a social media post across connected channels.
+ * Endpoint: POST https://services.leadconnectorhq.com/social-media-posting/:locationId/posts
+ */
+export async function publishSocialPost(
+  subaccountId: string,
+  postData: GhlSocialPostInput,
+  apiKey?: string
+): Promise<GhlSocialPostResult> {
+  const cleanKey = (apiKey || '').trim();
+
+  if (cleanKey && !cleanKey.includes('your_') && cleanKey.length > 15) {
+    try {
+      const payload: Record<string, unknown> = {
+        accountIds: postData.accountIds,
+        summary: postData.summary,
+        postType: 'post',
+      };
+
+      if (postData.media && postData.media.length > 0) {
+        payload.media = postData.media;
+      }
+
+      if (postData.scheduledAt) {
+        payload.scheduleDate = postData.scheduledAt;
+      }
+
+      const response = await fetch(`${GHL_API_BASE}/social-media-posting/${encodeURIComponent(subaccountId)}/posts`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${cleanKey}`,
+          Version: GHL_API_VERSION,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as { id?: string; postId?: string; message?: string };
+        const postId = data.id || data.postId || `post_${Date.now()}`;
+        return {
+          id: postId,
+          success: true,
+          mock: false,
+          channelsCount: postData.accountIds.length,
+          message: data.message || `Successfully pushed to ${postData.accountIds.length} social channel(s) via CRM!`,
+        };
+      } else {
+        const errText = await response.text();
+        console.warn(`[GHL Social Planner] Failed to publish post (${response.status}):`, errText);
+        return {
+          id: `post_err_${Date.now()}`,
+          success: false,
+          mock: false,
+          channelsCount: postData.accountIds.length,
+          message: `CRM Social Planner returned status ${response.status}`,
+          error: errText,
+        };
+      }
+    } catch (err: unknown) {
+      console.warn('[GHL Social Planner] Network error publishing post:', err);
+      return {
+        id: `post_err_${Date.now()}`,
+        success: false,
+        mock: false,
+        channelsCount: postData.accountIds.length,
+        message: 'Network error communicating with CRM Social Planner API',
+        error: String(err),
+      };
+    }
+  }
+
+  // Simulated publication response
+  const mockPostId = `post_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+  return {
+    id: mockPostId,
+    success: true,
+    mock: true,
+    channelsCount: postData.accountIds.length,
+    message: `[Simulated CRM Sync] Successfully pushed news announcement to ${postData.accountIds.length} social channels!`,
+  };
+}
+
 

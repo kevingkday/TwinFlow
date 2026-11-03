@@ -9,6 +9,7 @@ import { authRouter } from './routes/auth';
 import { onboardingRouter } from './routes/onboarding';
 import { adminRouter } from './routes/admin';
 import { campaignsRouter } from './routes/campaigns';
+import { socialRouter } from './routes/social';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -40,6 +41,9 @@ app.route('/api/user', userRouter);
 
 // Signals & Outbound Pipeline endpoint
 app.route('/api/signals', signalsRouter);
+
+// Social Media Posting & News Broadcast endpoints (/api/social/accounts, /api/social/publish, /api/social/ai-draft)
+app.route('/api/social', socialRouter);
 
 // Admin Management Console (/api/admin/stats, /api/admin/users)
 app.route('/api/admin', adminRouter);

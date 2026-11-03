@@ -28,6 +28,10 @@ export const users = sqliteTable('users', {
   userIntent: text('user_intent'), // 'sales_client_acquisition' | 'job_seeking' | 'subcontractor_partners' | 'investing' | 'general'
   userMission: text('user_mission'), // Free-form statement of what they sell or what opportunity they seek
   valueProp: text('value_prop'),
+  companyDescription: text('company_description'), // Detailed company / bio overview
+  servicesOffered: text('services_offered'), // JSON array string e.g. ["Subcontractor Bidding", "Roofing Inspections"]
+  productsOffered: text('products_offered'), // JSON array string e.g. ["Commercial Membranes", "Triage Software"]
+  website: text('website'), // Company website e.g. https://example.com
   onboardingCompleted: integer('onboarding_completed', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -50,6 +54,10 @@ export const campaigns = sqliteTable('campaigns', {
   targetTriggers: text('target_triggers'), // JSON array string
   targetRoles: text('target_roles'), // JSON array string
   valueProp: text('value_prop'),
+  companyDescription: text('company_description'),
+  servicesOffered: text('services_offered'),
+  productsOffered: text('products_offered'),
+  website: text('website'),
   icpQuery: text('icp_query'),
   isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
   status: text('status', { enum: ['active', 'archived'] }).notNull().default('active'),

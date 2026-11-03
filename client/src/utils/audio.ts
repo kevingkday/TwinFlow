@@ -16,14 +16,14 @@ function getAudioContext(): AudioContext | null {
   return audioCtx;
 }
 
-export const playSound = (type: 'approve' | 'pass' | 'undo' | 'streak'): void => {
+export const playSound = (type: 'approve' | 'pass' | 'undo' | 'streak' | 'success' | 'error'): void => {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
 
     const now = ctx.currentTime;
 
-    if (type === 'approve') {
+    if (type === 'approve' || type === 'success') {
       // Upbeat cheerful chord (success)
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();

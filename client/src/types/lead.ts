@@ -196,10 +196,14 @@ export interface UserProfile {
   targetLocation?: string | null;
   userIntent?: string | null;
   userMission?: string | null;
+  valueProp?: string | null;
+  companyDescription?: string | null;
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  website?: string | null;
   targetIndustries?: string[];
   targetTriggers?: string[];
   targetRoles?: string[];
-  valueProp?: string | null;
 }
 
 export interface AuthResponse {
@@ -232,5 +236,22 @@ export interface GhlSubaccountOption {
   email?: string;
   timezone?: string;
   country?: string;
+}
+
+export interface SocialAccount {
+  id: string;
+  name: string;
+  platform: 'linkedin' | 'facebook' | 'twitter' | 'instagram' | 'google' | 'tiktok' | 'youtube' | 'bluesky';
+  type?: 'profile' | 'page' | 'group' | 'location';
+  avatarUrl?: string;
+  connected: boolean;
+}
+
+export interface SocialAiDraft {
+  headline: string;
+  summary: string;
+  linkedinPost?: string;
+  twitterPost?: string;
+  facebookPost?: string;
 }
 
