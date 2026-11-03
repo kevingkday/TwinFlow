@@ -19,7 +19,10 @@ export async function findApolloContact(
   apiKey?: string
 ): Promise<ApolloContactResult> {
   const cleanKey = (apiKey || '').trim();
-  const nameParts = name.trim().split(/\s+/);
+  
+  // Clean honorifics / titles from name so search and fallback email are clean
+  const cleanFullName = name.replace(/^(dr|mr|mrs|ms|prof|hon)\.?\s+/i, '').trim() || name.trim();
+  const nameParts = cleanFullName.split(/\s+/);
   const firstName = nameParts[0] || 'Executive';
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
   const cleanDomain = companyDomain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim();
@@ -81,16 +84,14 @@ export async function findApolloContact(
     }
   }
 
-  // Graceful fallback: construct standard corporate email and clean LinkedIn URL
-  const emailUser = lastName
-    ? `${firstName.toLowerCase()}.${lastName.toLowerCase().replace(/[^a-z]/g, '')}`
-    : firstName.toLowerCase();
+  // Graceful fallback: construct clean standard corporate email and LinkedIn URL
+  const cleanFirst = firstName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'executive';
+  const cleanLast = lastName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const emailUser = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
 
   const domainBase = cleanDomain || 'enterprise.io';
   const fallbackEmail = `${emailUser}@${domainBase}`;
-  const slug = lastName
-    ? `${firstName.toLowerCase()}-${lastName.toLowerCase().replace(/[^a-z]/g, '')}`
-    : firstName.toLowerCase();
+  const slug = cleanLast ? `${cleanFirst}-${cleanLast}` : cleanFirst;
 
   return {
     email: fallbackEmail,

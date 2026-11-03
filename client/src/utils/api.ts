@@ -31,3 +31,4 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     headers,
   });
 }
+

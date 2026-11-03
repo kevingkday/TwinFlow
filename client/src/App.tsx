@@ -636,6 +636,17 @@ export const App: React.FC = () => {
               type: 'error',
             });
             setUpgradeModalOpen(true);
+          } else if (errData.crmNotConnected) {
+            setScoutToast({
+              message: 'CRM integration required before approving leads.',
+              type: 'error',
+            });
+            setGhlSettingsOpen(true);
+          } else {
+            setScoutToast({
+              message: errData.error || 'Failed to sync lead to CRM.',
+              type: 'error',
+            });
           }
         }
       } catch (err) {

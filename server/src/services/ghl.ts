@@ -42,6 +42,25 @@ const GHL_API_BASE = 'https://services.leadconnectorhq.com';
 const GHL_API_VERSION = '2021-07-28';
 
 /**
+ * Validates and cleans email addresses for GoHighLevel compatibility.
+ * Removes double dots, trims whitespace, and ensures RFC 5322 compliance.
+ * If invalid, returns undefined to avoid GHL rejecting the entire contact with 422.
+ */
+export function sanitizeGhlEmail(email?: string | null): string | undefined {
+  if (!email) return undefined;
+  let clean = email.trim().toLowerCase();
+  clean = clean.replace(/\.{2,}/g, '.');
+  const [local, domain] = clean.split('@');
+  if (!local || !domain) return undefined;
+  const fixedLocal = local.replace(/^\.+|\.+$/g, '');
+  const fixedDomain = domain.replace(/^\.+|\.+$/g, '');
+  const fixed = `${fixedLocal}@${fixedDomain}`;
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(fixed)) return undefined;
+  return fixed;
+}
+
+/**
  * Creates or updates a contact in GoHighLevel (API v2)
  */
 export async function upsertContact(
@@ -54,15 +73,30 @@ export async function upsertContact(
   // Live GHL API execution
   if (cleanKey && !cleanKey.includes('your_') && cleanKey.length > 10) {
     try {
+      // Clean honorific prefixes from firstName if present
+      let fName = contactData.firstName.trim();
+      let lName = contactData.lastName.trim();
+      const honorificMatch = fName.match(/^(dr|mr|mrs|ms|prof|hon)\.?\s*(.*)$/i);
+      if (honorificMatch) {
+        if (honorificMatch[2]) {
+          fName = honorificMatch[2].trim();
+        } else if (lName) {
+          const lParts = lName.split(/\s+/);
+          fName = lParts[0];
+          lName = lParts.slice(1).join(' ');
+        }
+      }
+
       const payload: Record<string, unknown> = {
         locationId: subaccountId,
-        firstName: contactData.firstName,
-        lastName: contactData.lastName,
-        name: `${contactData.firstName} ${contactData.lastName}`.trim(),
+        firstName: fName || 'Executive',
+        lastName: lName || '',
+        name: `${fName} ${lName}`.trim(),
         tags: contactData.tags || ['twinflow-signal', 'ai-scouted'],
       };
 
-      if (contactData.email) payload.email = contactData.email;
+      const validEmail = sanitizeGhlEmail(contactData.email);
+      if (validEmail) payload.email = validEmail;
       if (contactData.companyName) payload.companyName = contactData.companyName;
       if (contactData.phone) payload.phone = contactData.phone;
 
@@ -107,10 +141,24 @@ export async function upsertContact(
         };
       } else {
         const errText = await response.text();
-        console.warn(`[GHL Live] Contact upsert error (${response.status}):`, errText);
+        console.error(`[GHL Live] Contact upsert error (${response.status}):`, errText);
+        return {
+          id: '',
+          isNew: false,
+          success: false,
+          mock: false,
+          error: `CRM Error (${response.status}): ${errText}`,
+        };
       }
     } catch (err) {
-      console.warn('[GHL Live] Network error calling GHL upsert:', err);
+      console.error('[GHL Live] Network error calling GHL upsert:', err);
+      return {
+        id: '',
+        isNew: false,
+        success: false,
+        mock: false,
+        error: `CRM Network Error: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   }
 
@@ -167,10 +215,22 @@ export async function createNote(
         };
       } else {
         const errText = await response.text();
-        console.warn(`[GHL Live] Note creation error (${response.status}):`, errText);
+        console.error(`[GHL Live] Note creation error (${response.status}):`, errText);
+        return {
+          id: '',
+          success: false,
+          mock: false,
+          error: `CRM Note Error (${response.status}): ${errText}`,
+        };
       }
     } catch (err) {
-      console.warn('[GHL Live] Network error creating GHL note:', err);
+      console.error('[GHL Live] Network error creating GHL note:', err);
+      return {
+        id: '',
+        success: false,
+        mock: false,
+        error: `CRM Note Network Error: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   }
 

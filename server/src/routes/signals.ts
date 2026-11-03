@@ -680,6 +680,22 @@ signalsRouter.post('/:id/action', async (c) => {
         userGhlKey
       );
 
+      if (!ghlContact.success) {
+        return c.json(
+          {
+            success: false,
+            error: ghlContact.error || 'Failed to sync lead to CRM.',
+            user: {
+              id: currentUser.id,
+              creditBalance: currentUser.creditBalance,
+              streakCount: currentUser.streakCount,
+              totalPoints: currentUser.totalPoints,
+            },
+          },
+          400
+        );
+      }
+
       // Format comprehensive intelligence note for GHL
       let bulletsFormatted = '';
       try {
