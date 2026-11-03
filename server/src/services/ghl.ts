@@ -765,4 +765,307 @@ export async function publishSocialPost(
   };
 }
 
+export interface GhlLocationProfileSyncInput {
+  name?: string;
+  legalBusinessName?: string;
+  organization?: string;
+  website?: string;
+  email?: string;
+  phone?: string;
+  streetAddress?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postalCode?: string;
+  timezone?: string;
+  companyDescription?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  valueProp?: string;
+  targetLocation?: string;
+  targetRoles?: string[];
+  userMission?: string;
+}
+
+export interface GhlSyncProfileResult {
+  success: boolean;
+  mock: boolean;
+  locationUpdated: boolean;
+  customValuesCount: number;
+  tagsCount: number;
+  message: string;
+  locationError?: string;
+  details: {
+    location?: Record<string, unknown>;
+    customValues: Array<{ name: string; status: 'created' | 'updated' | 'skipped' | 'error' }>;
+    tags: Array<{ name: string; status: 'created' | 'exists' | 'error' }>;
+  };
+}
+
+/**
+ * Synchronizes TwinFlow Operator Profile with GoHighLevel:
+ * 1. Location / Business Profile (Friendly name, Legal name, Website, Email, Phone, Address) via PUT /locations/:id
+ * 2. Global Custom Values (Company description, Services, Products, Value Prop, Mission) via POST/PUT /locations/:id/customValues
+ * 3. Location Tags (Services, Products) via POST /locations/:id/tags
+ */
+export async function syncGhlBusinessProfileAndValues(
+  subaccountId: string,
+  data: GhlLocationProfileSyncInput,
+  apiKey?: string,
+  companyId?: string
+): Promise<GhlSyncProfileResult> {
+  const cleanKey = (apiKey || '').trim();
+  const cleanSubaccountId = (subaccountId || '').trim();
+
+  const result: GhlSyncProfileResult = {
+    success: true,
+    mock: false,
+    locationUpdated: false,
+    customValuesCount: 0,
+    tagsCount: 0,
+    message: '',
+    details: {
+      customValues: [],
+      tags: [],
+    },
+  };
+
+  if (!cleanKey || cleanKey.includes('your_') || cleanKey.length < 15) {
+    // Simulated fallback
+    return {
+      success: true,
+      mock: true,
+      locationUpdated: true,
+      customValuesCount: 5,
+      tagsCount: (data.servicesOffered || []).length,
+      message: '[Simulated Sync] Successfully updated CRM Business Profile, Custom Values, and Tags!',
+      details: {
+        customValues: [
+          { name: 'TwinFlow Company Description', status: 'updated' },
+          { name: 'TwinFlow Services Offered', status: 'updated' },
+          { name: 'TwinFlow Products Offered', status: 'updated' },
+          { name: 'TwinFlow Value Proposition', status: 'updated' },
+          { name: 'TwinFlow Target Roles', status: 'updated' },
+        ],
+        tags: (data.servicesOffered || []).map((s) => ({ name: `Service: ${s}`, status: 'created' })),
+      },
+    };
+  }
+
+  const headers = {
+    Authorization: `Bearer ${cleanKey}`,
+    Version: GHL_API_VERSION,
+    'Content-Type': 'application/json',
+  };
+
+  // 1. Attempt Core Location / Business Profile Update (PUT /locations/:id)
+  try {
+    const businessName = data.organization || data.name || "Operator's Workspace";
+    const legalName = data.legalBusinessName || businessName;
+
+    const locationPayload: Record<string, unknown> = {
+      name: businessName,
+      country: data.country || 'CA',
+      timezone: data.timezone || 'America/Vancouver',
+      business: {
+        name: businessName,
+        legalBusinessName: legalName,
+        country: data.country || 'CA',
+        timezone: data.timezone || 'America/Vancouver',
+      },
+    };
+
+    if (companyId) {
+      locationPayload.companyId = companyId;
+    }
+
+    if (data.website) {
+      locationPayload.website = data.website;
+      (locationPayload.business as Record<string, unknown>).website = data.website;
+    }
+    if (data.email) {
+      locationPayload.email = data.email;
+      (locationPayload.business as Record<string, unknown>).email = data.email;
+    }
+    if (data.phone) {
+      locationPayload.phone = data.phone;
+      (locationPayload.business as Record<string, unknown>).phone = data.phone;
+    }
+    if (data.streetAddress) {
+      locationPayload.address = data.streetAddress;
+      (locationPayload.business as Record<string, unknown>).address = data.streetAddress;
+    }
+    if (data.city) {
+      locationPayload.city = data.city;
+      (locationPayload.business as Record<string, unknown>).city = data.city;
+    }
+    if (data.state) {
+      locationPayload.state = data.state;
+      (locationPayload.business as Record<string, unknown>).state = data.state;
+    }
+    if (data.postalCode) {
+      locationPayload.postalCode = data.postalCode;
+      (locationPayload.business as Record<string, unknown>).postalCode = data.postalCode;
+    }
+
+    const locRes = await fetch(`${GHL_API_BASE}/locations/${encodeURIComponent(cleanSubaccountId)}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(locationPayload),
+    });
+
+    if (locRes.ok) {
+      result.locationUpdated = true;
+      const locData = await locRes.json() as Record<string, unknown>;
+      result.details.location = locData;
+      console.log(`[GHL Profile Sync] Successfully updated location [${cleanSubaccountId}] business settings.`);
+    } else {
+      const errText = await locRes.text();
+      let msg = errText;
+      try {
+        const json = JSON.parse(errText);
+        msg = json.message || errText;
+      } catch {}
+      console.warn(`[GHL Profile Sync] Location profile update notice (${locRes.status}):`, msg);
+      result.locationError = `Business profile update notice (${locRes.status}): ${msg}. (Requires locations.write scope)`;
+    }
+  } catch (err) {
+    console.warn('[GHL Profile Sync] Error updating location profile:', err);
+    result.locationError = String(err);
+  }
+
+  // 2. Sync Location Custom Values (POST/PUT /locations/:id/customValues)
+  try {
+    const desiredCustomValues: Array<{ name: string; value: string }> = [];
+
+    if (data.companyDescription) {
+      desiredCustomValues.push({ name: 'TwinFlow Company Description', value: data.companyDescription });
+    }
+    if (data.servicesOffered && data.servicesOffered.length > 0) {
+      desiredCustomValues.push({ name: 'TwinFlow Services Offered', value: data.servicesOffered.join(', ') });
+    }
+    if (data.productsOffered && data.productsOffered.length > 0) {
+      desiredCustomValues.push({ name: 'TwinFlow Products Offered', value: data.productsOffered.join(', ') });
+    }
+    if (data.valueProp) {
+      desiredCustomValues.push({ name: 'TwinFlow Value Proposition', value: data.valueProp });
+    }
+    if (data.targetLocation) {
+      desiredCustomValues.push({ name: 'TwinFlow Target Geography', value: data.targetLocation });
+    }
+    if (data.targetRoles && data.targetRoles.length > 0) {
+      desiredCustomValues.push({ name: 'TwinFlow Target Roles', value: data.targetRoles.join(', ') });
+    }
+    if (data.userMission) {
+      desiredCustomValues.push({ name: 'TwinFlow Mission', value: data.userMission });
+    }
+
+    if (desiredCustomValues.length > 0) {
+      // Fetch existing Custom Values
+      const cvListRes = await fetch(`${GHL_API_BASE}/locations/${encodeURIComponent(cleanSubaccountId)}/customValues`, {
+        method: 'GET',
+        headers,
+      });
+
+      let existingCVs: Array<{ id: string; name: string }> = [];
+      if (cvListRes.ok) {
+        const cvData = await cvListRes.json() as { customValues?: Array<{ id: string; name: string }> };
+        existingCVs = cvData.customValues || [];
+      }
+
+      for (const item of desiredCustomValues) {
+        const existing = existingCVs.find((c) => c.name.toLowerCase() === item.name.toLowerCase());
+        if (existing) {
+          // Update
+          const putRes = await fetch(
+            `${GHL_API_BASE}/locations/${encodeURIComponent(cleanSubaccountId)}/customValues/${encodeURIComponent(existing.id)}`,
+            {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify({ name: item.name, value: item.value }),
+            }
+          );
+          if (putRes.ok) {
+            result.details.customValues.push({ name: item.name, status: 'updated' });
+            result.customValuesCount++;
+          } else {
+            result.details.customValues.push({ name: item.name, status: 'error' });
+          }
+        } else {
+          // Create
+          const postRes = await fetch(
+            `${GHL_API_BASE}/locations/${encodeURIComponent(cleanSubaccountId)}/customValues`,
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ name: item.name, value: item.value }),
+            }
+          );
+          if (postRes.ok) {
+            result.details.customValues.push({ name: item.name, status: 'created' });
+            result.customValuesCount++;
+          } else {
+            result.details.customValues.push({ name: item.name, status: 'error' });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[GHL Profile Sync] Error syncing Custom Values:', err);
+  }
+
+  // 3. Sync Location Tags (POST /locations/:id/tags)
+  try {
+    const desiredTags: string[] = [];
+    (data.servicesOffered || []).forEach((s) => desiredTags.push(`Service: ${s}`));
+    (data.productsOffered || []).forEach((p) => desiredTags.push(`Product: ${p}`));
+
+    if (desiredTags.length > 0) {
+      const tagsListRes = await fetch(`${GHL_API_BASE}/locations/${encodeURIComponent(cleanSubaccountId)}/tags`, {
+        method: 'GET',
+        headers,
+      });
+
+      let existingTags: Array<{ id: string; name: string }> = [];
+      if (tagsListRes.ok) {
+        const tData = await tagsListRes.json() as { tags?: Array<{ id: string; name: string }> };
+        existingTags = tData.tags || [];
+      }
+
+      for (const tag of desiredTags) {
+        const exists = existingTags.some((t) => t.name.toLowerCase() === tag.toLowerCase());
+        if (!exists) {
+          const postTagRes = await fetch(`${GHL_API_BASE}/locations/${encodeURIComponent(cleanSubaccountId)}/tags`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ name: tag }),
+          });
+          if (postTagRes.ok) {
+            result.details.tags.push({ name: tag, status: 'created' });
+            result.tagsCount++;
+          } else {
+            result.details.tags.push({ name: tag, status: 'error' });
+          }
+        } else {
+          result.details.tags.push({ name: tag, status: 'exists' });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[GHL Profile Sync] Error syncing Tags:', err);
+  }
+
+  const parts = [];
+  if (result.locationUpdated) parts.push('Business Profile settings updated');
+  if (result.customValuesCount > 0) parts.push(`${result.customValuesCount} Custom Values synchronized`);
+  if (result.tagsCount > 0) parts.push(`${result.tagsCount} Tags created`);
+
+  result.message = parts.length > 0
+    ? `Successfully synced with CRM: ${parts.join(', ')}.`
+    : result.locationError || 'Sync completed.';
+
+  return result;
+}
+
+
 

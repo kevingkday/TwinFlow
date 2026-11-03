@@ -201,6 +201,14 @@ export interface UserProfile {
   servicesOffered?: string[];
   productsOffered?: string[];
   website?: string | null;
+  legalBusinessName?: string | null;
+  phone?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  timezone?: string | null;
   targetIndustries?: string[];
   targetTriggers?: string[];
   targetRoles?: string[];

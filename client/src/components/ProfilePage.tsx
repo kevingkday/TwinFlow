@@ -4,7 +4,6 @@ import {
   Globe,
   Mail,
   User,
-  Sparkles,
   Zap,
   CheckCircle2,
   AlertCircle,
@@ -17,6 +16,10 @@ import {
   Package,
   Wrench,
   HelpCircle,
+  Phone,
+  MapPin,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import type { UserProfile } from '../types/lead';
 import { authFetch } from '../utils/api';
@@ -75,12 +78,25 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   // Form State
   const [name, setName] = useState(user?.name || '');
   const [organization, setOrganization] = useState(user?.organization || '');
+  const [legalBusinessName, setLegalBusinessName] = useState(user?.legalBusinessName || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [streetAddress, setStreetAddress] = useState(user?.streetAddress || '');
+  const [city, setCity] = useState(user?.city || '');
+  const [state, setState] = useState(user?.state || '');
+  const [postalCode, setPostalCode] = useState(user?.postalCode || '');
+  const [country, setCountry] = useState(user?.country || 'Canada');
+  const [timezone, setTimezone] = useState(user?.timezone || 'America/Vancouver');
   const [companyDescription, setCompanyDescription] = useState(user?.companyDescription || '');
   const [website, setWebsite] = useState(user?.website || '');
   const [targetLocation, setTargetLocation] = useState(user?.targetLocation || 'Dallas-Fort Worth, TX');
   const [userIntent, setUserIntent] = useState(user?.userIntent || 'sales_client_acquisition');
   const [userMission, setUserMission] = useState(user?.userMission || '');
   const [valueProp, setValueProp] = useState(user?.valueProp || '');
+
+  // CRM Sync State
+  const [syncToCrm, setSyncToCrm] = useState(true);
+  const [isSyncingCrm, setIsSyncingCrm] = useState(false);
+  const [crmSyncMessage, setCrmSyncMessage] = useState<string | null>(null);
 
   // Offerings Tag State
   const [servicesOffered, setServicesOffered] = useState<string[]>(
@@ -120,6 +136,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     if (user) {
       setName(user.name || '');
       setOrganization(user.organization || '');
+      setLegalBusinessName(user.legalBusinessName || '');
+      setPhone(user.phone || '');
+      setStreetAddress(user.streetAddress || '');
+      setCity(user.city || '');
+      setState(user.state || '');
+      setPostalCode(user.postalCode || '');
+      setCountry(user.country || 'Canada');
+      setTimezone(user.timezone || 'America/Vancouver');
       setCompanyDescription(user.companyDescription || '');
       setWebsite(user.website || '');
       setTargetLocation(user.targetLocation || 'Dallas-Fort Worth, TX');
@@ -178,6 +202,44 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     setTargetRoles((prev) => prev.filter((r) => r !== roleToRemove));
   };
 
+  // Direct CRM Sync Handler
+  const handleSyncCrmDirectly = async () => {
+    if (!user?.isGhlConnected) {
+      onOpenCrmSettings();
+      return;
+    }
+    setIsSyncingCrm(true);
+    setCrmSyncMessage(null);
+    try {
+      const res = await authFetch('/api/user/sync-crm', {
+        method: 'POST',
+      });
+      const data = (await res.json()) as {
+        success: boolean;
+        result?: {
+          message: string;
+          customValuesCount: number;
+          tagsCount: number;
+          locationUpdated: boolean;
+          locationError?: string;
+        };
+        error?: string;
+      };
+      if (res.ok && data.success && data.result) {
+        playSound('success');
+        setCrmSyncMessage(data.result.message);
+      } else {
+        playSound('error');
+        setCrmSyncMessage(data.error || 'Failed to sync with CRM.');
+      }
+    } catch (err) {
+      playSound('error');
+      setCrmSyncMessage(`Sync error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSyncingCrm(false);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -187,6 +249,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       const payload = {
         name,
         organization,
+        legalBusinessName,
+        phone,
+        streetAddress,
+        city,
+        state,
+        postalCode,
+        country,
+        timezone,
         companyDescription,
         website,
         servicesOffered,
@@ -196,6 +266,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         userMission,
         valueProp,
         targetRoles,
+        syncToCrm,
       };
 
       const res = await authFetch('/api/user/profile', {
@@ -208,6 +279,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         success: boolean;
         user?: UserProfile;
         queryPlan?: { primaryQuery: string; strategicFocus?: string };
+        crmSyncResult?: { message: string };
         error?: string;
       };
 
@@ -217,9 +289,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         if (data.queryPlan?.primaryQuery) {
           setCalibratedQuery(data.queryPlan.primaryQuery);
         }
+        const syncMsg = data.crmSyncResult?.message ? ` • ${data.crmSyncResult.message}` : '';
         setStatusMessage({
           type: 'success',
-          text: `Profile saved successfully! Market radar recalibrated to: "${data.queryPlan?.primaryQuery || calibratedQuery}"`,
+          text: `Profile saved successfully! Market radar recalibrated to: "${data.queryPlan?.primaryQuery || calibratedQuery}"${syncMsg}`,
         });
       } else {
         playSound('error');
@@ -413,12 +486,37 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   </div>
 
                   <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Legal Business Name (EIN / Registered)</label>
+                    <input
+                      type="text"
+                      value={legalBusinessName}
+                      onChange={(e) => setLegalBusinessName(e.target.value)}
+                      placeholder="e.g. TwinFlow Solutions Inc."
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700">Company Website</label>
                     <input
                       type="text"
                       value={website}
                       onChange={(e) => setWebsite(e.target.value)}
                       placeholder="e.g. https://twinflow.co"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Business Phone</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. +1 (604) 555-0192"
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
@@ -447,6 +545,103 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     placeholder="e.g. Guaranteed 48-hour bid turnaround with zero subcontracting markups and certified 20-year NDL warranties."
                     className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
+                </div>
+              </div>
+
+              {/* Card 2: Business Physical Address (CRM Sync) */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-blue-600" />
+                    <div>
+                      <h2 className="text-sm font-bold text-slate-900">Business Physical Address</h2>
+                      <p className="text-[11px] text-slate-500">
+                        Synchronizes directly into your CRM Business Profile settings.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-400">CRM Field</span>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Street Address</label>
+                    <input
+                      type="text"
+                      value={streetAddress}
+                      onChange={(e) => setStreetAddress(e.target.value)}
+                      placeholder="e.g. 1055 West Georgia Street, Suite 2100"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">City</label>
+                      <input
+                        type="text"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        placeholder="e.g. Vancouver"
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">State / Prov / Region</label>
+                      <input
+                        type="text"
+                        value={state}
+                        onChange={(e) => setState(e.target.value)}
+                        placeholder="e.g. BC or TX"
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">Postal / Zip Code</label>
+                      <input
+                        type="text"
+                        value={postalCode}
+                        onChange={(e) => setPostalCode(e.target.value)}
+                        placeholder="e.g. V6E 3P3"
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">Country</label>
+                      <select
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      >
+                        <option value="Canada">Canada (CA)</option>
+                        <option value="United States">United States (US)</option>
+                        <option value="United Kingdom">United Kingdom (UK)</option>
+                        <option value="Australia">Australia (AU)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">Time Zone</label>
+                      <select
+                        value={timezone}
+                        onChange={(e) => setTimezone(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      >
+                        <option value="America/Vancouver">(GMT-07:00) America/Vancouver (Pacific)</option>
+                        <option value="America/Edmonton">(GMT-06:00) America/Edmonton (Mountain)</option>
+                        <option value="America/Chicago">(GMT-05:00) America/Chicago (Central)</option>
+                        <option value="America/Toronto">(GMT-04:00) America/Toronto (Eastern)</option>
+                        <option value="America/New_York">(GMT-04:00) America/New_York (Eastern)</option>
+                        <option value="America/Denver">(GMT-06:00) America/Denver (Mountain)</option>
+                        <option value="America/Los_Angeles">(GMT-07:00) America/Los_Angeles (Pacific)</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -768,6 +963,49 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     </div>
                   </div>
 
+                  {/* Two-Way CRM Synchronization Hub */}
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-slate-50 to-blue-50/40 border border-slate-200/90 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
+                        <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isSyncingCrm ? 'animate-spin' : ''}`} />
+                        <span>CRM Two-Way Synchronization</span>
+                      </div>
+                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-200">
+                        API Active
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] leading-relaxed text-slate-600">
+                      Syncs Friendly Name, Legal Business Name, Website, Phone, Physical Address, Offerings, and 7 Global Custom Values directly into your CRM workspace.
+                    </p>
+
+                    {crmSyncMessage && (
+                      <div className="p-2.5 rounded-lg bg-white border border-blue-200 text-[11px] font-medium text-slate-800 space-y-1">
+                        <div className="flex items-center gap-1.5 text-blue-700 font-semibold">
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Sync Status</span>
+                        </div>
+                        <div className="text-slate-600 leading-relaxed">{crmSyncMessage}</div>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleSyncCrmDirectly}
+                      disabled={isSyncingCrm || !user?.isGhlConnected}
+                      className={`w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer ${
+                        isSyncingCrm
+                          ? 'bg-blue-400 text-white cursor-wait'
+                          : user?.isGhlConnected
+                          ? 'bg-blue-600 hover:bg-blue-700 text-white active:scale-98'
+                          : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCrm ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingCrm ? 'Syncing with CRM...' : 'Sync to CRM Business Profile & Custom Values'}</span>
+                    </button>
+                  </div>
+
                   {/* Clarification on Social API Authorization */}
                   <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/70 space-y-2">
                     <div className="flex items-center gap-1.5 text-blue-900 font-semibold text-xs">
@@ -807,9 +1045,17 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
           {/* Sticky Bottom Actions Bar */}
           <div className="sticky bottom-4 z-20 p-4 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200 shadow-lg flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-xs text-slate-500 hidden sm:flex">
-              <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>Saving will recalibrate your AI news query to match your updated services and geography.</span>
+            <div className="flex items-center gap-3 text-xs text-slate-600">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={syncToCrm}
+                  onChange={(e) => setSyncToCrm(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                />
+                <span className="font-semibold text-slate-800">Auto-sync with CRM on Save</span>
+              </label>
+              <span className="text-slate-400 hidden md:inline">• Recalibrates AI search radar & syncs Custom Values</span>
             </div>
             <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
               <button
