@@ -41,6 +41,40 @@ export async function getOrCreateUser(db: ReturnType<typeof getDb>): Promise<typ
   return newUser as typeof schema.users.$inferSelect;
 }
 
+export function formatUserProfile(user: typeof schema.users.$inferSelect, env?: Bindings) {
+  const hasCustomGhlKey = Boolean(
+    user.ghlApiKey && user.ghlApiKey.length > 10 && !user.ghlApiKey.includes('your_')
+  );
+  const isGhlConnected = hasCustomGhlKey;
+  const isAdmin = user.role === 'admin' || user.email.toLowerCase() === 'kevingkday@gmail.com';
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name || 'Operator',
+    role: isAdmin ? 'admin' : (user.role || 'user'),
+    isAdmin,
+    organization: user.organization || null,
+    avatarUrl: user.avatarUrl || null,
+    ghlSubaccountId: user.ghlSubaccountId || env?.GHL_LOCATION_ID || 'y3KLRBUZzf2t45o7rzp9',
+    isGhlConnected,
+    hasCustomGhlKey,
+    ghlApiKeyMasked: user.ghlApiKey
+      ? `pit-••••••••${user.ghlApiKey.slice(-4)}`
+      : null,
+    creditBalance: user.creditBalance,
+    streakCount: user.streakCount,
+    totalPoints: user.totalPoints,
+    onboardingCompleted: Boolean(user.onboardingCompleted),
+    icpQuery: user.icpQuery || null,
+    targetIndustries: user.targetIndustries ? JSON.parse(user.targetIndustries) : [],
+    targetTriggers: user.targetTriggers ? JSON.parse(user.targetTriggers) : [],
+    targetRoles: user.targetRoles ? JSON.parse(user.targetRoles) : [],
+    valueProp: user.valueProp || null,
+    createdAt: user.createdAt,
+  };
+}
+
 // GET /api/user/profile - Return current operator profile & GHL connection status
 userRouter.get('/profile', async (c) => {
   if (!c.env?.DB) {
@@ -52,39 +86,9 @@ userRouter.get('/profile', async (c) => {
     return c.json({ success: false, authenticated: false, error: 'Unauthorized' }, 401);
   }
 
-  const hasCustomGhlKey = Boolean(
-    user.ghlApiKey && user.ghlApiKey.length > 10 && !user.ghlApiKey.includes('your_')
-  );
-  const isGhlConnected = hasCustomGhlKey;
-  const isAdmin = user.role === 'admin' || user.email.toLowerCase() === 'kevingkday@gmail.com';
-
   return c.json({
     success: true,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name || 'Operator',
-      role: isAdmin ? 'admin' : (user.role || 'user'),
-      isAdmin,
-      organization: user.organization || null,
-      avatarUrl: user.avatarUrl || null,
-      ghlSubaccountId: user.ghlSubaccountId || c.env.GHL_LOCATION_ID || 'y3KLRBUZzf2t45o7rzp9',
-      isGhlConnected,
-      hasCustomGhlKey,
-      ghlApiKeyMasked: user.ghlApiKey
-        ? `pit-••••••••${user.ghlApiKey.slice(-4)}`
-        : null,
-      creditBalance: user.creditBalance,
-      streakCount: user.streakCount,
-      totalPoints: user.totalPoints,
-      onboardingCompleted: Boolean(user.onboardingCompleted),
-      icpQuery: user.icpQuery || null,
-      targetIndustries: user.targetIndustries ? JSON.parse(user.targetIndustries) : [],
-      targetTriggers: user.targetTriggers ? JSON.parse(user.targetTriggers) : [],
-      targetRoles: user.targetRoles ? JSON.parse(user.targetRoles) : [],
-      valueProp: user.valueProp || null,
-      createdAt: user.createdAt,
-    },
+    user: formatUserProfile(user, c.env),
   });
 });
 
@@ -104,7 +108,10 @@ userRouter.post('/ghl-config', async (c) => {
     .catch((): GhlConfigPayload => ({}));
 
   const db = getDb(c.env.DB);
-  const user = (await getSessionUser(c)) || (await getOrCreateUser(db));
+  const user = await getSessionUser(c);
+  if (!user) {
+    return c.json({ success: false, error: 'Unauthorized. Please sign in to save your CRM settings.' }, 401);
+  }
   const now = new Date().toISOString();
 
   const targetSubaccount = (
@@ -143,23 +150,7 @@ userRouter.post('/ghl-config', async (c) => {
   return c.json({
     success: true,
     verification: verificationResult,
-    user: {
-      id: updatedUser.id,
-      email: updatedUser.email,
-      ghlSubaccountId: updatedUser.ghlSubaccountId || c.env.GHL_LOCATION_ID || null,
-      isGhlConnected: Boolean(
-        updatedUser.ghlApiKey && updatedUser.ghlApiKey.length > 10 && !updatedUser.ghlApiKey.includes('your_')
-      ),
-      hasCustomGhlKey: Boolean(
-        updatedUser.ghlApiKey && updatedUser.ghlApiKey.length > 10 && !updatedUser.ghlApiKey.includes('your_')
-      ),
-      ghlApiKeyMasked: updatedUser.ghlApiKey
-        ? `pit-••••••••${updatedUser.ghlApiKey.slice(-4)}`
-        : null,
-      creditBalance: updatedUser.creditBalance,
-      streakCount: updatedUser.streakCount,
-      totalPoints: updatedUser.totalPoints,
-    },
+    user: formatUserProfile(updatedUser, c.env),
     message: verificationResult.valid
       ? 'CRM Sub-Account settings saved and verified successfully!'
       : `Saved, but verification warning: ${verificationResult.message}`,

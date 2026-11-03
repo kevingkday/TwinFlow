@@ -28,6 +28,7 @@ import { AuthModal } from './components/AuthModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { LandingPage } from './components/LandingPage';
 import { playSound } from './utils/audio';
+import { authFetch } from './utils/api';
 import { Radio, Check, AlertCircle } from 'lucide-react';
 
 function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
@@ -187,9 +188,7 @@ export const App: React.FC = () => {
         setUserProfile(null);
         return;
       }
-      const res = await fetch('/api/user/profile', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authFetch('/api/user/profile');
       if (res.ok) {
         const data = (await res.json()) as { success: boolean; user?: UserProfile };
         if (data.success && data.user) {
@@ -215,10 +214,9 @@ export const App: React.FC = () => {
 
   // Fetch user campaigns from GET /api/campaigns
   const fetchCampaigns = useCallback(async (customToken?: string) => {
-    const token = customToken || sessionToken || localStorage.getItem('twinflow_session_token');
     try {
-      const res = await fetch('/api/campaigns', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      const res = await authFetch('/api/campaigns', {
+        headers: customToken ? { Authorization: `Bearer ${customToken}` } : {},
       });
       if (!res.ok) return;
       const data = (await res.json()) as CampaignsResponse;
@@ -233,17 +231,16 @@ export const App: React.FC = () => {
     } catch (err) {
       console.warn('Could not fetch campaigns:', err);
     }
-  }, [sessionToken]);
+  }, []);
 
   // Fetch signals deck from GET /api/signals/deck
   const fetchDeck = useCallback(async (customToken?: string, campaignIdOverride?: string) => {
     setIsLoading(true);
-    const token = customToken || sessionToken || localStorage.getItem('twinflow_session_token');
     const targetCampId = campaignIdOverride !== undefined ? campaignIdOverride : activeCampaignId;
     try {
       const queryParam = targetCampId ? `?campaignId=${encodeURIComponent(targetCampId)}` : '';
-      const res = await fetch(`/api/signals/deck${queryParam}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      const res = await authFetch(`/api/signals/deck${queryParam}`, {
+        headers: customToken ? { Authorization: `Bearer ${customToken}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: ApiDeckResponse = await res.json();
@@ -311,7 +308,7 @@ export const App: React.FC = () => {
     });
 
     try {
-      const res = await fetch('/api/signals/ingest', {
+      const res = await authFetch('/api/signals/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -355,7 +352,7 @@ export const App: React.FC = () => {
   // Top-up dev credits
   const handleReplenishDevCredits = async (amount: number) => {
     try {
-      const res = await fetch('/api/signals/credits/replenish', {
+      const res = await authFetch('/api/signals/credits/replenish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount }),
@@ -433,16 +430,14 @@ export const App: React.FC = () => {
     setCampaigns((prev) =>
       prev.map((c) => ({ ...c, isActive: c.id === campaignId }))
     );
-    const token = localStorage.getItem('twinflow_session_token');
     try {
-      await fetch(`/api/campaigns/${campaignId}/activate`, {
+      await authFetch(`/api/campaigns/${campaignId}/activate`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
     } catch (err) {
       console.warn('Failed to persist active campaign:', err);
     }
-    await fetchDeck(token || undefined, campaignId);
+    await fetchDeck(undefined, campaignId);
     const selected = campaigns.find((c) => c.id === campaignId);
     if (selected) {
       setScoutToast({
@@ -606,7 +601,7 @@ export const App: React.FC = () => {
 
       // Hit POST /api/signals/:id/action
       try {
-        const res = await fetch(`/api/signals/${swipedLead.id}/action`, {
+        const res = await authFetch(`/api/signals/${swipedLead.id}/action`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -741,7 +736,7 @@ export const App: React.FC = () => {
       type: 'info',
     });
     try {
-      const res = await fetch(`/api/signals/${leadId}/enrich-contact`, {
+      const res = await authFetch(`/api/signals/${leadId}/enrich-contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1022,7 +1017,7 @@ export const App: React.FC = () => {
         onClose={() => setGhlSettingsOpen(false)}
         userProfile={userProfile}
         onProfileUpdated={(updated) => {
-          setUserProfile(updated);
+          setUserProfile((prev) => (prev ? { ...prev, ...updated } : updated));
           setStats((prev) => ({
             ...prev,
             creditsRemaining: updated.creditBalance,

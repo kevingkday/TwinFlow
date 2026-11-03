@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { LeadCardData, BranchEntity, BranchesResponse, BranchScoutResponse, ApiSignalItem } from '../types/lead';
 import { playSound } from '../utils/audio';
+import { authFetch } from '../utils/api';
 
 interface BranchOutModalProps {
   lead: LeadCardData | null;
@@ -47,7 +48,7 @@ export const BranchOutModal: React.FC<BranchOutModalProps> = ({
   const fetchBranches = async (signalId: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/signals/${encodeURIComponent(signalId)}/branches`);
+      const res = await authFetch(`/api/signals/${encodeURIComponent(signalId)}/branches`);
       if (res.ok) {
         const data: BranchesResponse = await res.json();
         if (data.success && Array.isArray(data.branches)) {
@@ -79,7 +80,7 @@ export const BranchOutModal: React.FC<BranchOutModalProps> = ({
     });
 
     try {
-      const res = await fetch(`/api/signals/${encodeURIComponent(lead.id)}/branch-scout`, {
+      const res = await authFetch(`/api/signals/${encodeURIComponent(lead.id)}/branch-scout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

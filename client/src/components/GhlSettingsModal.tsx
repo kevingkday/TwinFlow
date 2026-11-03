@@ -14,6 +14,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type { UserProfile, GhlSubaccountOption } from '../types/lead';
+import { authFetch } from '../utils/api';
 
 interface GhlSettingsModalProps {
   isOpen: boolean;
@@ -54,7 +55,7 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
   const fetchAgencySubaccounts = async () => {
     setIsLoadingSubaccounts(true);
     try {
-      const res = await fetch('/api/signals/ghl/subaccounts');
+      const res = await authFetch('/api/signals/ghl/subaccounts');
       if (res.ok) {
         const data = (await res.json()) as { success: boolean; subaccounts?: GhlSubaccountOption[] };
         if (data.success && data.subaccounts) {
@@ -89,7 +90,7 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
         payload.ghlApiKey = apiKey.trim();
       }
 
-      const res = await fetch('/api/user/ghl-config', {
+      const res = await authFetch('/api/user/ghl-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
