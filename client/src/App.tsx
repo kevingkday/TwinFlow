@@ -28,6 +28,7 @@ import { AuthModal } from './components/AuthModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { LandingPage } from './components/LandingPage';
 import { ProfilePage } from './components/ProfilePage';
+import { ContactsPage } from './components/ContactsPage';
 import { MakeNewsModal } from './components/MakeNewsModal';
 import { playSound } from './utils/audio';
 import { authFetch } from './utils/api';
@@ -150,19 +151,27 @@ export const App: React.FC = () => {
     branchCombo: 0,
   });
 
-  const [currentView, setCurrentView] = useState<'landing' | 'deck' | 'profile'>(() => {
+  const [currentView, setCurrentView] = useState<'landing' | 'deck' | 'contacts' | 'profile'>(() => {
     if (typeof window !== 'undefined') {
       if (window.location.hash === '#deck') return 'deck';
+      if (window.location.hash === '#contacts') return 'contacts';
       if (window.location.hash === '#profile') return 'profile';
     }
     return 'landing';
   });
 
   const handleNavigate = useCallback(
-    (view: 'landing' | 'deck' | 'profile') => {
+    (view: 'landing' | 'deck' | 'contacts' | 'profile') => {
       setCurrentView(view);
       if (typeof window !== 'undefined') {
-        window.location.hash = view === 'deck' ? '#deck' : view === 'profile' ? '#profile' : '';
+        window.location.hash =
+          view === 'deck'
+            ? '#deck'
+            : view === 'contacts'
+            ? '#contacts'
+            : view === 'profile'
+            ? '#profile'
+            : '';
       }
     },
     []
@@ -176,6 +185,8 @@ export const App: React.FC = () => {
     const handleHash = () => {
       if (window.location.hash === '#deck') {
         setCurrentView('deck');
+      } else if (window.location.hash === '#contacts') {
+        setCurrentView('contacts');
       } else if (window.location.hash === '#profile') {
         setCurrentView('profile');
       } else if (!window.location.hash || window.location.hash === '#home') {
@@ -263,6 +274,7 @@ export const App: React.FC = () => {
               creditsRemaining: data.user.creditBalance,
               streak: data.user.streakCount,
               totalPoints: data.user.totalPoints,
+              ...(typeof data.approvedCount === 'number' ? { approvedCount: data.approvedCount } : {}),
             }));
           }
         } else {
@@ -275,6 +287,7 @@ export const App: React.FC = () => {
               creditsRemaining: data.user.creditBalance,
               streak: data.user.streakCount,
               totalPoints: data.user.totalPoints,
+              ...(typeof data.approvedCount === 'number' ? { approvedCount: data.approvedCount } : {}),
             }));
           }
         }
@@ -894,6 +907,7 @@ export const App: React.FC = () => {
         currentView={currentView}
         onNavigate={handleNavigate}
         leadsCount={leads.length}
+        contactsCount={stats.approvedCount}
       />
 
       {currentView === 'landing' ? (
@@ -926,6 +940,14 @@ export const App: React.FC = () => {
           onOpenMakeNews={() => setMakeNewsModalOpen(true)}
           onNavigateDeck={() => handleNavigate('deck')}
         />
+      ) : currentView === 'contacts' ? (
+        <ContactsPage
+          user={userProfile}
+          campaigns={campaigns}
+          activeCampaignId={activeCampaignId}
+          onNavigateDeck={handleLaunchDeck}
+          onOpenCrmSettings={() => setGhlSettingsOpen(true)}
+        />
       ) : (
         <>
           {/* Progress & Deck Status HUD */}
@@ -940,6 +962,7 @@ export const App: React.FC = () => {
             onSelectCampaign={handleSelectCampaign}
             onCreateNewCampaign={handleOpenCreateCampaign}
             onEditCampaign={handleOpenEditCampaign}
+            onNavigateToContacts={() => handleNavigate('contacts')}
           />
 
           {/* Main Content Area */}

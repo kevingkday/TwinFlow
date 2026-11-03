@@ -242,10 +242,17 @@ signalsRouter.get('/deck', async (c) => {
       };
     });
 
+    const approvedCountRes = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.signals)
+      .where(eq(schema.signals.status, 'approved'));
+    const approvedCount = Number(approvedCountRes[0]?.count || 0);
+
     return c.json({
       success: true,
       count: formattedCards.length,
       signals: formattedCards,
+      approvedCount,
       user: {
         id: user.id,
         email: user.email,

@@ -15,6 +15,7 @@ interface StatsBarProps {
   onSelectCampaign?: (campaignId: string) => void;
   onCreateNewCampaign?: () => void;
   onEditCampaign?: (campaign: Campaign) => void;
+  onNavigateToContacts?: () => void;
 }
 
 export const StatsBar: React.FC<StatsBarProps> = ({
@@ -28,6 +29,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
   onSelectCampaign,
   onCreateNewCampaign,
   onEditCampaign,
+  onNavigateToContacts,
 }) => {
   const processed = stats.approvedCount + stats.passedCount;
   const progressPercent = totalCards > 0 ? Math.round((processed / totalCards) * 100) : 100;
@@ -58,11 +60,18 @@ export const StatsBar: React.FC<StatsBarProps> = ({
 
         {/* Right Side: Approved / Passed Counters & Actions */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+          <button
+            type="button"
+            onClick={onNavigateToContacts}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition-all ${
+              onNavigateToContacts ? 'hover:bg-emerald-100 cursor-pointer' : ''
+            }`}
+            title="View approved contacts and organizations"
+          >
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             <span className="font-mono font-bold">{stats.approvedCount}</span>
             <span className="text-[10px] uppercase hidden sm:inline font-semibold">Approved</span>
-          </div>
+          </button>
 
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-medium">
             <XCircle className="w-3.5 h-3.5 text-rose-500" />

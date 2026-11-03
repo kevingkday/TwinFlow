@@ -14,6 +14,7 @@ import {
   Compass,
   User,
   Share2,
+  Building2,
 } from 'lucide-react';
 import type { SwipeStats, UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
@@ -35,9 +36,10 @@ interface HeaderProps {
   onOpenAuth?: (initialMode?: 'signup' | 'login') => void;
   onLogout?: () => void;
   onOpenOnboarding?: () => void;
-  currentView?: 'landing' | 'deck' | 'profile';
-  onNavigate?: (view: 'landing' | 'deck' | 'profile') => void;
+  currentView?: 'landing' | 'deck' | 'contacts' | 'profile';
+  onNavigate?: (view: 'landing' | 'deck' | 'contacts' | 'profile') => void;
   leadsCount?: number;
+  contactsCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -59,6 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentView = 'landing',
   onNavigate,
   leadsCount,
+  contactsCount,
 }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -123,6 +126,23 @@ export const Header: React.FC<HeaderProps> = ({
                 {leadsCount !== undefined && leadsCount > 0 && (
                   <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 text-[10px] font-mono font-bold">
                     {leadsCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('contacts')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  currentView === 'contacts'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                <span>Contacts</span>
+                {contactsCount !== undefined && contactsCount > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-mono font-bold">
+                    {contactsCount}
                   </span>
                 )}
               </button>

@@ -14,3 +14,4 @@ ALTER TABLE `campaigns` ADD `state` text;--> statement-breakpoint
 ALTER TABLE `campaigns` ADD `postal_code` text;--> statement-breakpoint
 ALTER TABLE `campaigns` ADD `country` text DEFAULT 'CA';--> statement-breakpoint
 ALTER TABLE `campaigns` ADD `timezone` text DEFAULT 'America/Vancouver';
+

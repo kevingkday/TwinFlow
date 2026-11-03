@@ -140,6 +140,7 @@ export interface ApiDeckResponse {
   success: boolean;
   count: number;
   signals: ApiSignalItem[];
+  approvedCount?: number;
   user: {
     id: string;
     email: string;
