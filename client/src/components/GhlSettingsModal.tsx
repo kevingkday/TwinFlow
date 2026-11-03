@@ -72,7 +72,9 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
   if (!isOpen) return null;
 
   const handleCopyScopes = () => {
-    navigator.clipboard.writeText('contacts.readonly contacts.write opportunities.readonly opportunities.write');
+    navigator.clipboard.writeText(
+      'contacts.readonly contacts.write opportunities.readonly opportunities.write locations.readonly locations.write custom-values.readonly custom-values.write tags.readonly tags.write'
+    );
     setCopiedScope(true);
     setTimeout(() => setCopiedScope(false), 2000);
   };
@@ -221,11 +223,15 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
               <span className="font-semibold text-slate-900">Developers</span> (or <span className="font-semibold text-slate-900">Private Integrations</span>).
             </li>
             <li>
-              Click <span className="text-blue-600 font-semibold">Create Private Integration Token</span> (e.g. "TwinFlow Lead Sync").
+              Click <span className="text-blue-600 font-semibold">Create Private Integration Token</span> (e.g. "TwinFlow Sync").
             </li>
             <li>
-              Grant the required scopes: <code className="text-slate-800 font-mono text-[11px] bg-slate-200 px-1.5 py-0.5 rounded">contacts (read/write)</code> and{' '}
-              <code className="text-slate-800 font-mono text-[11px] bg-slate-200 px-1.5 py-0.5 rounded">opportunities (read/write)</code>.
+              Grant scopes: <code className="text-slate-800 font-mono text-[11px] bg-slate-200 px-1 py-0.5 rounded">contacts (read/write)</code>,{' '}
+              <code className="text-slate-800 font-mono text-[11px] bg-slate-200 px-1 py-0.5 rounded">opportunities (read/write)</code>, and{' '}
+              <code className="text-slate-800 font-mono text-[11px] bg-slate-200 px-1 py-0.5 rounded">custom-values (read/write)</code>.
+              <span className="block mt-1 text-[11px] text-slate-500">
+                <strong>Tip for Business Profile Settings:</strong> To allow TwinFlow to update the core Business Profile page (/settings/company) directly via API, generate your token at the <strong>Agency level</strong> (Agency Settings → Private Integrations) with <code className="text-blue-700 font-mono">locations.write</code> enabled.
+              </span>
             </li>
             <li>Copy your Sub-Account Location ID and the generated token (<code className="text-blue-600 font-mono">pit-...</code>) and paste them below.</li>
           </ol>

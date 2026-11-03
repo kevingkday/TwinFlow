@@ -41,3 +41,4 @@ export interface PipelineContactsResponse {
   stats: PipelineStats;
   error?: string;
 }
+

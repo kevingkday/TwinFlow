@@ -1004,6 +1004,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCrm ? 'animate-spin' : ''}`} />
                       <span>{isSyncingCrm ? 'Syncing with CRM...' : 'Sync to CRM Business Profile & Custom Values'}</span>
                     </button>
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      * Synced attributes are stored in your CRM under <strong>Settings → Custom Values</strong>. To update the core Business Profile page (/settings/company) directly, your token must be generated at the <strong>Agency level</strong> with <code className="text-blue-600 font-mono">locations.write</code>.
+                    </p>
                   </div>
 
                   {/* Clarification on Social API Authorization */}

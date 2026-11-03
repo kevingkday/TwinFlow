@@ -959,6 +959,30 @@ export async function syncGhlBusinessProfileAndValues(
     if (data.userMission) {
       desiredCustomValues.push({ name: 'TwinFlow Mission', value: data.userMission });
     }
+    if (data.legalBusinessName) {
+      desiredCustomValues.push({ name: 'TwinFlow Legal Business Name', value: data.legalBusinessName });
+    }
+    if (data.organization) {
+      desiredCustomValues.push({ name: 'TwinFlow Business Name', value: data.organization });
+    }
+    if (data.website) {
+      desiredCustomValues.push({ name: 'TwinFlow Website', value: data.website });
+    }
+    if (data.phone) {
+      desiredCustomValues.push({ name: 'TwinFlow Business Phone', value: data.phone });
+    }
+    if (data.streetAddress) {
+      desiredCustomValues.push({ name: 'TwinFlow Street Address', value: data.streetAddress });
+    }
+    if (data.city) {
+      desiredCustomValues.push({ name: 'TwinFlow City', value: data.city });
+    }
+    if (data.state) {
+      desiredCustomValues.push({ name: 'TwinFlow State', value: data.state });
+    }
+    if (data.postalCode) {
+      desiredCustomValues.push({ name: 'TwinFlow Postal Code', value: data.postalCode });
+    }
 
     if (desiredCustomValues.length > 0) {
       // Fetch existing Custom Values
@@ -1060,10 +1084,15 @@ export async function syncGhlBusinessProfileAndValues(
   if (result.customValuesCount > 0) parts.push(`${result.customValuesCount} Custom Values synchronized`);
   if (result.tagsCount > 0) parts.push(`${result.tagsCount} Tags created`);
 
-  result.message = parts.length > 0
+  let mainMsg = parts.length > 0
     ? `Successfully synced with CRM: ${parts.join(', ')}.`
-    : result.locationError || 'Sync completed.';
+    : 'Sync completed.';
 
+  if (!result.locationUpdated && result.locationError) {
+    mainMsg += ` (Notice: Updating the core Business Profile Settings page at /settings/company requires an Agency-level Private Integration Token with 'locations.write' scope).`;
+  }
+
+  result.message = mainMsg;
   return result;
 }
 

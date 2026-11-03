@@ -370,3 +370,4 @@ contactsRouter.delete('/:id', async (c) => {
     return c.json({ success: false, error: err.message || 'Failed to delete contact.' }, 500);
   }
 });
+
