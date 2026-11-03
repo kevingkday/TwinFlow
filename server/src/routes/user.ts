@@ -297,7 +297,8 @@ userRouter.patch('/profile', async (c) => {
           userMission: finalMission || undefined,
         },
         apiKey,
-        c.env.GHL_COMPANY_ID
+        c.env.GHL_COMPANY_ID,
+        c.env.GHL_AGENCY_API_KEY
       );
     } catch (err) {
       console.warn('[User Profile] Error during auto CRM sync:', err);
@@ -371,7 +372,8 @@ userRouter.post('/sync-crm', async (c) => {
       userMission: user.userMission || undefined,
     },
     apiKey,
-    c.env.GHL_COMPANY_ID
+    c.env.GHL_COMPANY_ID,
+    c.env.GHL_AGENCY_API_KEY
   );
 
   return c.json({

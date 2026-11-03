@@ -812,7 +812,8 @@ export async function syncGhlBusinessProfileAndValues(
   subaccountId: string,
   data: GhlLocationProfileSyncInput,
   apiKey?: string,
-  companyId?: string
+  companyId?: string,
+  agencyApiKey?: string
 ): Promise<GhlSyncProfileResult> {
   const cleanKey = (apiKey || '').trim();
   const cleanSubaccountId = (subaccountId || '').trim();
@@ -861,62 +862,67 @@ export async function syncGhlBusinessProfileAndValues(
   // 1. Attempt Core Location / Business Profile Update (PUT /locations/:id)
   try {
     const businessName = data.organization || data.name || "Operator's Workspace";
-    const legalName = data.legalBusinessName || businessName;
 
+    // Clean, flat location schema accepted by GoHighLevel API v2
     const locationPayload: Record<string, unknown> = {
       name: businessName,
       country: data.country || 'CA',
       timezone: data.timezone || 'America/Vancouver',
-      business: {
-        name: businessName,
-        legalBusinessName: legalName,
-        country: data.country || 'CA',
-        timezone: data.timezone || 'America/Vancouver',
-      },
     };
 
-    if (companyId) {
-      locationPayload.companyId = companyId;
+    if (data.legalBusinessName) {
+      locationPayload.legalBusinessName = data.legalBusinessName;
     }
-
     if (data.website) {
       locationPayload.website = data.website;
-      (locationPayload.business as Record<string, unknown>).website = data.website;
     }
     if (data.email) {
       locationPayload.email = data.email;
-      (locationPayload.business as Record<string, unknown>).email = data.email;
     }
     if (data.phone) {
       locationPayload.phone = data.phone;
-      (locationPayload.business as Record<string, unknown>).phone = data.phone;
     }
     if (data.streetAddress) {
       locationPayload.address = data.streetAddress;
-      (locationPayload.business as Record<string, unknown>).address = data.streetAddress;
     }
     if (data.city) {
       locationPayload.city = data.city;
-      (locationPayload.business as Record<string, unknown>).city = data.city;
     }
     if (data.state) {
       locationPayload.state = data.state;
-      (locationPayload.business as Record<string, unknown>).state = data.state;
     }
     if (data.postalCode) {
       locationPayload.postalCode = data.postalCode;
-      (locationPayload.business as Record<string, unknown>).postalCode = data.postalCode;
     }
 
-    const locRes = await fetch(`${GHL_API_BASE}/locations/${encodeURIComponent(cleanSubaccountId)}`, {
+    // Try agency key first if available (since locations.write is an agency-level scope), or cleanKey
+    const targetLocKey = (agencyApiKey || cleanKey).trim();
+    let locRes = await fetch(`${GHL_API_BASE}/locations/${encodeURIComponent(cleanSubaccountId)}`, {
       method: 'PUT',
-      headers,
+      headers: {
+        Authorization: `Bearer ${targetLocKey}`,
+        Version: GHL_API_VERSION,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(locationPayload),
     });
 
+    // If 401 Unauthorized with cleanKey, retry with agencyApiKey if available
+    if (locRes.status === 401 && agencyApiKey && agencyApiKey.trim() !== targetLocKey) {
+      locRes = await fetch(`${GHL_API_BASE}/locations/${encodeURIComponent(cleanSubaccountId)}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${agencyApiKey.trim()}`,
+          Version: GHL_API_VERSION,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(locationPayload),
+      });
+    }
+
     if (locRes.ok) {
       result.locationUpdated = true;
-      const locData = await locRes.json() as Record<string, unknown>;
+      const locData = (await locRes.json()) as Record<string, unknown>;
       result.details.location = locData;
       console.log(`[GHL Profile Sync] Successfully updated location [${cleanSubaccountId}] business settings.`);
     } else {
@@ -924,7 +930,7 @@ export async function syncGhlBusinessProfileAndValues(
       let msg = errText;
       try {
         const json = JSON.parse(errText);
-        msg = json.message || errText;
+        msg = Array.isArray(json.message) ? json.message.join(', ') : json.message || errText;
       } catch {}
       console.warn(`[GHL Profile Sync] Location profile update notice (${locRes.status}):`, msg);
       result.locationError = `Business profile update notice (${locRes.status}): ${msg}. (Requires locations.write scope)`;
