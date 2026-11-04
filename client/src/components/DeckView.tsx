@@ -6,6 +6,7 @@ import { SwipeCard } from './SwipeCard';
 
 interface DeckViewProps {
   leads: LeadCardData[];
+  user?: { email?: string; name?: string } | null;
   onSwipe: (action: SwipeAction) => void;
   onOpenPitchEditor: (lead: LeadCardData) => void;
   onSelectForDetail?: (lead: LeadCardData) => void;
@@ -19,6 +20,7 @@ interface DeckViewProps {
 
 export const DeckView: React.FC<DeckViewProps> = ({
   leads,
+  user,
   onSwipe,
   onOpenPitchEditor,
   onSelectForDetail,
@@ -101,6 +103,8 @@ export const DeckView: React.FC<DeckViewProps> = ({
           key={currentLead.id}
           lead={currentLead}
           isFront={true}
+          senderEmail={user?.email}
+          senderName={user?.name}
           onSwipe={onSwipe}
           onOpenPitchEditor={onOpenPitchEditor}
           onSelectForDetail={onSelectForDetail}

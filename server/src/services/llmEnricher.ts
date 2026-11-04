@@ -59,14 +59,22 @@ export async function enrichSignalWithLLM(
   // If live OpenAI API key is supplied, query gpt-4o-mini with JSON mode
   if (cleanKey && !cleanKey.includes('your_') && cleanKey.startsWith('sk-')) {
     try {
-      const systemPrompt = `You are an elite B2B sales development representative, executive talent advisor, and account intelligence specialist for TwinFlow.
-Analyze the provided news headline and article text to extract actionable outbound intelligence and knowledge-graph branching targets for ANY industry or market vertical.
+      const systemPrompt = `You are a direct, pragmatic executive assistant and B2B communication specialist.
+Analyze the provided news headline and article text to extract actionable outbound intelligence and knowledge-graph branching targets.
+
+CRITICAL EMAIL COPY RULES (STRICTLY ENFORCED):
+- NO AI SLOP. Absolutely NO buzzwords, clichés, or marketing jargon (e.g. do NOT use "synergy", "game-changer", "delighted", "streamlining", "frictionless", "hyper-tailored", "leverage", "exponential", "in today's fast-paced environment", "catalyst", "unleash", "triage deck", "supercharge").
+- PITCH BODY MUST BE LITERALLY 2 SENTENCES. Exactly two sentences of body text:
+  1. Sentence 1: Acknowledge reading the article / news about the company (e.g. "I saw the recent article in [Publisher] regarding [Company]'s [project/expansion/milestone].").
+  2. Sentence 2: Ask directly if there is an opportunity to connect and present or offer products/services (e.g. "Given our work in [relevant field/services], would there be an opportunity to connect and see if we can present our services for your upcoming plans?").
+- Subject line must be simple, lowercase/casual, and human (e.g. "quick question re: [topic]" or "[Company] / [Sender Company]" or "re: [project/expansion]"). Under 7 words. No corporate spam subjects.
+
 You must respond with valid JSON adhering exactly to this structure:
 {
   "companyName": "Company name",
   "companyDomain": "companyname.com",
   "signalType": "Facility / Branch Opening" | "Major Contract Awarded" | "Leadership Appointment" | "Merger & Acquisition" | "Capital Investment" | "Commercial Expansion" | "Funding & Growth",
-  "industryTags": ["Primary Vertical (e.g. Commercial Real Estate, Healthcare, General Contracting, Manufacturing, Legal, B2B SaaS)", "Milestone", "Sector Keyword"],
+  "industryTags": ["Primary Vertical", "Milestone", "Sector Keyword"],
   "summaryBullets": [
     "Trigger point: What major milestone or event occurred",
     "Operational impact: What bottleneck, hiring expansion, or scaling challenge arose",
@@ -82,15 +90,15 @@ You must respond with valid JSON adhering exactly to this structure:
     { "name": "Key leader 1 mentioned in article", "role": "Executive title", "company": "Company name" },
     { "name": "Key leader 2 mentioned in article", "role": "Executive title", "company": "Company name" }
   ],
-  "coldIntroHook": "I saw in [Source] that [Company] recently [action]. Given that you're [context], I wanted to reach out...",
-  "pitchSubject": "Compelling short subject line (6-8 words max)",
-  "pitchBody": "3 concise, highly tailored paragraphs (under 120 words) addressing the trigger event and proposing a relevant next step.",
+  "coldIntroHook": "I saw the recent article regarding [Company]'s [milestone].",
+  "pitchSubject": "quick question re: [milestone / Company]",
+  "pitchBody": "Hi [First Name],\\n\\nI saw the recent article in [Publisher] regarding [Company]'s [milestone]. Given our work in [offerings / commercial services], would there be an opportunity to connect and see if we can present our services for your upcoming plans?\\n\\nBest,\\n[User Name]",
   "competitors": [
     { "name": "Key Competitor Name", "domain": "competitor.com", "reason": "Direct market competitor operating in the same industry and geographic market" },
     { "name": "Secondary Competitor Name", "domain": "competitor2.com", "reason": "Alternative provider in this vertical" }
   ],
   "suggestedPeerRoles": [
-    { "title": "Industry-appropriate secondary decision maker title (e.g. for Construction: VP of Preconstruction or Director of Estimating; for Healthcare: Practice Director or Clinical Operations; for Law/Finance: Managing Partner or CFO; for Tech: VP Engineering or CPO)", "reason": "Why this role is impacted by the trigger milestone" }
+    { "title": "Industry-appropriate secondary decision maker title", "reason": "Why this role is impacted by the trigger milestone" }
   ]
 };`;
 
@@ -175,9 +183,9 @@ Extract and generate the structured JSON intelligence object.`;
                 role: parsed.decisionMaker.role || 'Executive Leadership',
                 company: parsed.companyName,
               },
-              coldIntroHook: parsed.coldIntroHook || `I saw in ${publisher} that ${parsed.companyName} recently made major moves.`,
-              pitchSubject: parsed.pitchSubject || `Scaling ${parsed.companyName}'s commercial pipeline`,
-              pitchBody: parsed.pitchBody || `Hi ${parsed.decisionMaker.name},\n\nCongrats on the recent milestone at ${parsed.companyName} reported in ${publisher}.\n\nTwinFlow streamlines high-velocity outbound triage. Would you be open to a 3-minute workflow walkthrough?`,
+              coldIntroHook: parsed.coldIntroHook || `I saw the recent article in ${publisher} regarding ${parsed.companyName}'s upcoming plans.`,
+              pitchSubject: parsed.pitchSubject || `quick question re: ${parsed.companyName}`,
+              pitchBody: parsed.pitchBody || `Hi ${(parsed.decisionMaker.name || '').split(' ')[0] || 'there'},\n\nI saw the recent article in ${publisher} regarding ${parsed.companyName}'s expansion plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`,
               competitors: defaultCompetitors,
               suggestedPeerRoles: defaultPeerRoles,
             };
@@ -286,7 +294,11 @@ function generateHeuristicEnrichment(
     dmRole = 'VP of Commercial Strategy';
   }
 
-  const coldIntroHook = `I saw in ${publisher} that ${company} recently announced major developments around ${headline.slice(0, 60)}. Given your leadership as ${dmRole}, I wanted to reach out.`;
+  const firstName = dmName.split(' ')[0] || dmName;
+  const cleanHeadline = headline.replace(/["']/g, '').slice(0, 65).trim();
+  const coldIntroHook = `I saw the recent article in ${publisher} regarding ${company}'s announcement on ${cleanHeadline}.`;
+  const pitchSubject = `quick question re: ${company}`;
+  const pitchBody = `Hi ${firstName},\n\nI saw the recent article in ${publisher} regarding ${company}'s announcement on ${cleanHeadline}. Given our work in commercial services, would there be an opportunity to connect and see if we can present our offerings for your upcoming plans?\n\nBest,`;
 
   return {
     companyName: company,
@@ -310,8 +322,8 @@ function generateHeuristicEnrichment(
       { name: 'Elena Rostova', role: 'VP of Global Operations', company },
     ],
     coldIntroHook,
-    pitchSubject: `Scaling ${company}'s pipeline after recent ${publisher} news`,
-    pitchBody: `Hi ${dmName},\n\n${coldIntroHook}\n\nWhenever new operational milestones hit, manual account research typically slows commercial momentum. TwinFlow equips revenue teams with a gamified triage deck to approve verified, hyper-tailored outreach in seconds.\n\nWould you be open to a 3-minute interactive walkthrough next week?`,
+    pitchSubject,
+    pitchBody,
     competitors: generateHeuristicCompetitors(company, signalType),
     suggestedPeerRoles: generateHeuristicPeerRoles(signalType),
   };

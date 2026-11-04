@@ -96,9 +96,11 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
     contacts: allContacts,
     emailDraft: {
       id: item.outreachDraft?.id,
-      subject: item.outreachDraft?.subject || `Scaling ${item.companyName}'s pipeline`,
-      body: item.outreachDraft?.body || 'Hi there,\n\nSaw the news and wanted to connect.\n\nBest,',
-      cta: 'Book 15-min workflow review',
+      subject: item.outreachDraft?.subject || `quick question re: ${item.companyName}`,
+      body:
+        item.outreachDraft?.body ||
+        `Hi ${primaryContact.name.split(' ')[0] || 'there'},\n\nI saw the recent article regarding ${item.companyName}'s upcoming plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`,
+      cta: 'Connect re: offerings',
       estimatedReadTime: `${readSeconds} sec read`,
     },
     rawSignalSummary: `${item.signalType} trigger for ${item.companyName}. Verified decision-maker: ${item.contact?.name || 'Key Executive'}.`,
@@ -1030,6 +1032,7 @@ export const App: React.FC = () => {
           <div className="h-[85vh] w-full">
             <LeadDetailPane
               lead={mobileDetailLead}
+              user={userProfile}
               onSwipe={(action) => {
                 handleSwipe(action);
                 setMobileDetailLead(null);
@@ -1050,6 +1053,7 @@ export const App: React.FC = () => {
       {/* Quick Pitch Customization Modal */}
       <PitchEditorModal
         lead={editingLead}
+        user={userProfile}
         isOpen={!!editingLead}
         onClose={() => setEditingLead(null)}
         onSaveAndApprove={handleSaveAndApprove}

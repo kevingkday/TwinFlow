@@ -26,6 +26,7 @@ import type { Campaign } from '../types/campaign';
 import type { UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
 import { authFetch } from '../utils/api';
+import { openEmailClient } from '../utils/email';
 
 interface ContactsPageProps {
   user: UserProfile | null;
@@ -36,7 +37,7 @@ interface ContactsPageProps {
 }
 
 export const ContactsPage: React.FC<ContactsPageProps> = ({
-  user: _user,
+  user,
   campaigns = [],
   activeCampaignId,
   onNavigateDeck,
@@ -655,6 +656,21 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                       {/* Actions */}
                       <td className="py-4 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
+                          {c.outreachDraft && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openEmailClient('gmail', c.email, c.outreachDraft?.subject, c.outreachDraft?.body)
+                              }
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
+                              title="Launch Gmail compose with this pitch pre-filled"
+                            >
+                              <Mail className="w-3 h-3 text-red-600" />
+                              <span>Gmail</span>
+                              <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                            </button>
+                          )}
+
                           {!c.ghlContactId && (
                             <button
                               type="button"
@@ -917,36 +933,83 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
               {/* Outreach Pitch Draft */}
               {selectedContactForModal.outreachDraft && (
                 <div className="rounded-xl border border-slate-200 p-4 bg-white">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-blue-600" />
                       <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                        Tailored Outbound Pitch
+                        2-Sentence Outbound Pitch
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopy(
-                          `Subject: ${selectedContactForModal.outreachDraft?.subject}\n\n${selectedContactForModal.outreachDraft?.body}`,
-                          'modal-pitch',
-                          'Pitch'
-                        )
-                      }
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
-                    >
-                      {copiedId === 'modal-pitch' ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-600" />
-                          <span className="text-emerald-700">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3 text-slate-500" />
-                          <span>Copy Pitch</span>
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openEmailClient(
+                            'gmail',
+                            selectedContactForModal.email,
+                            selectedContactForModal.outreachDraft?.subject,
+                            selectedContactForModal.outreachDraft?.body
+                          )
+                        }
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+                        title="Launch Gmail web compose with pre-filled recipient, subject, and 2-sentence pitch"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-red-600" />
+                        <span>Open in Gmail</span>
+                        <ExternalLink className="w-3 h-3 opacity-70" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openEmailClient(
+                            'default',
+                            selectedContactForModal.email,
+                            selectedContactForModal.outreachDraft?.subject,
+                            selectedContactForModal.outreachDraft?.body
+                          )
+                        }
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition-colors cursor-pointer"
+                        title="Open default system mail client"
+                      >
+                        <span>Mail App</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCopy(
+                            `Subject: ${selectedContactForModal.outreachDraft?.subject}\n\n${selectedContactForModal.outreachDraft?.body}`,
+                            'modal-pitch',
+                            'Pitch'
+                          )
+                        }
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+                      >
+                        {copiedId === 'modal-pitch' ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            <span className="text-emerald-700">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3 text-slate-500" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Sender / Recipient Metadata Bar */}
+                  <div className="mb-2.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[10px] uppercase font-bold text-slate-400">From:</span>
+                      <span className="font-mono text-slate-800 font-medium truncate">{user?.email || 'kevingkday@gmail.com'}</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-100/70 text-red-700 font-medium">Gmail</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[10px] uppercase font-bold text-slate-400">To:</span>
+                      <span className="font-mono text-slate-800 font-medium truncate">{selectedContactForModal.email || 'Direct email pending'}</span>
+                    </div>
                   </div>
 
                   <div className="text-xs font-semibold text-slate-900 pb-2 border-b border-slate-100">

@@ -18,14 +18,18 @@ import {
   Check,
   Users,
   Radio,
+  Send,
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
+import { openEmailClient } from '../utils/email';
 import type { LeadCardData, SwipeAction, DecisionMaker } from '../types/lead';
 
 interface SwipeCardProps {
   lead: LeadCardData;
   isFront?: boolean;
+  senderEmail?: string;
+  senderName?: string;
   onSwipe: (action: SwipeAction) => void;
   onOpenPitchEditor?: (lead: LeadCardData) => void;
   onSelectForDetail?: (lead: LeadCardData) => void;
@@ -37,6 +41,7 @@ interface SwipeCardProps {
 export const SwipeCard: React.FC<SwipeCardProps> = ({
   lead,
   isFront = true,
+  senderEmail,
   onSwipe,
   onOpenPitchEditor,
   onOpenBranchOut,
@@ -48,6 +53,12 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   const [isEnriching, setIsEnriching] = useState(false);
 
   const currentContact = lead.decisionMaker;
+  const effectiveSenderEmail = senderEmail || 'kevingkday@gmail.com';
+  const effectiveRecipientEmail =
+    currentContact.email ||
+    `${(currentContact.name || 'contact').toLowerCase().replace(/[^a-z0-9]/g, '.')}@${(lead.companyName || 'domain')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')}.com`;
   const contactsList = lead.contacts && lead.contacts.length > 0 ? lead.contacts : [lead.decisionMaker];
 
   const handleSelectContact = (contact: DecisionMaker) => {
@@ -408,11 +419,36 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
                     ({lead.emailDraft.estimatedReadTime})
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEmailClient('gmail', effectiveRecipientEmail, lead.emailDraft.subject, lead.emailDraft.body);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 transition cursor-pointer shadow-2xs"
+                    title="Launch Gmail web compose with pre-filled recipient, subject, and 2-sentence pitch"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-red-600" />
+                    <span>Gmail</span>
+                    <ExternalLink className="w-3 h-3 opacity-70" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEmailClient('default', effectiveRecipientEmail, lead.emailDraft.subject, lead.emailDraft.body);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                    title="Launch default system mail client"
+                  >
+                    <Send className="w-3 h-3 text-slate-500" />
+                    <span>Mail App</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleCopyPitch}
-                    className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
                     title="Copy subject & body"
                   >
                     {copiedPitch ? (
@@ -434,24 +470,69 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
                         e.stopPropagation();
                         onOpenPitchEditor(lead);
                       }}
-                      className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition cursor-pointer"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition cursor-pointer"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
-                      <span>Edit Pitch</span>
+                      <span>Edit</span>
                     </button>
                   )}
                 </div>
               </div>
 
+              {/* From / To email routing bar */}
+              <div className="mb-2.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">From:</span>
+                  <span className="font-mono text-slate-800 truncate font-medium">{effectiveSenderEmail}</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-100/70 text-red-700 font-medium">Gmail</span>
+                </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">To:</span>
+                  <span className="font-mono text-slate-800 truncate font-medium">{effectiveRecipientEmail}</span>
+                </div>
+              </div>
+
               {/* Subject Line */}
-              <div className="text-xs mb-3 flex items-baseline gap-1.5">
+              <div className="text-xs mb-2.5 flex items-baseline gap-1.5">
                 <span className="text-slate-400 font-medium">Subject:</span>
                 <span className="text-slate-900 font-bold text-sm tracking-tight">{lead.emailDraft.subject}</span>
               </div>
 
-              {/* Email Body: Clean Readable Compose View */}
+              {/* Email Body: Clean Readable Compose View (Strict 2-Sentence Standard) */}
               <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs sm:text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap select-text font-sans selection:bg-blue-100">
                 {lead.emailDraft.body}
+              </div>
+
+              {/* 1-Click Send Strip */}
+              <div className="mt-2.5 flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200/70 text-xs">
+                <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  Quick Launch:
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEmailClient('gmail', effectiveRecipientEmail, lead.emailDraft.subject, lead.emailDraft.body);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-white hover:bg-red-50 text-slate-800 hover:text-red-700 border border-slate-200 hover:border-red-200 shadow-2xs transition cursor-pointer"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-red-600" />
+                    <span>Open in Gmail</span>
+                    <ExternalLink className="w-3 h-3 text-slate-400" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEmailClient('default', effectiveRecipientEmail, lead.emailDraft.subject, lead.emailDraft.body);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
+                  >
+                    <span>Default Mail</span>
+                  </button>
+                </div>
               </div>
             </div>
 

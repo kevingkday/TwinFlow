@@ -16,10 +16,12 @@ import {
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
+import { openEmailClient } from '../utils/email';
 import type { LeadCardData, SwipeAction } from '../types/lead';
 
 interface LeadDetailPaneProps {
   lead: LeadCardData | null;
+  user?: { email?: string; name?: string } | null;
   onSwipe: (action: SwipeAction) => void;
   onUpdateDraft?: (leadId: string, newSubject: string, newBody: string) => void;
   onCloseMobileModal?: () => void;
@@ -33,6 +35,7 @@ interface LeadDetailPaneProps {
 
 export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
   lead,
+  user,
   onSwipe,
   onUpdateDraft,
   onCloseMobileModal,
@@ -171,19 +174,79 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
       {/* Pane Content Body */}
       <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4">
         {activeTab === 'pitch' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="space-y-3.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                Customizable Email Pitch
+                2-Sentence Pitch Studio
               </span>
-              <button
-                onClick={handleCopyPitch}
-                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 transition-colors cursor-pointer"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Copied!' : 'Copy to Clipboard'}</span>
-              </button>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const domain = (lead.companyName || lead.decisionMaker.company || 'domain')
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]/g, '');
+                    const recipient =
+                      lead.decisionMaker.email ||
+                      `${lead.decisionMaker.name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@${domain}.com`;
+                    openEmailClient('gmail', recipient, subject, body);
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 transition cursor-pointer shadow-2xs"
+                  title="Launch Gmail web compose"
+                >
+                  <Mail className="w-3.5 h-3.5 text-red-600" />
+                  <span>Open in Gmail</span>
+                  <ExternalLink className="w-3 h-3 opacity-70" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const domain = (lead.companyName || lead.decisionMaker.company || 'domain')
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]/g, '');
+                    const recipient =
+                      lead.decisionMaker.email ||
+                      `${lead.decisionMaker.name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@${domain}.com`;
+                    openEmailClient('default', recipient, subject, body);
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                  title="Launch default system mail client"
+                >
+                  <Send className="w-3 h-3 text-slate-500" />
+                  <span>Mail App</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyPitch}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied ? 'Copied!' : 'Copy'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Sender / Recipient Metadata Bar */}
+            <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[10px] uppercase font-bold text-slate-400">From:</span>
+                <span className="font-mono text-slate-800 font-medium truncate">{user?.email || 'kevingkday@gmail.com'}</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-100/70 text-red-700 font-medium">Gmail</span>
+              </div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[10px] uppercase font-bold text-slate-400">To:</span>
+                <span className="font-mono text-slate-800 font-medium truncate">
+                  {lead.decisionMaker.email ||
+                    `${lead.decisionMaker.name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@${(
+                      lead.companyName ||
+                      lead.decisionMaker.company ||
+                      'domain'
+                    )
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]/g, '')}.com`}
+                </span>
+              </div>
             </div>
 
             {/* Subject input */}
@@ -205,10 +268,10 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
             {/* Body textarea */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Email Body
+                2-Sentence Email Pitch
               </label>
               <textarea
-                rows={9}
+                rows={7}
                 value={body}
                 onChange={(e) => {
                   setBody(e.target.value);

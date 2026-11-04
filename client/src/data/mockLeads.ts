@@ -54,10 +54,10 @@ export const INITIAL_LEADS: LeadCardData[] = [
       },
     ],
     emailDraft: {
-      subject: 'Scaling HyperScale\'s GTM outbound after the $42M Series B',
-      body: `Hi Elena,\n\nSaw TechCrunch's report on your $42M Series B — huge milestone for HyperScale AI!\n\nAs you ramp up your commercial team to 45 reps, automated data pipeline enrichment is typically where SDR velocity gets bogged down. TwinFlow hooks right into your news signals and auto-generates verified prospect pitches before your competitors even spot the press release.\n\nWould you be open to seeing a 3-minute interactive teardown of how 3 peers in enterprise synthetic data are using this today?`,
-      cta: 'Book 15-min workflow review',
-      estimatedReadTime: '35 sec read'
+      subject: 'quick question re: HyperScale AI',
+      body: `Hi Elena,\n\nI saw the recent article in TechCrunch regarding HyperScale AI's $42M Series B announcement. Given our work in commercial services, would there be an opportunity to connect and see if we can present our offerings for your upcoming plans?\n\nBest,`,
+      cta: 'Connect re: offerings',
+      estimatedReadTime: '15 sec read'
     },
     rawSignalSummary: 'HyperScale AI announced $42M in fresh Series B capital with plans to triple sales engineering and revenue operations within 180 days.',
     tags: ['Synthetic Data', 'High Hiring Velocity', 'Series B', 'Enterprise B2B']
@@ -115,10 +115,10 @@ export const INITIAL_LEADS: LeadCardData[] = [
       },
     ],
     emailDraft: {
-      subject: 'Congrats on the CCO role at FinMatrix + trigger-based sales orchestration',
-      body: `Hi Marcus,\n\nCongratulations on stepping in as Chief Commercial Officer at FinMatrix! Bringing that Stripe pedigree to cross-border logistics infrastructure is a massive move.\n\nWhenever new commercial leadership enters, tightening the signal-to-outreach feedback loop is job #1. TwinFlow automatically converts merchant regulatory announcements into ready-to-approve hyper-personalized pitch decks.\n\nOpen to taking a quick look at a live feed calibrated for FinMatrix's target accounts?`,
-      cta: 'Explore FinMatrix Live Feed',
-      estimatedReadTime: '40 sec read'
+      subject: 'quick question re: FinMatrix',
+      body: `Hi Marcus,\n\nI saw the recent report in Bloomberg regarding your appointment as Chief Commercial Officer at FinMatrix. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming initiatives?\n\nBest,`,
+      cta: 'Connect re: offerings',
+      estimatedReadTime: '15 sec read'
     },
     rawSignalSummary: 'Executive transition trigger: New CCO appointed with dedicated mandate to rebuild commercial pipeline orchestration within Q1-Q2.',
     tags: ['Fintech', 'C-Suite Trigger', 'Cross-Border Payments', 'High Budget']
@@ -145,10 +145,10 @@ export const INITIAL_LEADS: LeadCardData[] = [
       linkedinUrl: 'https://linkedin.com/in/devin-thorne-robotics',
     },
     emailDraft: {
-      subject: 'Partner ecosystem orchestration for Nexus\'s 14 new distribution hubs',
-      body: `Hi Devin,\n\nSaw the announcement regarding Nexus Robotics\'s multi-million dollar freight rollout across the Midwest — stellar momentum.\n\nWith 14 distribution hubs onboarding simultaneously, your integration partner pipeline will need automated triage to separate top-tier carriers from noise. TwinFlow gives your partnership directors a gamified mobile queue to review and approve tailored integrations in seconds.\n\nCould I send over a quick 2-page playbook on how freight tech leaders handle this?`,
-      cta: 'Request 2-page Carrier Playbook',
-      estimatedReadTime: '30 sec read'
+      subject: 'quick question re: Nexus Robotics',
+      body: `Hi Devin,\n\nI saw the recent article in VentureBeat regarding Nexus Robotics's freight deployment across 14 distribution hubs. Given our work in commercial vendor solutions, would there be an opportunity to connect and see if we can present our services for your upcoming plans?\n\nBest,`,
+      cta: 'Connect re: offerings',
+      estimatedReadTime: '15 sec read'
     },
     rawSignalSummary: 'Contract award & warehouse expansion: high volume supply chain deployment creates immediate integration partner demands.',
     tags: ['Robotics', 'Supply Chain', 'Partnerships', 'Enterprise Expansion']
@@ -175,10 +175,10 @@ export const INITIAL_LEADS: LeadCardData[] = [
       linkedinUrl: 'https://linkedin.com/in/dr-sarah-lin-bio',
     },
     emailDraft: {
-      subject: 'Protecting CognitiveBio\'s molecular IP during compute cluster scaling',
-      body: `Dr. Lin,\n\nCongratulations on the $28M round announced with ARCH and DCVC — thrilling step forward for computational peptide discovery.\n\nAs you stand up the Boston research facility, sharing preliminary generative models with external lab partners usually creates massive data-governance friction. We built TwinFlow\'s secure enclave pitching specifically for high-stakes biotech and IP transfer agreements.\n\nWould you have 10 minutes next Tuesday to review how we isolate proprietary molecular weights?`,
-      cta: 'View Security Whitepaper',
-      estimatedReadTime: '35 sec read'
+      subject: 'quick question re: CognitiveBio',
+      body: `Hi Sarah,\n\nI saw the recent article in BioTech Insider regarding CognitiveBio's $28M funding round. Given our work in commercial services, would there be an opportunity to connect and see if we can present our offerings for your upcoming milestones?\n\nBest,`,
+      cta: 'Connect re: offerings',
+      estimatedReadTime: '15 sec read'
     },
     rawSignalSummary: 'Biotech seed/Series A breakout: substantial lab compute investment with strict IP governance requirements.',
     tags: ['BioTech', 'Drug Discovery', 'IP Security', 'Deep Tech']
@@ -205,10 +205,10 @@ export const INITIAL_LEADS: LeadCardData[] = [
       linkedinUrl: 'https://linkedin.com/in/julian-sterling-k8s',
     },
     emailDraft: {
-      subject: 'Outreach strategy for regional bank CISOs following CloudVault\'s FedRAMP status',
-      body: `Hi Julian,\n\nExciting news on the CloudVault GA launch and FedRAMP Ready certification today!\n\nPitching regional bank security leaders on Kubernetes migration is notoriously high-friction without razor-sharp relevance. TwinFlow scans FDIC filings and executive interviews, generating compliance-first pitch angles tailored to each bank\'s existing audits.\n\nWould it be helpful to see a sample queue targeting 5 New England regional banking CISOs?`,
-      cta: 'Preview Bank CISO Queue',
-      estimatedReadTime: '30 sec read'
+      subject: 'quick question re: CloudVault',
+      body: `Hi Julian,\n\nI saw the recent article in SiliconANGLE regarding CloudVault's zero-trust Kubernetes release. Given our work in commercial solutions, would there be an opportunity to connect and see if we can present our services for your upcoming initiatives?\n\nBest,`,
+      cta: 'Connect re: offerings',
+      estimatedReadTime: '15 sec read'
     },
     rawSignalSummary: 'GA product launch with compliance milestone: immediate green light to prospect regulated financial enterprises.',
     tags: ['Kubernetes', 'Cybersecurity', 'FedRAMP', 'Fintech Infrastructure']

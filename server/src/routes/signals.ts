@@ -1042,8 +1042,8 @@ signalsRouter.post('/:id/branch-scout', async (c) => {
       let dmName = 'Sarah Jenkins';
       let dmRole = 'VP of Operations';
       let dmEmail = `s.jenkins@${cleanDomain}`;
-      let pitchSubject = `Scaling ${targetComp}'s outbound operations vs ${parentSignal.companyName}`;
-      let pitchBody = `Hi Sarah,\n\nFollowing recent developments in the ${parentSignal.signalType} category, we noticed ${targetComp} is actively expanding enterprise market share.\n\nTeams competing with ${parentSignal.companyName} often face manual account research latency. TwinFlow gives revenue teams a gamified triage deck to approve tailored outreach in seconds.\n\nOpen to a 3-minute video walkthrough next week?`;
+      let pitchSubject = `quick question re: ${targetComp}`;
+      let pitchBody = `Hi ${dmName.split(' ')[0] || 'there'},\n\nI saw the recent coverage regarding ${targetComp}'s expansion in the ${parentSignal.signalType} space. Given what we do in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`;
 
       // Live SerpAPI + Firecrawl + LLM attempt if key present
       if (c.env?.SERP_API_KEY) {
@@ -1190,8 +1190,8 @@ signalsRouter.post('/:id/branch-scout', async (c) => {
         `Multi-threaded outreach dramatically increases account engagement and reply velocity.`,
       ];
 
-      const pitchSubject = `Coordinating ${company}'s operational execution following recent announcements`;
-      const pitchBody = `Hi ${peerName.split(' ')[0]},\n\nI saw the recent news regarding ${company}'s milestone (${parentSignal.title.slice(0, 50)}).\n\nAs ${peerRole}, you're likely managing the operational implications and team ramp. We've built TwinFlow to eliminate administrative drag for scaling teams by automating verified pipeline intelligence.\n\nWould you be open to a 3-minute workflow exchange next Tuesday?`;
+      const pitchSubject = `quick question re: ${company}`;
+      const pitchBody = `Hi ${peerName.split(' ')[0] || 'there'},\n\nI saw the recent news regarding ${company}'s announcement on ${parentSignal.title.slice(0, 50).trim()}. Given our work in commercial services, would there be an opportunity to connect and see if we can present our offerings for your upcoming plans?\n\nBest,`;
 
       await db.insert(schema.signals).values({
         id: newSignalId,
