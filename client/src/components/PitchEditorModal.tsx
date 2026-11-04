@@ -41,7 +41,7 @@ export const PitchEditorModal: React.FC<PitchEditorModalProps> = ({
     )
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '')}.com`;
-  const senderEmail = user?.email || 'kevingkday@gmail.com';
+  const senderEmail = user?.email || 'demo@twinflow.co';
 
   const handleSave = () => {
     onUpdateDraft(lead.id, subject, body);

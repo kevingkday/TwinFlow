@@ -53,7 +53,7 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   const [isEnriching, setIsEnriching] = useState(false);
 
   const currentContact = lead.decisionMaker;
-  const effectiveSenderEmail = senderEmail || 'kevingkday@gmail.com';
+  const effectiveSenderEmail = senderEmail || 'demo@twinflow.co';
   const effectiveRecipientEmail =
     currentContact.email ||
     `${(currentContact.name || 'contact').toLowerCase().replace(/[^a-z0-9]/g, '.')}@${(lead.companyName || 'domain')

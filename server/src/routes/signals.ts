@@ -12,6 +12,7 @@ import {
 import { findApolloContact } from '../services/apollo';
 import { upsertContact, createNote, createOpportunity, listAgencySubaccounts } from '../services/ghl';
 import { getSessionUser } from './auth';
+import { DEMO_SIGNALS } from '../data/demoSignals';
 
 export const signalsRouter = new Hono<{ Bindings: Bindings }>();
 
@@ -118,8 +119,30 @@ signalsRouter.get('/deck', async (c) => {
   }
 
   try {
+    const sessionUser = await getSessionUser(c);
+
+    // If visitor is unauthenticated (demo mode), serve the generic, universal public demo deck
+    if (!sessionUser) {
+      return c.json({
+        success: true,
+        isDemo: true,
+        count: DEMO_SIGNALS.length,
+        signals: DEMO_SIGNALS,
+        approvedCount: 0,
+        user: {
+          id: 'demo_operator',
+          name: 'Demo Visitor',
+          email: 'demo@twinflow.co',
+          creditBalance: 500,
+          streakCount: 0,
+          totalPoints: 0,
+          isDemo: true,
+        },
+      });
+    }
+
     const db = getDb(c.env.DB);
-    const user = await getUser(c, db);
+    const user = sessionUser;
 
     // Fetch up to 10 unreviewed signals with linked contacts and outreach drafts, scoped to active campaign
     const targetCampaignId = c.req.query('campaignId') || user.activeCampaignId;
@@ -603,6 +626,28 @@ signalsRouter.post('/:id/action', async (c) => {
 
   try {
     const db = getDb(c.env.DB);
+    const sessionUser = await getSessionUser(c);
+    if (!sessionUser) {
+      // Unauthenticated demo mode: simulate action without affecting live database or CRM
+      return c.json({
+        success: true,
+        isDemo: true,
+        message:
+          action === 'approve'
+            ? 'Demo lead simulated as approved (+50 XP)! Sign up or log in to sync real leads with your CRM.'
+            : 'Demo lead passed.',
+        user: {
+          id: 'demo_operator',
+          name: 'Demo Visitor',
+          email: 'demo@twinflow.co',
+          creditBalance: 490,
+          streakCount: action === 'approve' ? 1 : 0,
+          totalPoints: action === 'approve' ? 50 : 0,
+          isDemo: true,
+        },
+      });
+    }
+
     const existingSignal = await db.query.signals.findFirst({
       where: eq(schema.signals.id, signalId),
       with: {
@@ -616,7 +661,7 @@ signalsRouter.post('/:id/action', async (c) => {
     }
 
     const now = new Date().toISOString();
-    const currentUser = await getUser(c, db);
+    const currentUser = sessionUser;
 
     if (action === 'approve') {
       const APPROVAL_CREDIT_COST = 10;

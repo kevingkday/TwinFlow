@@ -546,12 +546,36 @@ export const App: React.FC = () => {
       // Pre-flight checks for approval
       if (action === 'approve') {
         if (!userProfile) {
-          setScoutToast({
-            message: 'Please sign in or register to approve leads and sync with your CRM.',
-            type: 'error',
+          // Demo Mode: simulate interactive swipe without debiting real account or pushing to CRM
+          const remaining = leads.slice(1);
+          if (soundEnabled) playSound('approve');
+          setHistory((prev) => [...prev, { lead: swipedLead, action }]);
+          setLeads(remaining);
+
+          setStats((prev) => {
+            const newStreak = prev.streak + 1;
+            if (newStreak > 0 && newStreak % 3 === 0) {
+              if (soundEnabled) playSound('streak');
+              triggerConfetti();
+            }
+            return {
+              ...prev,
+              approvedCount: prev.approvedCount + 1,
+              remainingCount: remaining.length,
+              streak: newStreak,
+              creditsRemaining: Math.max(0, prev.creditsRemaining - 10),
+              totalPoints: prev.totalPoints + 50,
+            };
           });
-          setAuthModalMode('signup');
-          setAuthModalOpen(true);
+
+          setScoutToast({
+            message: 'Demo: Lead Approved (+50 XP)! Sign up or log in to sync real leads with your CRM.',
+            type: 'success',
+          });
+
+          if (remaining.length === 0) {
+            triggerConfetti();
+          }
           return;
         }
 
@@ -1017,6 +1041,7 @@ export const App: React.FC = () => {
                     creditBalance={stats.creditsRemaining}
                     onUpgradePrompt={() => setUpgradeModalOpen(true)}
                     isCrmConnected={Boolean(userProfile?.hasCustomGhlKey || userProfile?.isGhlConnected)}
+                    isDemo={!userProfile}
                     onOpenCrmSettings={() => setGhlSettingsOpen(true)}
                   />
                 </div>

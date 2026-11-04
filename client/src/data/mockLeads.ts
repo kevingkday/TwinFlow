@@ -2,8 +2,61 @@ import type { LeadCardData } from '../types/lead';
 
 export const INITIAL_LEADS: LeadCardData[] = [
   {
+    id: 'demo-sig-001',
+    headline: 'Apex Commercial Partners Breaks Ground on $65M Logistics Distribution Facility in Dallas',
+    source: 'Commercial Property Executive',
+    sourceUrl: 'https://cpexecutive.com/apex-commercial-dallas-logistics',
+    publishedAgo: '2h ago',
+    category: 'Commercial Expansion',
+    fitScore: 96,
+    summaryBullets: [
+      'Apex Commercial broke ground on a new 450,000 sq ft regional logistics distribution center in Dallas.',
+      'Active capital expenditure allocated across engineering, infrastructure, equipment, and facility technology.',
+      'Immediate commercial window to present offerings before primary vendor agreements are locked.',
+    ],
+    articleSummary:
+      'Apex Commercial Partners has initiated construction on a $65M high-throughput logistics distribution center in Dallas, TX. The facility represents major regional expansion and active vendor procurement across engineering, logistics systems, and commercial operations.',
+    decisionMaker: {
+      id: 'demo-dm-001',
+      name: 'Dr. Clara Lin',
+      title: 'VP of Commercial Strategy & Development',
+      company: 'Apex Commercial',
+      email: 'c.lin@apexcommercial.com',
+      linkedinUrl: 'https://linkedin.com/in/clara-lin-commercial',
+      isEnriched: true,
+    },
+    contacts: [
+      {
+        id: 'demo-dm-001',
+        name: 'Dr. Clara Lin',
+        title: 'VP of Commercial Strategy & Development',
+        company: 'Apex Commercial',
+        email: 'c.lin@apexcommercial.com',
+        linkedinUrl: 'https://linkedin.com/in/clara-lin-commercial',
+        isEnriched: true,
+      },
+      {
+        id: 'demo-dm-001-b',
+        name: 'David Reynolds',
+        title: 'Director of Facility Operations',
+        company: 'Apex Commercial',
+        email: 'd.reynolds@apexcommercial.com',
+        linkedinUrl: 'https://linkedin.com/in/david-reynolds-ops',
+        isEnriched: true,
+      },
+    ],
+    emailDraft: {
+      subject: 'quick question re: Apex Commercial',
+      body: `Hi Dr. Lin,\n\nI saw the recent article in Commercial Property Executive regarding Apex Commercial breaking ground on the new Dallas logistics distribution center. Given what we do in commercial services, would there be an opportunity to connect and see if we can present our offerings for your upcoming plans?\n\nBest,\nAlex Morgan`,
+      cta: 'Connect re: offerings',
+      estimatedReadTime: '15 sec read',
+    },
+    rawSignalSummary: 'Apex Commercial broke ground on a $65M regional logistics facility in Dallas, opening vendor opportunities.',
+    tags: ['Commercial Real Estate', 'Industrial Logistics', 'Facility Expansion', 'Dallas-Fort Worth'],
+  },
+  {
     id: 'sig-001',
-    headline: 'HyperScale AI Closes $42M Series B to Accelerate Enterprise Synthetic Data Engine',
+    headline: 'HyperScale AI Closes $42M Series B to Accelerate Enterprise Commercial Expansion',
     source: 'TechCrunch',
     sourceUrl: 'https://techcrunch.com/2026/hyperscale-ai-series-b',
     publishedAgo: '2h ago',

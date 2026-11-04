@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Send, Edit3, ArrowLeft, ArrowRight, Zap, KeyRound } from 'lucide-react';
+import { X, Send, Edit3, ArrowLeft, ArrowRight, Zap, KeyRound, CheckCircle2 } from 'lucide-react';
 import type { SwipeAction } from '../types/lead';
 
 interface ActionControlsProps {
@@ -9,6 +9,7 @@ interface ActionControlsProps {
   creditBalance?: number;
   onUpgradePrompt?: () => void;
   isCrmConnected?: boolean;
+  isDemo?: boolean;
   onOpenCrmSettings?: () => void;
 }
 
@@ -19,6 +20,7 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
   creditBalance,
   onUpgradePrompt,
   isCrmConnected = false,
+  isDemo = false,
   onOpenCrmSettings,
 }) => {
   const isOutOfCredits = creditBalance !== undefined && creditBalance < 10;
@@ -74,6 +76,25 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
               Need 10 Credits
             </span>
             <span className="block text-[10px] text-amber-100">Top Up to Approve</span>
+          </div>
+        </button>
+      ) : isDemo ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onAction('approve')}
+          className="group relative flex-1.5 flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-xs cursor-pointer"
+          aria-label="Simulate approving lead in demo"
+          title="Simulate approving this lead in demo mode"
+        >
+          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
+            <CheckCircle2 className="w-4 h-4 text-white" />
+          </div>
+          <div className="text-left">
+            <span className="block text-xs font-bold uppercase tracking-wider text-white">
+              Approve (Demo)
+            </span>
+            <span className="block text-[10px] text-emerald-100">Simulate -10 credits</span>
           </div>
         </button>
       ) : !isCrmConnected ? (

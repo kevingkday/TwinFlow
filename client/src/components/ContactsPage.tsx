@@ -1003,7 +1003,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                   <div className="mb-2.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="text-[10px] uppercase font-bold text-slate-400">From:</span>
-                      <span className="font-mono text-slate-800 font-medium truncate">{user?.email || 'kevingkday@gmail.com'}</span>
+                      <span className="font-mono text-slate-800 font-medium truncate">{user?.email || 'demo@twinflow.co'}</span>
                       <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-100/70 text-red-700 font-medium">Gmail</span>
                     </div>
                     <div className="flex items-center gap-1.5 min-w-0">
