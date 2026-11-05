@@ -7,6 +7,8 @@ import { SwipeCard } from './SwipeCard';
 interface DeckViewProps {
   leads: LeadCardData[];
   user?: { email?: string; name?: string } | null;
+  hasCampaigns?: boolean;
+  onCreateCampaign?: () => void;
   onSwipe: (action: SwipeAction) => void;
   onOpenPitchEditor: (lead: LeadCardData) => void;
   onSelectForDetail?: (lead: LeadCardData) => void;
@@ -21,6 +23,8 @@ interface DeckViewProps {
 export const DeckView: React.FC<DeckViewProps> = ({
   leads,
   user,
+  hasCampaigns = true,
+  onCreateCampaign,
   onSwipe,
   onOpenPitchEditor,
   onSelectForDetail,
@@ -36,6 +40,33 @@ export const DeckView: React.FC<DeckViewProps> = ({
   const thirdLead = leads[2];
 
   if (!currentLead) {
+    if (!hasCampaigns && onCreateCampaign) {
+      return (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-xl min-h-[460px] mx-auto rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col items-center justify-center p-8 sm:p-12 text-center text-slate-800"
+        >
+          <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center mb-4">
+            <Sparkles className="w-8 h-8 text-blue-600" />
+          </div>
+          <h3 className="text-xl font-bold text-slate-900 mb-2 font-sans">
+            Create Your Market Campaign
+          </h3>
+          <p className="text-sm text-slate-600 mb-6 max-w-sm leading-relaxed">
+            Set up your targeting profile, region, and industry catalysts to begin scouting live market signals into your pipeline.
+          </p>
+          <button
+            onClick={onCreateCampaign}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all active:scale-95 cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <span>Launch Campaign Wizard</span>
+          </button>
+        </motion.div>
+      );
+    }
+
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}

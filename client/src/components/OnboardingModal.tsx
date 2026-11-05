@@ -258,10 +258,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [campaignName, setCampaignName] = useState(campaign?.name || '');
-  const [targetLocation, setTargetLocation] = useState('Vancouver, BC');
-  const [userIntent, setUserIntent] = useState('sales_client_acquisition');
+  const [targetLocation, setTargetLocation] = useState(campaign?.targetLocation || user?.targetLocation || 'Vancouver, BC');
+  const [userIntent, setUserIntent] = useState(campaign?.userIntent || user?.userIntent || 'sales_client_acquisition');
   const [userMission, setUserMission] = useState(
-    'I help commercial general contractors and developers streamline subcontractor bidding and reduce procurement costs.'
+    campaign?.userMission || user?.userMission || ''
   );
 
   const [activeSectorTab, setActiveSectorTab] = useState<string>('popular');
@@ -286,7 +286,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [buyerCompanySize, setBuyerCompanySize] = useState<'smb' | 'midmarket' | 'enterprise' | 'any'>(suggestedBuyers.buyerCompanySize);
   const [serviceArea, setServiceArea] = useState<'local' | 'national'>(suggestedBuyers.serviceArea);
 
-    React.useEffect(() => {
+  React.useEffect(() => {
+    if (isOpen) {
+      setStep(1);
+    }
     if (campaign) {
       setCampaignName(campaign.name || '');
       if (campaign.targetLocation) setTargetLocation(campaign.targetLocation);
@@ -312,7 +315,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       setCampaignName('');
       if (user.targetLocation) setTargetLocation(user.targetLocation);
       if (user.userIntent) setUserIntent(user.userIntent);
-      if (user.userMission) setUserMission(user.userMission);
+      setUserMission(user.userMission || '');
       if (user.targetIndustries) {
         const arr = ensureArray(user.targetIndustries);
         if (arr.length > 0) setSelectedIndustries(arr);
@@ -357,6 +360,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    const finalCampaignName = campaignName.trim() || `${targetLocation.split(',')[0] || 'Regional'} Market Growth`;
+
     try {
       let res: Response;
       if (mode === 'edit' && campaign?.id) {
@@ -364,7 +369,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           method: 'PATCH',
           headers,
           body: JSON.stringify({
-            name: campaignName.trim() || undefined,
+            name: finalCampaignName,
             targetLocation,
             userIntent,
             userMission,
@@ -383,7 +388,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           method: 'POST',
           headers,
           body: JSON.stringify({
-            name: campaignName.trim() || undefined,
+            name: finalCampaignName,
             targetLocation,
             userIntent,
             userMission,
@@ -437,14 +442,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-slate-900 font-display">
-                  {mode === 'edit' ? (campaign?.name ? `Edit: ${campaign.name}` : 'Edit Campaign') : 'New Market Campaign Setup'}
+                  {mode === 'edit'
+                    ? (campaign?.name ? `Edit: ${campaign.name}` : 'Edit Campaign')
+                    : (!user?.onboardingCompleted ? 'Welcome to TwinFlow: Campaign Setup' : 'New Market Campaign Setup')}
                 </h2>
                 <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wider">
                   Step {step} of 4
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                AI-Calibrated for local & industry-specific opportunity discovery
+                {mode === 'edit'
+                  ? 'Update your market signals and targeting criteria'
+                  : 'Complete these quick steps to calibrate your targeting and launch your live lead deck'}
               </p>
             </div>
           </div>

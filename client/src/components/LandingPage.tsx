@@ -21,6 +21,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import type { LeadCardData, SwipeAction, SwipeStats, UserProfile } from '../types/lead';
+import { INITIAL_LEADS } from '../data/mockLeads';
 import { SwipeCard } from './SwipeCard';
 import { ActionControls } from './ActionControls';
 
@@ -55,7 +56,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 }) => {
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
 
-  const activeDemoLead = leads[0];
+  // Avoid showing "Demo Cleared" prematurely if live deck is empty
+  const demoCleared = leads.length === 0 && (stats.approvedCount + stats.passedCount > 0);
+  const activeDemoLead = demoCleared ? null : (leads[0] || INITIAL_LEADS[0]);
 
   const toggleFaq = (index: number) => {
     setActiveFaq(activeFaq === index ? null : index);

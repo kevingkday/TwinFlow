@@ -216,6 +216,12 @@ export const App: React.FC = () => {
             streak: data.user!.streakCount,
             totalPoints: data.user!.totalPoints,
           }));
+          if (!data.user.onboardingCompleted) {
+            setSelectedCampaignForEdit(null);
+            setCampaignModalMode('create');
+            setCampaignModalOpen(true);
+            setOnboardingOpen(true);
+          }
         } else {
           setUserProfile(null);
         }
@@ -244,6 +250,13 @@ export const App: React.FC = () => {
           data.campaigns.find((c) => c.isActive)?.id ||
           (data.campaigns[0] ? data.campaigns[0].id : null);
         setActiveCampaignId(active);
+        const token = customToken || localStorage.getItem('twinflow_session_token');
+        if (token && data.campaigns.length === 0) {
+          setSelectedCampaignForEdit(null);
+          setCampaignModalMode('create');
+          setCampaignModalOpen(true);
+          setOnboardingOpen(true);
+        }
       }
     } catch (err) {
       console.warn('Could not fetch campaigns:', err);
@@ -411,6 +424,17 @@ export const App: React.FC = () => {
       message: `Signed in as ${user.name || user.email}!`,
       type: 'success',
     });
+    setCurrentView('deck');
+    if (typeof window !== 'undefined') {
+      window.location.hash = '#deck';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    if (!user.onboardingCompleted) {
+      setSelectedCampaignForEdit(null);
+      setCampaignModalMode('create');
+      setCampaignModalOpen(true);
+      setOnboardingOpen(true);
+    }
     fetchCampaigns(token);
     fetchDeck(token);
   };
@@ -434,6 +458,7 @@ export const App: React.FC = () => {
       if (window.location.search || window.location.pathname !== '/') {
         window.history.pushState(null, '', '/');
       }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     setStats({
       approvedCount: 0,
@@ -514,6 +539,11 @@ export const App: React.FC = () => {
         message: 'Targeting calibrated! Initialized signal deck.',
         type: 'success',
       });
+    }
+    setCurrentView('deck');
+    if (typeof window !== 'undefined') {
+      window.location.hash = '#deck';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     triggerConfetti();
   };
@@ -1030,6 +1060,9 @@ export const App: React.FC = () => {
             <div className="flex-1 w-full max-w-6xl mx-auto flex flex-col items-center">
               <DeckView
                 leads={leads}
+                user={userProfile}
+                hasCampaigns={campaigns.length > 0}
+                onCreateCampaign={handleOpenCreateCampaign}
                 onSwipe={handleSwipe}
                 onOpenPitchEditor={(lead) => setEditingLead(lead)}
                 onSelectForDetail={(lead) => setMobileDetailLead(lead)}
