@@ -26,6 +26,19 @@ import { authFetch } from '../utils/api';
 import { playSound } from '../utils/audio';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
 
+function ensureArray(val: unknown, fallback: string[] = []): string[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return val.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  return fallback;
+}
+
 interface ProfilePageProps {
   user: UserProfile | null;
   onProfileUpdated: (updatedUser: UserProfile) => void;
@@ -99,25 +112,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [crmSyncMessage, setCrmSyncMessage] = useState<string | null>(null);
 
   // Offerings Tag State
-  const [servicesOffered, setServicesOffered] = useState<string[]>(
-    user?.servicesOffered && user.servicesOffered.length > 0
-      ? user.servicesOffered
-      : ['Commercial Roofing', 'Facility Renovation']
+  const [servicesOffered, setServicesOffered] = useState<string[]>(() =>
+    ensureArray(user?.servicesOffered, ['Commercial Roofing', 'Facility Renovation'])
   );
   const [newServiceInput, setNewServiceInput] = useState('');
 
-  const [productsOffered, setProductsOffered] = useState<string[]>(
-    user?.productsOffered && user.productsOffered.length > 0
-      ? user.productsOffered
-      : ['TPO Roofing Membranes', 'Commercial Chillers']
+  const [productsOffered, setProductsOffered] = useState<string[]>(() =>
+    ensureArray(user?.productsOffered, ['TPO Roofing Membranes', 'Commercial Chillers'])
   );
   const [newProductInput, setNewProductInput] = useState('');
 
   // Target Roles Tag State
-  const [targetRoles, setTargetRoles] = useState<string[]>(
-    user?.targetRoles && user.targetRoles.length > 0
-      ? user.targetRoles
-      : ['CEO', 'VP Operations', 'Procurement Director']
+  const [targetRoles, setTargetRoles] = useState<string[]>(() =>
+    ensureArray(user?.targetRoles, ['CEO', 'VP Operations', 'Procurement Director'])
   );
   const [newRoleInput, setNewRoleInput] = useState('');
 
@@ -150,15 +157,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setUserIntent(user.userIntent || 'sales_client_acquisition');
       setUserMission(user.userMission || '');
       setValueProp(user.valueProp || '');
-      if (user.servicesOffered && user.servicesOffered.length > 0) {
-        setServicesOffered(user.servicesOffered);
-      }
-      if (user.productsOffered && user.productsOffered.length > 0) {
-        setProductsOffered(user.productsOffered);
-      }
-      if (user.targetRoles && user.targetRoles.length > 0) {
-        setTargetRoles(user.targetRoles);
-      }
+      setServicesOffered(ensureArray(user.servicesOffered, ['Commercial Roofing', 'Facility Renovation']));
+      setProductsOffered(ensureArray(user.productsOffered, ['TPO Roofing Membranes', 'Commercial Chillers']));
+      setTargetRoles(ensureArray(user.targetRoles, ['CEO', 'VP Operations', 'Procurement Director']));
       if (user.icpQuery) {
         setCalibratedQuery(user.icpQuery);
       }

@@ -26,12 +26,17 @@ function inferServiceArea(blob: string): ServiceArea {
 }
 
 export function deriveBuyerProfile(input: BuyerProfileInput): BuyerProfile {
-  const blob = `${input.userMission || ''} ${input.valueProp || ''} ${input.companyDescription || ''} ${(input.targetIndustries || []).join(' ')}`.toLowerCase();
+  const targetIndustriesArr = Array.isArray(input.targetIndustries)
+    ? input.targetIndustries
+    : typeof input.targetIndustries === 'string'
+    ? [input.targetIndustries]
+    : [];
+  const blob = `${input.userMission || ''} ${input.valueProp || ''} ${input.companyDescription || ''} ${targetIndustriesArr.join(' ')}`.toLowerCase();
   const serviceArea = input.serviceArea || inferServiceArea(blob);
-  if (input.buyerIndustries && input.buyerIndustries.length > 0) {
+  if (Array.isArray(input.buyerIndustries) && input.buyerIndustries.length > 0) {
     return {
       buyerIndustries: input.buyerIndustries,
-      buyerRoles: input.buyerRoles?.length ? input.buyerRoles : ['CEO', 'owner'],
+      buyerRoles: Array.isArray(input.buyerRoles) && input.buyerRoles.length ? input.buyerRoles : ['CEO', 'owner'],
       buyerCompanySize: input.buyerCompanySize || 'any',
       serviceArea,
     };

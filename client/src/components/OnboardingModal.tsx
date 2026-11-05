@@ -20,6 +20,19 @@ import type { Campaign } from '../types/campaign';
 import { playSound } from '../utils/audio';
 import { deriveBuyerProfile } from '../utils/buyerProfile';
 
+function ensureArray(val: unknown, fallback: string[] = []): string[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return val.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  return fallback;
+}
+
 interface OnboardingModalProps {
   isOpen: boolean;
   user: UserProfile | null;
@@ -279,17 +292,20 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       if (campaign.targetLocation) setTargetLocation(campaign.targetLocation);
       if (campaign.userIntent) setUserIntent(campaign.userIntent);
       if (campaign.userMission) setUserMission(campaign.userMission);
-      if (campaign.targetIndustries && campaign.targetIndustries.length > 0) {
-        setSelectedIndustries(campaign.targetIndustries);
+      if (campaign.targetIndustries) {
+        const arr = ensureArray(campaign.targetIndustries);
+        if (arr.length > 0) setSelectedIndustries(arr);
       }
-      if (campaign.targetTriggers && campaign.targetTriggers.length > 0) {
-        setSelectedTriggers(campaign.targetTriggers);
+      if (campaign.targetTriggers) {
+        const arr = ensureArray(campaign.targetTriggers);
+        if (arr.length > 0) setSelectedTriggers(arr);
       }
-      if (campaign.targetRoles && campaign.targetRoles.length > 0) {
-        setSelectedRoles(campaign.targetRoles);
+      if (campaign.targetRoles) {
+        const arr = ensureArray(campaign.targetRoles);
+        if (arr.length > 0) setSelectedRoles(arr);
       }
-      if (campaign.buyerIndustries?.length) setBuyerIndustriesText(campaign.buyerIndustries.join(', '));
-      if (campaign.buyerRoles?.length) setBuyerRolesText(campaign.buyerRoles.join(', '));
+      if (campaign.buyerIndustries?.length) setBuyerIndustriesText(ensureArray(campaign.buyerIndustries).join(', '));
+      if (campaign.buyerRoles?.length) setBuyerRolesText(ensureArray(campaign.buyerRoles).join(', '));
       if (campaign.buyerCompanySize) setBuyerCompanySize(campaign.buyerCompanySize);
       if (campaign.serviceArea) setServiceArea(campaign.serviceArea);
     } else if (user) {
@@ -297,8 +313,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       if (user.targetLocation) setTargetLocation(user.targetLocation);
       if (user.userIntent) setUserIntent(user.userIntent);
       if (user.userMission) setUserMission(user.userMission);
-      if (user.targetIndustries && user.targetIndustries.length > 0) {
-        setSelectedIndustries(user.targetIndustries);
+      if (user.targetIndustries) {
+        const arr = ensureArray(user.targetIndustries);
+        if (arr.length > 0) setSelectedIndustries(arr);
       }
     }
   }, [campaign, user, isOpen]);

@@ -117,16 +117,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         body: JSON.stringify({ credential }),
       });
 
-      const data: AuthResponse = await res.json();
-      if (res.ok && data.success && data.user && data.token) {
+      let data: AuthResponse | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        setErrorMessage(text || `Authentication failed (HTTP ${res.status}). Please try again.`);
+        return;
+      }
+
+      if (res.ok && data?.success && data.user && data.token) {
         playSound('approve');
         onAuthSuccess(data.user, data.token);
         onClose();
       } else {
-        setErrorMessage(data.error || 'Google authentication failed. Please try again.');
+        setErrorMessage(data?.error || `Google authentication failed (HTTP ${res.status}). Please try again.`);
       }
-    } catch {
-      setErrorMessage('Network connection error with Google authentication.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Network connection error with Google authentication.');
     } finally {
       setIsLoading(false);
     }
@@ -143,16 +151,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         body: JSON.stringify({ code }),
       });
 
-      const data: AuthResponse = await res.json();
-      if (res.ok && data.success && data.user && data.token) {
+      let data: AuthResponse | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => '');
+        setErrorMessage(text || `Authentication failed (HTTP ${res.status}). Please try again.`);
+        return;
+      }
+
+      if (res.ok && data?.success && data.user && data.token) {
         playSound('approve');
         onAuthSuccess(data.user, data.token);
         onClose();
       } else {
-        setErrorMessage(data.error || 'Google authentication encountered an issue.');
+        setErrorMessage(data?.error || `Google authentication encountered an issue (HTTP ${res.status}).`);
       }
-    } catch {
-      setErrorMessage('Network connection error with Google authentication.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Network connection error with Google authentication.');
     } finally {
       setIsLoading(false);
     }

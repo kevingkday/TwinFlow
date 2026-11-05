@@ -57,6 +57,18 @@ export async function getSessionUser(c: Context<{ Bindings: Bindings }>) {
   return null;
 }
 
+function parseJsonArray(val: unknown): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val !== 'string') return [];
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return val.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+}
+
 export function sanitizeUser(user: typeof schema.users.$inferSelect) {
   const { passwordHash: _passwordHash, ghlApiKey, ...safe } = user;
   const isAdmin = safe.role === 'admin' || safe.email.toLowerCase() === 'kevingkday@gmail.com';
@@ -66,6 +78,13 @@ export function sanitizeUser(user: typeof schema.users.$inferSelect) {
     isAdmin,
     isGhlConnected: Boolean(ghlApiKey && ghlApiKey.length > 10),
     hasCustomGhlKey: Boolean(ghlApiKey && ghlApiKey.length > 10),
+    targetIndustries: parseJsonArray(safe.targetIndustries),
+    targetTriggers: parseJsonArray(safe.targetTriggers),
+    targetRoles: parseJsonArray(safe.targetRoles),
+    servicesOffered: parseJsonArray(safe.servicesOffered),
+    productsOffered: parseJsonArray(safe.productsOffered),
+    buyerIndustries: parseJsonArray(safe.buyerIndustries),
+    buyerRoles: parseJsonArray(safe.buyerRoles),
   };
 }
 

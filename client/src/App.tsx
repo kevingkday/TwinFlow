@@ -35,6 +35,7 @@ import { authFetch } from './utils/api';
 import { Radio, Check, AlertCircle } from 'lucide-react';
 import { LegalPage } from './components/LegalPage';
 import { articleSourceLabel, formatPublishedAgo } from './utils/publishedAt';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
   const hostname = articleSourceLabel(item.sourceUrl, 'Market Wire');
@@ -427,6 +428,13 @@ export const App: React.FC = () => {
     setUserProfile(null);
     setCampaigns([]);
     setActiveCampaignId(null);
+    setCurrentView('landing');
+    if (typeof window !== 'undefined') {
+      window.location.hash = '';
+      if (window.location.search || window.location.pathname !== '/') {
+        window.history.pushState(null, '', '/');
+      }
+    }
     setStats({
       approvedCount: 0,
       passedCount: 0,
@@ -878,7 +886,8 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 relative">
+    <ErrorBoundary>
+      <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 relative">
       {/* Toast Notification */}
       {scoutToast && (
         <div className="fixed top-20 right-6 z-50 animate-bounce transition-all">
@@ -1162,6 +1171,7 @@ export const App: React.FC = () => {
         currentUserEmail={userProfile?.email}
       />
     </div>
+  </ErrorBoundary>
   );
 };
 

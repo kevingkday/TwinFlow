@@ -20,7 +20,8 @@ export function getInitials(name?: string): string {
  * Returns a stable color gradient based on the executive's name
  * for consistent, aesthetic initials presentation without fake photos.
  */
-function getAvatarGradient(name: string): string {
+function getAvatarGradient(name?: string): string {
+  const safeName = (name || 'Executive').trim() || 'Executive';
   const gradients = [
     'from-indigo-600/40 via-purple-600/30 to-indigo-950/80 border-indigo-500/40 text-indigo-200',
     'from-cyan-600/40 via-teal-600/30 to-slate-950/80 border-cyan-500/40 text-cyan-200',
@@ -29,8 +30,8 @@ function getAvatarGradient(name: string): string {
     'from-amber-600/40 via-orange-600/30 to-slate-950/80 border-amber-500/40 text-amber-200',
   ];
   let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < safeName.length; i++) {
+    hash = safeName.charCodeAt(i) + ((hash << 5) - hash);
   }
   const index = Math.abs(hash) % gradients.length;
   return gradients[index];
