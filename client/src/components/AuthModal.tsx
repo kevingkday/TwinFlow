@@ -236,38 +236,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     handleDirectFallbackGoogle();
   };
 
-  const handleDirectFallbackGoogle = async () => {
-    setErrorMessage(null);
-    setIsLoading(true);
-
-    try {
-      const googleName = name.trim() || 'Google Operator';
-      const googleEmail = email.trim() || `operator_${Date.now().toString(36)}@gmail.com`;
-
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: googleName,
-          email: googleEmail,
-          avatarUrl:
-            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        }),
-      });
-
-      const data: AuthResponse = await res.json();
-      if (res.ok && data.success && data.user && data.token) {
-        playSound('approve');
-        onAuthSuccess(data.user, data.token);
-        onClose();
-      } else {
-        setErrorMessage(data.error || 'Google authentication encountered an issue.');
-      }
-    } catch {
-      setErrorMessage('Could not complete Google authentication.');
-    } finally {
-      setIsLoading(false);
-    }
+  const handleDirectFallbackGoogle = () => {
+    setIsLoading(false);
+    setErrorMessage(
+      'Google Sign-In could not be verified in this browser. Use email and password, or try Google again.'
+    );
   };
 
   if (!isOpen) return null;

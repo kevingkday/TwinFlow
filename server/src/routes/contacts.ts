@@ -7,13 +7,8 @@ import { upsertContact, createNote } from '../services/ghl';
 
 export const contactsRouter = new Hono<{ Bindings: Bindings }>();
 
-// Helper to get authenticated session user or fallback to first user
-async function getUser(c: any, db: ReturnType<typeof getDb>): Promise<typeof schema.users.$inferSelect> {
-  const sessionUser = await getSessionUser(c);
-  if (sessionUser) return sessionUser;
-  const existing = await db.query.users.findFirst();
-  if (existing) return existing;
-  throw new Error('No user found');
+function authenticationRequired(c: { json: (body: unknown, status?: number) => Response }) {
+  return c.json({ success: false, error: 'Authentication required' }, 401);
 }
 
 /**
@@ -28,14 +23,16 @@ contactsRouter.get('/', async (c) => {
 
   try {
     const db = getDb(c.env.DB);
-    const user = await getUser(c, db);
+    const user = await getSessionUser(c);
+    if (!user) return authenticationRequired(c);
 
     const targetCampaignId = c.req.query('campaignId');
     const requestedStatus = c.req.query('status') || 'approved';
     const searchQuery = (c.req.query('q') || '').toLowerCase().trim();
 
-    // Build conditions for signals query
-    const conditions: any[] = [];
+    // Always constrain the D1 query to the signed-in account. Signals with a
+    // null or different user_id are another tenant's records.
+    const conditions: any[] = [eq(schema.signals.userId, user.id)];
     if (requestedStatus !== 'all') {
       conditions.push(eq(schema.signals.status, requestedStatus as any));
     }
@@ -232,7 +229,8 @@ contactsRouter.post('/:id/sync-crm', async (c) => {
 
   try {
     const db = getDb(c.env.DB);
-    const currentUser = await getUser(c, db);
+    const currentUser = await getSessionUser(c);
+    if (!currentUser) return authenticationRequired(c);
 
     const userCrmKey = currentUser.ghlApiKey;
     if (!userCrmKey || userCrmKey.length <= 10 || userCrmKey.includes('your_')) {
@@ -254,7 +252,7 @@ contactsRouter.post('/:id/sync-crm', async (c) => {
       },
     });
 
-    if (!contact) {
+    if (!contact || !contact.signal || contact.signal.userId !== currentUser.id) {
       return c.json({ success: false, error: `Contact "${contactId}" not found.` }, 404);
     }
 
@@ -352,13 +350,15 @@ contactsRouter.delete('/:id', async (c) => {
 
   try {
     const db = getDb(c.env.DB);
-    await getUser(c, db);
+    const currentUser = await getSessionUser(c);
+    if (!currentUser) return authenticationRequired(c);
 
     const existing = await db.query.contacts.findFirst({
       where: eq(schema.contacts.id, contactId),
+      with: { signal: true },
     });
 
-    if (!existing) {
+    if (!existing || !existing.signal || existing.signal.userId !== currentUser.id) {
       return c.json({ success: false, error: 'Contact not found.' }, 404);
     }
 

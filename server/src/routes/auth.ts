@@ -57,20 +57,21 @@ export async function getSessionUser(c: Context<{ Bindings: Bindings }>) {
   return null;
 }
 
-function sanitizeUser(user: typeof schema.users.$inferSelect) {
-  const { passwordHash, ...safe } = user;
+export function sanitizeUser(user: typeof schema.users.$inferSelect) {
+  const { passwordHash: _passwordHash, ghlApiKey, ...safe } = user;
   const isAdmin = safe.role === 'admin' || safe.email.toLowerCase() === 'kevingkday@gmail.com';
   return {
     ...safe,
     role: isAdmin ? 'admin' : (safe.role || 'user'),
     isAdmin,
-    isGhlConnected: Boolean(safe.ghlApiKey && safe.ghlApiKey.length > 10),
-    hasCustomGhlKey: Boolean(safe.ghlApiKey && safe.ghlApiKey.length > 10),
+    isGhlConnected: Boolean(ghlApiKey && ghlApiKey.length > 10),
+    hasCustomGhlKey: Boolean(ghlApiKey && ghlApiKey.length > 10),
   };
 }
 
 // POST /api/auth/signup - Create new account & provision GHL sub-account
-authRouter.post('/signup', async (c) => {
+// The client posts to /api/auth/register; both paths share this handler.
+async function handleSignup(c: Context<{ Bindings: Bindings }>) {
   if (!c.env?.DB) {
     return c.json({ success: false, error: 'Database unavailable' }, 500);
   }
@@ -181,7 +182,10 @@ authRouter.post('/signup', async (c) => {
     },
     message: 'Account created successfully! Welcome to TwinFlow.',
   });
-});
+}
+
+authRouter.post('/signup', handleSignup);
+authRouter.post('/register', handleSignup);
 
 // POST /api/auth/login - Email + Password Authentication
 authRouter.post('/login', async (c) => {
@@ -288,11 +292,12 @@ authRouter.post('/google', async (c) => {
     googleId = profile.sub;
     avatarUrl = profile.picture;
   } else {
-    // 3. Fallback direct payload
-    email = (body.email || '').trim().toLowerCase();
-    name = (body.name || 'Google User').trim();
-    googleId = body.googleId || `g_${Date.now()}`;
-    avatarUrl = body.avatarUrl;
+    // Unsigned email/name payloads are not a Google login. They used to
+    // create a session for any address, including existing accounts.
+    return c.json(
+      { success: false, error: 'A verified Google credential is required' },
+      401
+    );
   }
 
   if (!email || !email.includes('@')) {

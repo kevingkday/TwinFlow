@@ -2,8 +2,7 @@ import { Hono } from 'hono';
 import type { Bindings } from '../db';
 import { getDb, schema } from '../db';
 import { eq } from 'drizzle-orm';
-import { getSessionUser } from './auth';
-import { getOrCreateUser } from './user';
+import { getSessionUser, sanitizeUser } from './auth';
 import { fetchSerpNews } from '../services/serpNews';
 import { crawlArticle } from '../services/firecrawl';
 import { enrichSignalWithLLM } from '../services/llmEnricher';
@@ -19,8 +18,10 @@ onboardingRouter.post('/', async (c) => {
   }
   const db = getDb(c.env.DB);
 
-  // Authenticated user or fallback
-  const authUser = (await getSessionUser(c)) || (await getOrCreateUser(db));
+  const authUser = await getSessionUser(c);
+  if (!authUser) {
+    return c.json({ success: false, error: 'Authentication required' }, 401);
+  }
 
   let body: {
     targetLocation?: string;
@@ -183,11 +184,9 @@ onboardingRouter.post('/', async (c) => {
     console.warn('Onboarding news ingest encountered issue:', ingestErr);
   }
 
-  const { passwordHash: _, ...safeUser } = (updatedUser || {}) as any;
-
   return c.json({
     success: true,
-    user: safeUser,
+    user: sanitizeUser(updatedUser || authUser),
     queryPlan: {
       primaryQuery: queryPlan.primaryQuery,
       fallbackQueries: queryPlan.fallbackQueries,

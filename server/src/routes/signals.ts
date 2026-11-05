@@ -13,46 +13,16 @@ import { findApolloContact } from '../services/apollo';
 import { upsertContact, createNote, createOpportunity, listAgencySubaccounts } from '../services/ghl';
 import { getSessionUser } from './auth';
 import { publicDemoSignals } from '../data/demoSignals';
+import { APPROVAL_CREDIT_COST, BRANCH_SCOUT_CREDIT_COST, DEV_REPLENISH_CREDITS } from '../services/credits';
 
 export const signalsRouter = new Hono<{ Bindings: Bindings }>();
 
-// Helper to get or create default operator user
-async function getOrCreateUser(db: ReturnType<typeof getDb>): Promise<typeof schema.users.$inferSelect> {
-  const existing = await db.query.users.findFirst();
-  if (existing) return existing;
-
-  const newUser: typeof schema.users.$inferInsert = {
-    id: 'usr_default',
-    email: 'operator@twinflow.ai',
-    name: 'Operator',
-    organization: 'TwinFlow Demo',
-    passwordHash: null,
-    googleId: null,
-    avatarUrl: null,
-    ghlSubaccountId: 'y3KLRBUZzf2t45o7rzp9',
-    ghlApiKey: null,
-    creditBalance: 500,
-    streakCount: 0,
-    totalPoints: 0,
-    icpQuery: null,
-    targetIndustries: null,
-    targetTriggers: null,
-    targetRoles: null,
-    valueProp: null,
-    onboardingCompleted: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  await db.insert(schema.users).values(newUser);
-  return newUser as typeof schema.users.$inferSelect;
+function authenticationRequired(c: { json: (body: unknown, status?: number) => Response }) {
+  return c.json({ success: false, error: 'Authentication required' }, 401);
 }
 
-// Helper to get authenticated session user or fallback to default
-async function getUser(c: any, db: ReturnType<typeof getDb>): Promise<typeof schema.users.$inferSelect> {
-  const sessionUser = await getSessionUser(c);
-  if (sessionUser) return sessionUser;
-  return getOrCreateUser(db);
+function ownsSignal(signal: { userId: string | null } | null | undefined, userId: string): boolean {
+  return Boolean(signal?.userId) && signal!.userId === userId;
 }
 
 // Helper to ensure related branches exist for any signal in D1
@@ -114,14 +84,10 @@ async function ensureBranchesForSignal(
  * along with the current operator user stats (credits, streak, points).
  */
 signalsRouter.get('/deck', async (c) => {
-  if (!c.env?.DB) {
-    return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
-  }
-
   try {
-    const sessionUser = await getSessionUser(c);
+    const sessionUser = c.env?.DB ? await getSessionUser(c) : null;
 
-    // If visitor is unauthenticated (demo mode), serve the generic, universal public demo deck
+    // Guests only receive the static fake deck. This path does not read D1.
     if (!sessionUser) {
       const signals = publicDemoSignals();
       return c.json({
@@ -142,54 +108,37 @@ signalsRouter.get('/deck', async (c) => {
       });
     }
 
+    if (!c.env?.DB) {
+      return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
+    }
+
     const db = getDb(c.env.DB);
     const user = sessionUser;
 
-    // Fetch up to 10 unreviewed signals with linked contacts and outreach drafts, scoped to active campaign
+    // Only this account's queued signals. Other users' rows, including
+    // unassigned campaign rows, are excluded in the D1 query.
     const targetCampaignId = c.req.query('campaignId') || user.activeCampaignId;
-    let queuedSignals: any[] = [];
-
+    const deckConditions = [
+      eq(schema.signals.status, 'queued'),
+      eq(schema.signals.userId, user.id),
+    ];
     if (targetCampaignId) {
-      queuedSignals = await db.query.signals.findMany({
-        where: and(
-          eq(schema.signals.status, 'queued'),
-          eq(schema.signals.campaignId, targetCampaignId)
-        ),
-        limit: 10,
-        orderBy: [desc(schema.signals.createdAt)],
-        with: {
-          contacts: {
-            with: {
-              outreachDrafts: true,
-            },
-          },
-          outreachDrafts: true,
-        },
-      });
+      deckConditions.push(eq(schema.signals.campaignId, targetCampaignId));
     }
 
-    if (queuedSignals.length < 10) {
-      const remaining = 10 - queuedSignals.length;
-      const genericSignals = await db.query.signals.findMany({
-        where: and(
-          eq(schema.signals.status, 'queued'),
-          targetCampaignId
-            ? sql`(${schema.signals.campaignId} IS NULL OR ${schema.signals.campaignId} != ${targetCampaignId})`
-            : sql`1=1`
-        ),
-        limit: remaining,
-        orderBy: [desc(schema.signals.createdAt)],
-        with: {
-          contacts: {
-            with: {
-              outreachDrafts: true,
-            },
+    const queuedSignals = await db.query.signals.findMany({
+      where: and(...deckConditions),
+      limit: 10,
+      orderBy: [desc(schema.signals.createdAt)],
+      with: {
+        contacts: {
+          with: {
+            outreachDrafts: true,
           },
-          outreachDrafts: true,
         },
-      });
-      queuedSignals = [...queuedSignals, ...genericSignals];
-    }
+        outreachDrafts: true,
+      },
+    });
 
     // Format cards for the frontend deck
     const formattedCards = queuedSignals.map((sig) => {
@@ -269,7 +218,7 @@ signalsRouter.get('/deck', async (c) => {
     const approvedCountRes = await db
       .select({ count: sql<number>`count(*)` })
       .from(schema.signals)
-      .where(eq(schema.signals.status, 'approved'));
+      .where(and(eq(schema.signals.status, 'approved'), eq(schema.signals.userId, user.id)));
     const approvedCount = Number(approvedCountRes[0]?.count || 0);
 
     return c.json({
@@ -309,6 +258,9 @@ signalsRouter.post('/ingest', async (c) => {
     return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
   }
 
+  const user = await getSessionUser(c);
+  if (!user) return authenticationRequired(c);
+
   let body: { query?: string; limit?: number } = {};
   try {
     body = await c.req.json();
@@ -321,7 +273,6 @@ signalsRouter.post('/ingest', async (c) => {
 
   try {
     const db = getDb(c.env.DB);
-    const user = await getUser(c, db);
 
     // 1. SerpAPI News Query
     const articles = await fetchSerpNews(query, c.env.SERP_API_KEY, limit);
@@ -332,7 +283,7 @@ signalsRouter.post('/ingest', async (c) => {
     for (const article of articles) {
       // Deduplicate by URL
       const existingByUrl = await db.query.signals.findFirst({
-        where: eq(schema.signals.sourceUrl, article.url),
+        where: and(eq(schema.signals.sourceUrl, article.url), eq(schema.signals.userId, user.id)),
       });
 
       if (existingByUrl) {
@@ -352,7 +303,7 @@ signalsRouter.post('/ingest', async (c) => {
 
       // Deduplicate by company name if already queued
       const existingByCompany = await db.query.signals.findFirst({
-        where: eq(schema.signals.companyName, enriched.companyName),
+        where: and(eq(schema.signals.companyName, enriched.companyName), eq(schema.signals.userId, user.id)),
       });
       if (existingByCompany && existingByCompany.status === 'queued') {
         continue;
@@ -495,6 +446,31 @@ signalsRouter.post('/:id/enrich-contact', async (c) => {
     name?: string;
     title?: string;
   };
+
+  const user = c.env?.DB ? await getSessionUser(c) : null;
+  if (!user) {
+    if (signalId.startsWith('demo-')) {
+      const demo = publicDemoSignals().find((signal) => signal.id === signalId);
+      const contact =
+        demo?.contacts.find((item) => item.id === body.contactId || item.name === body.name) ||
+        demo?.contact ||
+        null;
+      if (!demo || !contact) {
+        return c.json({ success: false, error: 'Signal not found' }, 404);
+      }
+      return c.json({
+        success: true,
+        isDemo: true,
+        contact: { ...contact, isEnriched: true },
+        outreachDraft: demo.outreachDraft,
+      });
+    }
+    if (!c.env?.DB) {
+      return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
+    }
+    return authenticationRequired(c);
+  }
+
   const db = getDb(c.env.DB);
 
   try {
@@ -503,7 +479,7 @@ signalsRouter.post('/:id/enrich-contact', async (c) => {
       with: { contacts: true },
     });
 
-    if (!signal) {
+    if (!signal || !ownsSignal(signal, user.id)) {
       return c.json({ success: false, error: 'Signal not found' }, 404);
     }
 
@@ -606,9 +582,6 @@ signalsRouter.post('/:id/enrich-contact', async (c) => {
  */
 signalsRouter.post('/:id/action', async (c) => {
   const signalId = c.req.param('id');
-  if (!c.env?.DB) {
-    return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
-  }
 
   let body: { action?: string; customSubject?: string; customBody?: string } = {};
   try {
@@ -625,29 +598,40 @@ signalsRouter.post('/:id/action', async (c) => {
     );
   }
 
+  const sessionUser = c.env?.DB ? await getSessionUser(c) : null;
+  if (!sessionUser) {
+    // Guest demo swipes stay in memory. Real signal ids are not readable or writable.
+    if (!signalId.startsWith('demo-')) {
+      if (!c.env?.DB) {
+        return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
+      }
+      return authenticationRequired(c);
+    }
+    return c.json({
+      success: true,
+      isDemo: true,
+      message:
+        action === 'approve'
+          ? 'Demo lead simulated as approved. Sign up or log in to sync real leads with your CRM.'
+          : 'Demo lead passed.',
+      user: {
+        id: 'demo_operator',
+        name: 'Demo Visitor',
+        email: 'demo@twinflow.co',
+        creditBalance: action === 'approve' ? 490 : 500,
+        streakCount: action === 'approve' ? 1 : 0,
+        totalPoints: action === 'approve' ? 50 : 0,
+        isDemo: true,
+      },
+    });
+  }
+
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
+  }
+
   try {
     const db = getDb(c.env.DB);
-    const sessionUser = await getSessionUser(c);
-    if (!sessionUser) {
-      // Unauthenticated demo mode: simulate action without affecting live database or CRM
-      return c.json({
-        success: true,
-        isDemo: true,
-        message:
-          action === 'approve'
-            ? 'Demo lead simulated as approved (+50 XP)! Sign up or log in to sync real leads with your CRM.'
-            : 'Demo lead passed.',
-        user: {
-          id: 'demo_operator',
-          name: 'Demo Visitor',
-          email: 'demo@twinflow.co',
-          creditBalance: 490,
-          streakCount: action === 'approve' ? 1 : 0,
-          totalPoints: action === 'approve' ? 50 : 0,
-          isDemo: true,
-        },
-      });
-    }
 
     const existingSignal = await db.query.signals.findFirst({
       where: eq(schema.signals.id, signalId),
@@ -657,7 +641,7 @@ signalsRouter.post('/:id/action', async (c) => {
       },
     });
 
-    if (!existingSignal) {
+    if (!existingSignal || !ownsSignal(existingSignal, sessionUser.id)) {
       return c.json({ success: false, error: `Signal "${signalId}" not found.` }, 404);
     }
 
@@ -665,8 +649,6 @@ signalsRouter.post('/:id/action', async (c) => {
     const currentUser = sessionUser;
 
     if (action === 'approve') {
-      const APPROVAL_CREDIT_COST = 10;
-
       // 1. Verify user has configured their private CRM integration token
       const userCrmKey = currentUser.ghlApiKey;
       if (!userCrmKey || userCrmKey.length <= 10 || userCrmKey.includes('your_')) {
@@ -919,6 +901,43 @@ ${finalBody}`;
  */
 signalsRouter.get('/:id/branches', async (c) => {
   const signalId = c.req.param('id');
+  const user = c.env?.DB ? await getSessionUser(c) : null;
+
+  if (!user) {
+    if (!signalId.startsWith('demo-')) {
+      if (!c.env?.DB) {
+        return c.json({ success: false, error: 'DB binding missing' }, 500);
+      }
+      return authenticationRequired(c);
+    }
+    const demo = publicDemoSignals().find((signal) => signal.id === signalId);
+    return c.json({
+      success: true,
+      isDemo: true,
+      signalId,
+      companyName: demo?.companyName || 'Demo Company',
+      parentSignalId: null,
+      branches: [
+        {
+          id: `demo-branch-comp-${signalId}`,
+          entityType: 'competitor',
+          name: 'Example Competitor',
+          domain: 'example-competitor.test',
+          reason: 'Illustrative competitor for the public demo. No live account data.',
+          status: 'unexplored',
+        },
+        {
+          id: `demo-branch-peer-${signalId}`,
+          entityType: 'internal_peer',
+          name: 'Example Operations Lead',
+          domain: 'example.test',
+          reason: 'Illustrative peer for the public demo. No live account data.',
+          status: 'unexplored',
+        },
+      ],
+    });
+  }
+
   if (!c.env?.DB) {
     return c.json({ success: false, error: 'DB binding missing' }, 500);
   }
@@ -929,7 +948,7 @@ signalsRouter.get('/:id/branches', async (c) => {
       where: eq(schema.signals.id, signalId),
     });
 
-    if (!signal) {
+    if (!signal || !ownsSignal(signal, user.id)) {
       return c.json({ success: false, error: `Signal "${signalId}" not found.` }, 404);
     }
 
@@ -990,6 +1009,35 @@ signalsRouter.post('/:id/branch-scout', async (c) => {
     );
   }
 
+  const user = c.env?.DB ? await getSessionUser(c) : null;
+  if (!user) {
+    if (signalId.startsWith('demo-')) {
+      return c.json({
+        success: true,
+        isDemo: true,
+        creditsDeducted: 0,
+        pointsAwarded: 0,
+        message: 'Demo branch simulated. Sign in to scout live accounts.',
+        user: {
+          id: 'demo_operator',
+          email: 'demo@twinflow.co',
+          creditBalance: 500,
+          streakCount: 0,
+          totalPoints: 0,
+          isDemo: true,
+        },
+      });
+    }
+    if (!c.env?.DB) {
+      return c.json({ success: false, error: 'DB binding missing' }, 500);
+    }
+    return authenticationRequired(c);
+  }
+
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'DB binding missing' }, 500);
+  }
+
   try {
     const db = getDb(c.env.DB);
     const parentSignal = await db.query.signals.findFirst({
@@ -997,12 +1045,11 @@ signalsRouter.post('/:id/branch-scout', async (c) => {
       with: { contacts: true, outreachDrafts: true },
     });
 
-    if (!parentSignal) {
+    if (!parentSignal || !ownsSignal(parentSignal, user.id)) {
       return c.json({ success: false, error: `Parent signal "${signalId}" not found.` }, 404);
     }
 
-    const user = await getUser(c, db);
-    const BRANCH_CREDIT_COST = 5;
+    const BRANCH_CREDIT_COST = BRANCH_SCOUT_CREDIT_COST;
     const COMBO_XP_AWARD = 25;
 
     // Credit Verification
@@ -1336,8 +1383,9 @@ signalsRouter.get('/credits', async (c) => {
   if (!c.env?.DB) {
     return c.json({ success: false, error: 'DB binding missing' }, 500);
   }
+  const user = await getSessionUser(c);
+  if (!user) return authenticationRequired(c);
   const db = getDb(c.env.DB);
-  const user = await getUser(c, db);
   const transactions = await db.query.creditTransactions.findMany({
     where: eq(schema.creditTransactions.userId, user.id),
     orderBy: [desc(schema.creditTransactions.createdAt)],
@@ -1356,15 +1404,11 @@ signalsRouter.post('/credits/replenish', async (c) => {
   if (!c.env?.DB) {
     return c.json({ success: false, error: 'DB binding missing' }, 500);
   }
-  let body: { amount?: number } = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    body = {};
-  }
-  const amount = body.amount || 100;
+  const user = await getSessionUser(c);
+  if (!user) return authenticationRequired(c);
+  // Ignore any client-supplied amount. The dev top-up is a fixed server grant.
+  const amount = DEV_REPLENISH_CREDITS;
   const db = getDb(c.env.DB);
-  const user = await getUser(c, db);
   const newBalance = user.creditBalance + amount;
   const now = new Date().toISOString();
 
@@ -1392,6 +1436,18 @@ signalsRouter.post('/credits/replenish', async (c) => {
 
 // GET /api/signals/ghl/subaccounts - Lists subaccounts under the Agency
 signalsRouter.get('/ghl/subaccounts', async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return authenticationRequired(c);
+
+  const isAdmin = user.role === 'admin' || user.email.toLowerCase() === 'kevingkday@gmail.com';
+  if (!isAdmin) {
+    const ownId = user.ghlSubaccountId;
+    const own = ownId
+      ? [{ id: ownId, name: user.organization || user.name || 'Your workspace', email: user.email }]
+      : [];
+    return c.json({ success: true, count: own.length, subaccounts: own });
+  }
+
   const agencyKey = c.env?.GHL_AGENCY_API_KEY || c.env?.GHL_API_KEY;
   const companyId = c.env?.GHL_COMPANY_ID;
   const subaccounts = await listAgencySubaccounts(agencyKey, companyId);
@@ -1402,13 +1458,16 @@ signalsRouter.get('/ghl/subaccounts', async (c) => {
   });
 });
 
-// GET /api/signals - General list of all signals
+// GET /api/signals - Signals owned by the signed-in account
 signalsRouter.get('/', async (c) => {
   if (!c.env?.DB) {
     return c.json({ success: false, error: 'DB binding missing' }, 500);
   }
+  const user = await getSessionUser(c);
+  if (!user) return authenticationRequired(c);
   const db = getDb(c.env.DB);
   const all = await db.query.signals.findMany({
+    where: eq(schema.signals.userId, user.id),
     orderBy: [desc(schema.signals.createdAt)],
     with: { contacts: true, outreachDrafts: true },
   });
