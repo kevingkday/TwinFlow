@@ -14,9 +14,10 @@ VALUES (
 );
 
 -- Signal 1
-INSERT OR REPLACE INTO `signals` (`id`, `title`, `source_url`, `published_at`, `summary_bullets`, `company_name`, `signal_type`, `status`, `created_at`, `updated_at`)
+INSERT OR REPLACE INTO `signals` (`id`, `user_id`, `title`, `source_url`, `published_at`, `summary_bullets`, `company_name`, `signal_type`, `status`, `created_at`, `updated_at`)
 VALUES (
   'sig_001',
+  'usr_default',
   'Aethon Dynamics Closes $48M Series B to Modernize Defense Logistics Robotics',
   'https://techcrunch.com/2026/aethon-dynamics-series-b',
   '2026-10-25T08:30:00Z',
@@ -53,9 +54,10 @@ VALUES (
 );
 
 -- Signal 2
-INSERT OR REPLACE INTO `signals` (`id`, `title`, `source_url`, `published_at`, `summary_bullets`, `company_name`, `signal_type`, `status`, `created_at`, `updated_at`)
+INSERT OR REPLACE INTO `signals` (`id`, `user_id`, `title`, `source_url`, `published_at`, `summary_bullets`, `company_name`, `signal_type`, `status`, `created_at`, `updated_at`)
 VALUES (
   'sig_002',
+  'usr_default',
   'FinMatrix Hires Former Stripe Enterprise VP Marcus Vance as Chief Revenue Officer',
   'https://bloomberg.com/news/finmatrix-appoints-cro',
   '2026-10-25T09:15:00Z',
@@ -92,9 +94,10 @@ VALUES (
 );
 
 -- Signal 3
-INSERT OR REPLACE INTO `signals` (`id`, `title`, `source_url`, `published_at`, `summary_bullets`, `company_name`, `signal_type`, `status`, `created_at`, `updated_at`)
+INSERT OR REPLACE INTO `signals` (`id`, `user_id`, `title`, `source_url`, `published_at`, `summary_bullets`, `company_name`, `signal_type`, `status`, `created_at`, `updated_at`)
 VALUES (
   'sig_003',
+  'usr_default',
   'Nexus BioSystems Expands Clinical Trial Platform to 40 New Research Hospitals',
   'https://venturebeat.com/nexus-biosystems-expansion',
   '2026-10-25T10:00:00Z',

@@ -38,6 +38,16 @@ export interface DemoSignalItem {
   } | null;
 }
 
+/** Public guest deck. Only ids prefixed with `demo-` are served, and nothing is read from D1. */
+export function publicDemoSignals(): DemoSignalItem[] {
+  return DEMO_SIGNALS.filter((signal) => signal.id.startsWith('demo-')).map((signal) => ({
+    ...signal,
+    contact: signal.contact ? { ...signal.contact } : null,
+    contacts: signal.contacts.map((contact) => ({ ...contact })),
+    outreachDraft: signal.outreachDraft ? { ...signal.outreachDraft } : null,
+  }));
+}
+
 export const DEMO_SIGNALS: DemoSignalItem[] = [
   {
     id: 'demo-sig-001',

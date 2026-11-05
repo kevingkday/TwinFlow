@@ -14,7 +14,8 @@
     "db:setup": "wrangler d1 migrations apply twinflow-d1 --local && wrangler d1 execute twinflow-d1 --local --file=./drizzle/seed.sql",
     "db:setup:remote": "wrangler d1 migrations apply twinflow-d1 --remote && wrangler d1 execute twinflow-d1 --remote --file=./drizzle/seed.sql",
     "db:studio": "drizzle-kit studio",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "drizzle-orm": "^0.38.3",
@@ -24,6 +25,7 @@
     "@cloudflare/workers-types": "^4.20250109.0",
     "drizzle-kit": "^0.30.1",
     "typescript": "^5.7.2",
+    "vitest": "^5.1.0",
     "wrangler": "^3.101.0"
   }
 }

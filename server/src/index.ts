@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import type { Bindings } from './db';
+import { resolveAllowedOrigin } from './cors';
 import { healthRouter } from './routes/health';
 import { signalsRouter } from './routes/signals';
 import { userRouter } from './routes/user';
@@ -11,6 +12,7 @@ import { adminRouter } from './routes/admin';
 import { campaignsRouter } from './routes/campaigns';
 import { socialRouter } from './routes/social';
 import { contactsRouter } from './routes/contacts';
+import { stripeRouter } from './routes/stripe';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -19,9 +21,11 @@ app.use('*', logger());
 app.use(
   '*',
   cors({
-    origin: '*',
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'x-session-token'],
+    origin: (origin) => resolveAllowedOrigin(origin),
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization', 'x-session-token', 'Stripe-Signature'],
+    credentials: true,
+    maxAge: 600,
   })
 );
 
@@ -51,6 +55,9 @@ app.route('/api/social', socialRouter);
 
 // Admin Management Console (/api/admin/stats, /api/admin/users)
 app.route('/api/admin', adminRouter);
+
+// Stripe webhooks. Signature is required; the handler does not mint credits.
+app.route('/api/stripe', stripeRouter);
 
 // Fallback to client-side static assets / SPA frontend
 app.get('*', async (c) => {
