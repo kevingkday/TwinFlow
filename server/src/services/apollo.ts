@@ -84,19 +84,9 @@ export async function findApolloContact(
     }
   }
 
-  // Graceful fallback: construct clean standard corporate email and LinkedIn URL
-  const cleanFirst = firstName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'executive';
-  const cleanLast = lastName.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const emailUser = cleanLast ? `${cleanFirst}.${cleanLast}` : cleanFirst;
-
-  const domainBase = cleanDomain || 'enterprise.io';
-  const fallbackEmail = `${emailUser}@${domainBase}`;
-  const slug = cleanLast ? `${cleanFirst}-${cleanLast}` : cleanFirst;
-
+  // Do not invent an email or LinkedIn URL. A guessed address is not a reachable contact.
   return {
-    email: fallbackEmail,
-    linkedinUrl: `https://linkedin.com/in/${slug}`,
     matched: false,
-    status: 'inferred',
+    status: 'fallback',
   };
 }

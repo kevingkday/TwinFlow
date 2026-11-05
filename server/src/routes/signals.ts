@@ -13,6 +13,7 @@ import { findApolloContact } from '../services/apollo';
 import { upsertContact, createNote, createOpportunity, listAgencySubaccounts } from '../services/ghl';
 import { getSessionUser } from './auth';
 import { publicDemoSignals } from '../data/demoSignals';
+import { isLowYieldArticle } from '../services/signalQuality';
 import { APPROVAL_CREDIT_COST, BRANCH_SCOUT_CREDIT_COST, DEV_REPLENISH_CREDITS } from '../services/credits';
 
 export const signalsRouter = new Hono<{ Bindings: Bindings }>();
@@ -281,6 +282,7 @@ signalsRouter.post('/ingest', async (c) => {
     const now = new Date().toISOString();
 
     for (const article of articles) {
+      if (isLowYieldArticle(article.title, article.publisher, article.url)) continue;
       // Deduplicate by URL
       const existingByUrl = await db.query.signals.findFirst({
         where: and(eq(schema.signals.sourceUrl, article.url), eq(schema.signals.userId, user.id)),
@@ -300,6 +302,8 @@ signalsRouter.post('/ingest', async (c) => {
         article.publisher,
         c.env.OPENAI_API_KEY
       );
+
+      if (!enriched.decisionMaker?.name) continue;
 
       // Deduplicate by company name if already queued
       const existingByCompany = await db.query.signals.findFirst({

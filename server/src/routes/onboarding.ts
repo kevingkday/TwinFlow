@@ -8,6 +8,7 @@ import { crawlArticle } from '../services/firecrawl';
 import { enrichSignalWithLLM } from '../services/llmEnricher';
 import { findApolloContact } from '../services/apollo';
 import { planNewsQueryWithAI } from '../services/aiQueryPlanner';
+import { isLowYieldArticle, isRelevantToProfile } from '../services/signalQuality';
 
 export const onboardingRouter = new Hono<{ Bindings: Bindings }>();
 
@@ -97,6 +98,24 @@ onboardingRouter.post('/', async (c) => {
 
     for (const art of newsArticles) {
       try {
+        if (isLowYieldArticle(art.title, art.publisher, art.url)) continue;
+        if (
+          !isRelevantToProfile(
+            {
+              location: targetLocation,
+              userIntent,
+              userMission,
+              targetIndustries,
+              targetTriggers,
+              valueProp,
+            },
+            art.title,
+            art.snippet,
+            art.publisher
+          )
+        ) {
+          continue;
+        }
         const crawl = await crawlArticle(art.url, c.env.FIRECRAWL_API_KEY);
         const enriched = await enrichSignalWithLLM(
           art.title,
@@ -107,6 +126,7 @@ onboardingRouter.post('/', async (c) => {
           userIntent
         );
 
+        if (!enriched.decisionMaker?.name) continue;
         const domain = enriched.companyDomain || `${enriched.companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
         const apollo = await findApolloContact(
           enriched.decisionMaker.name,

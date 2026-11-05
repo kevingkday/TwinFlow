@@ -4,6 +4,7 @@
  */
 
 import { normalizePublishedAt } from './publishedAt';
+import { isLowYieldArticle } from './signalQuality';
 
 export interface SerpArticle {
   title: string;
@@ -100,20 +101,22 @@ export async function fetchSerpNews(
         };
 
         if (json.news_results && Array.isArray(json.news_results) && json.news_results.length > 0) {
-          return json.news_results.slice(0, limit).map((item) => {
-            const publisherName =
-              typeof item.source === 'object' && item.source !== null
-                ? item.source.name || 'News Source'
-                : (item.source as string) || 'News Source';
-
-            return {
-              title: item.title || 'Market Signal Headline',
-              publisher: publisherName,
-              url: item.link || `https://news.google.com/search?q=${encodeURIComponent(q)}`,
-              snippet: item.snippet || item.title || 'Market trigger announcement.',
-              publishedAt: normalizePublishedAt(item.date, 1),
-            };
-          });
+          const articles = json.news_results
+            .map((item) => {
+              const publisherName =
+                typeof item.source === 'object' && item.source !== null
+                  ? item.source.name || 'News Source'
+                  : (item.source as string) || 'News Source';
+              return {
+                title: item.title || 'Market Signal Headline',
+                publisher: publisherName,
+                url: item.link || `https://news.google.com/search?q=${encodeURIComponent(q)}`,
+                snippet: item.snippet || item.title || 'Market trigger announcement.',
+                publishedAt: normalizePublishedAt(item.date, 1),
+              };
+            })
+            .filter((item) => !isLowYieldArticle(item.title, item.publisher, item.url));
+          if (articles.length > 0) return articles.slice(0, limit);
         }
       } catch (err) {
         console.warn(`SerpAPI query failed for "${q}":`, err);

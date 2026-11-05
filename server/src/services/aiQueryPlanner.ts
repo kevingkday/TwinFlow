@@ -48,13 +48,18 @@ export async function planNewsQueryWithAI(
   let defaultGl = 'us';
   if (
     locLower.includes('canada') ||
+    locLower.includes('british columbia') ||
+    locLower.includes('alberta') ||
+    locLower.includes('ontario') ||
     locLower.includes(', bc') ||
     locLower.includes(', on') ||
     locLower.includes(', ab') ||
     locLower.includes('vancouver') ||
     locLower.includes('toronto') ||
     locLower.includes('montreal') ||
-    locLower.includes('calgary')
+    locLower.includes('calgary') ||
+    locLower.includes('edmonton') ||
+    locLower.includes('ottawa')
   ) {
     defaultGl = 'ca';
   } else if (
@@ -73,21 +78,21 @@ export async function planNewsQueryWithAI(
 Your task is to analyze a user's location, commercial intent, and free-form mission description, and generate high-precision Google News queries that uncover actionable business catalysts.
 
 CRITICAL RULES FOR GOOGLE NEWS SEARCH QUERIES:
-1. THE GOLDILOCKS PRINCIPLE (3 TO 6 WORDS MAXIMUM):
-   - A single broad word (e.g. "Healthcare" or "Roofing") is a FAILURE because it only returns national political op-eds.
-   - Long natural language sentences (e.g. "Commercial roofing contractor looking for new construction projects in North Texas with 50+ employees") are a FAILURE because Google News headline indexing will match zero results.
-   - The optimal search query contains 3 to 6 words combining:
-     [Geographic Anchor (if local)] + [Specific Industry Keyword] + [Catalyst Action / Trigger Terms]
-     Example: Dallas commercial real estate "breaks ground" OR "new facility"
-     Example: Austin healthcare clinic "expansion" OR "opens"
-     Example: Vancouver logistics "new warehouse" OR "distribution hub"
-     Example: Ohio manufacturing "capital investment" OR "modernization"
+1. THE PRODUCT NEEDS A NAMED PERSON, NOT A TREND PIECE:
+   - The buyer will email one human mentioned in the article. Queries must favor headlines that name someone.
+   - High-yield article types: leadership appointment ("appointed", "named", "hires", "joins as"), contract award, groundbreaking, facility expansion, headquarters lease, funding that names a founder or CFO.
+   - Low-yield types to exclude with minus terms: wire roundups, listicles, "top 10", "what to know", weekly recaps, stock movers, aggregator reprints.
+   - Every query must include when:14d so results are from the last two weeks.
+   - Use a short geo anchor + one industry keyword + an OR group. OR groups and when:14d may push the query past 6 words. Do not write a full sentence.
+   - Example primary: Vancouver cybersecurity ("appointed" OR "named" OR "hires") when:14d -roundup -"top 10"
+   - Example project fallback: Calgary construction ("breaks ground" OR "awarded") when:14d -roundup
+   - Example people fallback: Dallas "commercial real estate" (CEO OR founder OR president) when:14d
 
 2. INTENT ALIGNMENT:
-   - "sales_client_acquisition": Target companies expanding, upgrading facilities, hiring leadership, or getting funded.
-   - "subcontractor_partners": Target commercial project awards, groundbreakings, developments, and expansions.
-   - "job_seeking": Target companies rapidly hiring, opening regional hubs, or appointing new C-suite leadership.
-   - "investing": Target funding rounds, acquisitions, succession planning, and growth equity.
+   - "sales_client_acquisition": Companies appointing executives, opening sites, winning contracts, or raising money in the seller's industry.
+   - "subcontractor_partners": Commercial project awards, groundbreakings, and facility expansions that name an owner or project lead.
+   - "job_seeking": Companies appointing leadership or opening a regional hub.
+   - "investing": Funding, acquisitions, and succession that name a founder, CEO, or CFO.
 
 You must respond with valid JSON adhering to this schema:
 {
@@ -193,7 +198,7 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
   });
 }
 
-function generateAlgorithmicQueryPlan(params: {
+export function generateAlgorithmicQueryPlan(params: {
   location: string;
   userIntent: string;
   userMission: string;
@@ -211,30 +216,29 @@ function generateAlgorithmicQueryPlan(params: {
     geoAnchor = parts.slice(0, 2).join(' ');
   }
 
-  // Extract industry anchor
-  let indAnchor = targetIndustries[0] || 'Commercial';
-  if (indAnchor.includes('&')) indAnchor = indAnchor.split('&')[0].trim();
-  if (indAnchor.includes('/')) indAnchor = indAnchor.split('/')[0].trim();
+  // Extract industry anchor (first two meaningful words, not a slash-delimited list)
+  let indAnchor = (targetIndustries[0] || 'commercial').replace(/&/g, ' ').split('/')[0].trim();
+  indAnchor = indAnchor.split(/\s+/).slice(0, 2).join(' ');
 
-  // Determine trigger verbs based on intent
-  let triggerPart = '"New Location" OR "Expansion"';
-  if (userIntent === 'subcontractor_partners') {
-    triggerPart = '"Contract Awarded" OR "Breaks Ground"';
-  } else if (userIntent === 'job_seeking') {
-    triggerPart = '"Appointed" OR "Hiring" OR "New Facility"';
-  } else if (userIntent === 'investing') {
-    triggerPart = '"Acquisition" OR "Funding" OR "Capital"';
-  }
+  const personTriggers = '("appointed" OR "hires" OR "joins")';
+  const projectTriggers =
+    userIntent === 'subcontractor_partners'
+      ? '("breaks ground" OR "awarded" OR "contract")'
+      : userIntent === 'investing'
+      ? '("raises" OR "acquisition" OR "appoints")'
+      : '("breaks ground" OR "awarded" OR "expansion" OR "headquarters")';
+  const roleTriggers =
+    userIntent === 'job_seeking'
+      ? '(CEO OR "vice president" OR director OR appointed OR named)'
+      : '(CEO OR founder OR president OR CFO OR appointed OR named)';
+  const exclude = '-roundup -"top 10" -listicle -"what to know"';
+  const recent = 'when:14d';
 
-  const primary = geoAnchor
-    ? `${geoAnchor} ${indAnchor} ${triggerPart}`
-    : `"${indAnchor}" ${triggerPart}`;
-
-  const fallback1 = geoAnchor
-    ? `${geoAnchor} business "expansion" OR "new facility"`
-    : `"${indAnchor}" "breaks ground" OR "contract awarded"`;
-
-  const fallback2 = `"${indAnchor}" "expansion" OR "capital investment"`;
+  const primary = [geoAnchor, indAnchor, personTriggers, recent, exclude].filter(Boolean).join(' ');
+  const fallback1 = [geoAnchor, indAnchor, projectTriggers, recent, '-roundup'].filter(Boolean).join(' ');
+  // The third query drops the 14-day operator so a thin niche still returns
+  // articles. Recency is scored separately instead of hiding every result.
+  const fallback2 = [geoAnchor, `"${indAnchor}"`, roleTriggers].filter(Boolean).join(' ');
 
   return {
     primaryQuery: primary,

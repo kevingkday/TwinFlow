@@ -1,3 +1,5 @@
+import { extractNamedPeople, nameAppearsInText } from './signalQuality';
+
 /**
  * OpenAI (gpt-4o-mini) LLM Enrichment Service Adapter
  * Parses article markdown into structured B2B intelligence:
@@ -62,6 +64,12 @@ export async function enrichSignalWithLLM(
       const systemPrompt = `You are a direct, pragmatic executive assistant and B2B communication specialist.
 Analyze the provided news headline and article text to extract actionable outbound intelligence and knowledge-graph branching targets.
 
+PERSON RULES (STRICTLY ENFORCED):
+- Name a person only when the article prints their first and last name. Copy it verbatim.
+- "the CEO", "a spokesperson", "executives", and "new leadership" are not a person. Leave decisionMaker.name as "" in that case.
+- Never invent, infer, or recall a name from outside the article.
+- Set relevantToSender to false when the story is a listicle, wire roundup, stock recap, or is outside the sender's industry and geography.
+
 CRITICAL EMAIL COPY RULES (STRICTLY ENFORCED):
 - NO AI SLOP. Absolutely NO buzzwords, clichés, or marketing jargon (e.g. do NOT use "synergy", "game-changer", "delighted", "streamlining", "frictionless", "hyper-tailored", "leverage", "exponential", "in today's fast-paced environment", "catalyst", "unleash", "triage deck", "supercharge").
 - PITCH BODY MUST BE LITERALLY 2 SENTENCES. Exactly two sentences of body text:
@@ -81,14 +89,14 @@ You must respond with valid JSON adhering exactly to this structure:
     "Commercial angle: Why reaching out now gives an unfair advantage"
   ],
   "articleSummary": "2-3 sentence executive synopsis summarizing the core story, key figures, and background context of the article",
+  "relevantToSender": true,
   "decisionMaker": {
-    "name": "Full name of relevant leader mentioned or inferred (e.g. Owner, Managing Partner, CEO, VP Operations, General Manager)",
-    "role": "Their executive title appropriate to their industry",
+    "name": "Full name copied verbatim from the article, or empty string if the article does not print a person's first and last name",
+    "role": "Title printed next to that person, or empty string",
     "company": "Company name"
   },
   "detectedContacts": [
-    { "name": "Key leader 1 mentioned in article", "role": "Executive title", "company": "Company name" },
-    { "name": "Key leader 2 mentioned in article", "role": "Executive title", "company": "Company name" }
+    { "name": "Only a person whose full name appears in the article", "role": "Title from the article", "company": "Company name" }
   ],
   "coldIntroHook": "I saw the recent article regarding [Company]'s [milestone].",
   "pitchSubject": "quick question re: [milestone / Company]",
@@ -145,12 +153,7 @@ Extract and generate the structured JSON intelligence object.`;
         const content = json.choices?.[0]?.message?.content;
         if (content) {
           const parsed = JSON.parse(content) as Partial<EnrichedSignalData>;
-          if (
-            parsed.companyName &&
-            Array.isArray(parsed.summaryBullets) &&
-            parsed.summaryBullets.length >= 3 &&
-            parsed.decisionMaker?.name
-          ) {
+            if (parsed.companyName && Array.isArray(parsed.summaryBullets) && parsed.summaryBullets.length >= 3) {
             const defaultCompetitors: CompetitorBranch[] = Array.isArray(parsed.competitors) && parsed.competitors.length > 0
               ? parsed.competitors.map((c) => ({
                   name: c.name || 'Key Competitor',
@@ -166,6 +169,16 @@ Extract and generate the structured JSON intelligence object.`;
                 }))
               : generateHeuristicPeerRoles(parsed.signalType || 'Enterprise Expansion');
 
+            const sourceText = `${headline}\n${articleMarkdown}`;
+            const extracted = extractNamedPeople(sourceText);
+            const modelName = parsed.decisionMaker?.name || '';
+            const verifiedName = nameAppearsInText(modelName, sourceText)
+              ? modelName
+              : extracted[0]?.name || '';
+            const verifiedRole = verifiedName
+              ? (nameAppearsInText(modelName, sourceText) ? parsed.decisionMaker?.role : extracted[0]?.role) || 'Executive'
+              : '';
+
             return {
               companyName: parsed.companyName,
               companyDomain: parsed.companyDomain || `${parsed.companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
@@ -178,14 +191,16 @@ Extract and generate the structured JSON intelligence object.`;
                 parsed.summaryBullets[1],
                 parsed.summaryBullets[2],
               ],
+              articleSummary: parsed.articleSummary,
               decisionMaker: {
-                name: parsed.decisionMaker.name,
-                role: parsed.decisionMaker.role || 'Executive Leadership',
+                name: verifiedName,
+                role: verifiedRole,
                 company: parsed.companyName,
               },
+              detectedContacts: extracted,
               coldIntroHook: parsed.coldIntroHook || `I saw the recent article in ${publisher} regarding ${parsed.companyName}'s upcoming plans.`,
               pitchSubject: parsed.pitchSubject || `quick question re: ${parsed.companyName}`,
-              pitchBody: parsed.pitchBody || `Hi ${(parsed.decisionMaker.name || '').split(' ')[0] || 'there'},\n\nI saw the recent article in ${publisher} regarding ${parsed.companyName}'s expansion plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`,
+              pitchBody: parsed.pitchBody || `Hi ${(verifiedName || 'there').split(' ')[0] || 'there'},\n\nI saw the recent article in ${publisher} regarding ${parsed.companyName}'s expansion plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`,
               competitors: defaultCompetitors,
               suggestedPeerRoles: defaultPeerRoles,
             };
@@ -253,7 +268,7 @@ export function generateHeuristicPeerRoles(signalType: string): PeerRoleBranch[]
   ];
 }
 
-function generateHeuristicEnrichment(
+export function generateHeuristicEnrichment(
   headline: string,
   text: string,
   publisher: string
@@ -278,23 +293,11 @@ function generateHeuristicEnrichment(
     signalType = 'Product Launch';
   }
 
-  // Extract or synthesize decision maker
-  let dmName = 'Elena Vance';
-  let dmRole = 'VP of Growth & Operations';
-  if (signalType === 'Executive Leadership') {
-    const leaderMatch = headline.match(/(?:hires|appoints|taps|names)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i);
-    if (leaderMatch && leaderMatch[1]) {
-      dmName = leaderMatch[1];
-    } else {
-      dmName = 'Marcus Vance';
-    }
-    dmRole = 'Chief Revenue Officer';
-  } else if (signalType === 'Series A/B Funding') {
-    dmName = 'Dr. Clara Lin';
-    dmRole = 'VP of Commercial Strategy';
-  }
+  const named = extractNamedPeople(`${headline}\n${text}`);
+  const dmName = named[0]?.name || '';
+  const dmRole = named[0]?.role || '';
 
-  const firstName = dmName.split(' ')[0] || dmName;
+  const firstName = dmName.split(' ')[0] || 'there';
   const cleanHeadline = headline.replace(/["']/g, '').slice(0, 65).trim();
   const coldIntroHook = `I saw the recent article in ${publisher} regarding ${company}'s announcement on ${cleanHeadline}.`;
   const pitchSubject = `quick question re: ${company}`;
@@ -316,11 +319,7 @@ function generateHeuristicEnrichment(
       role: dmRole,
       company,
     },
-    detectedContacts: [
-      { name: dmName, role: dmRole, company },
-      { name: 'Marcus Vance', role: 'Chief Commercial Officer', company },
-      { name: 'Elena Rostova', role: 'VP of Global Operations', company },
-    ],
+    detectedContacts: named.map((person) => ({ ...person, company })),
     coldIntroHook,
     pitchSubject,
     pitchBody,

@@ -15,7 +15,8 @@
     "db:setup:remote": "wrangler d1 migrations apply twinflow-d1 --remote && wrangler d1 execute twinflow-d1 --remote --file=./drizzle/seed.sql",
     "db:studio": "drizzle-kit studio",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval:signals": "tsx scripts/eval-signals.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.38.3",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250109.0",
     "drizzle-kit": "^0.30.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
     "vitest": "^5.1.0",
     "wrangler": "^3.101.0"
