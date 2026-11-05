@@ -76,15 +76,99 @@ export const Header: React.FC<HeaderProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const renderNavButtons = (isMobile = false) => (
+    <>
+      <button
+        type="button"
+        onClick={() => onNavigate?.('landing')}
+        className={`${
+          isMobile ? 'flex-1 min-w-max justify-center' : ''
+        } flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+          currentView === 'landing'
+            ? 'bg-white text-slate-900 shadow-xs font-semibold'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+        }`}
+      >
+        <Home className="w-3.5 h-3.5 shrink-0" />
+        <span>Home</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => onNavigate?.('deck')}
+        className={`${
+          isMobile ? 'flex-1 min-w-max justify-center' : ''
+        } flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+          currentView === 'deck'
+            ? 'bg-white text-slate-900 shadow-xs font-semibold'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+        }`}
+      >
+        <Zap className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+        <span>Lead Deck</span>
+        {leadsCount !== undefined && leadsCount > 0 && (
+          <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 text-[10px] font-mono font-bold shrink-0">
+            {leadsCount}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={() => onNavigate?.('contacts')}
+        className={`${
+          isMobile ? 'flex-1 min-w-max justify-center' : ''
+        } flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+          currentView === 'contacts'
+            ? 'bg-white text-slate-900 shadow-xs font-semibold'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+        }`}
+      >
+        <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+        <span>Contacts</span>
+        {contactsCount !== undefined && contactsCount > 0 && (
+          <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-mono font-bold shrink-0">
+            {contactsCount}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={() => onNavigate?.('profile')}
+        className={`${
+          isMobile ? 'flex-1 min-w-max justify-center' : ''
+        } flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+          currentView === 'profile'
+            ? 'bg-white text-slate-900 shadow-xs font-semibold'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+        }`}
+      >
+        <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+        <span>Profile</span>
+      </button>
+      {user?.isAdmin && onOpenAdmin && (
+        <button
+          type="button"
+          onClick={onOpenAdmin}
+          className={`${
+            isMobile ? 'flex-1 min-w-max justify-center' : ''
+          } flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-amber-800 hover:text-amber-950 hover:bg-amber-100 transition-all cursor-pointer whitespace-nowrap`}
+          title="Open Admin Console"
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <span>Admin</span>
+        </button>
+      )}
+    </>
+  );
+
   return (
-    <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-2.5 sm:px-6 transition-colors shadow-xs">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-2 sm:py-2.5 sm:px-6 transition-colors shadow-xs">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
         {/* Left Side: Brand Logo & Navigation */}
-        <div className="flex items-center gap-3 sm:gap-6">
+        <div className="flex items-center gap-3 sm:gap-6 shrink-0">
           <button
             type="button"
             onClick={() => onNavigate?.('landing')}
-            className="flex items-center gap-2.5 text-left group focus:outline-none cursor-pointer"
+            className="flex items-center gap-2 sm:gap-2.5 text-left group focus:outline-none cursor-pointer shrink-0"
             title="TwinFlow Home"
           >
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600 text-white font-bold text-sm shadow-xs group-hover:bg-blue-700 transition-all">
@@ -97,84 +181,16 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </button>
 
-          {/* Segmented Navigation (Home vs Lead Deck vs Admin) */}
+          {/* Desktop Navigation - Hidden on mobile, visible on md+ */}
           {onNavigate && (
-            <nav className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/80">
-              <button
-                type="button"
-                onClick={() => onNavigate('landing')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  currentView === 'landing'
-                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                }`}
-              >
-                <Home className="w-3.5 h-3.5" />
-                <span>Home</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('deck')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  currentView === 'deck'
-                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                }`}
-              >
-                <Zap className="w-3.5 h-3.5 text-blue-600" />
-                <span>Lead Deck</span>
-                {leadsCount !== undefined && leadsCount > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 text-[10px] font-mono font-bold">
-                    {leadsCount}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('contacts')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  currentView === 'contacts'
-                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                }`}
-              >
-                <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                <span>Contacts</span>
-                {contactsCount !== undefined && contactsCount > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-mono font-bold">
-                    {contactsCount}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('profile')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  currentView === 'profile'
-                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                }`}
-              >
-                <User className="w-3.5 h-3.5 text-blue-600" />
-                <span>Profile</span>
-              </button>
-              {user?.isAdmin && onOpenAdmin && (
-                <button
-                  type="button"
-                  onClick={onOpenAdmin}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-amber-800 hover:text-amber-950 hover:bg-amber-100 transition-all cursor-pointer"
-                  title="Open Admin Console"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Admin</span>
-                </button>
-              )}
+            <nav className="hidden md:flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/80">
+              {renderNavButtons(false)}
             </nav>
           )}
         </div>
 
         {/* Right Side: Primary Actions & User Profile */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {/* Make News (Social Broadcast) Action */}
           {onOpenMakeNews && (
             <button
@@ -192,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onScoutNews}
             disabled={isScouting}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer shrink-0 ${
               isScouting
                 ? 'bg-blue-50 border-blue-200 text-blue-700 cursor-wait'
                 : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:text-slate-900 shadow-xs'
@@ -200,17 +216,18 @@ export const Header: React.FC<HeaderProps> = ({
             title="Scout live market signals via AI"
             aria-label="Scout Market Signals"
           >
-            <Radio className={`w-3.5 h-3.5 ${isScouting ? 'text-blue-600 animate-spin' : 'text-slate-500'}`} />
-            <span>{isScouting ? 'Scouting AI...' : 'Scout Signals'}</span>
+            <Radio className={`w-3.5 h-3.5 shrink-0 ${isScouting ? 'text-blue-600 animate-spin' : 'text-slate-500'}`} />
+            <span className="hidden sm:inline">{isScouting ? 'Scouting AI...' : 'Scout Signals'}</span>
+            <span className="inline sm:hidden">{isScouting ? 'Scout...' : 'Scout'}</span>
           </button>
 
           {/* Credits Badge */}
           <button
             onClick={onOpenUpgrade}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700 shadow-xs transition-all cursor-pointer"
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700 shadow-xs transition-all cursor-pointer shrink-0"
             title={`${stats.creditsRemaining} credits available. Click to manage.`}
           >
-            <Coins className="w-3.5 h-3.5 text-amber-500" />
+            <Coins className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span className="font-mono font-bold text-slate-900">{stats.creditsRemaining}</span>
             <span className="text-[11px] text-slate-500 hidden md:inline">credits</span>
           </button>
@@ -221,9 +238,9 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => setUserMenuOpen((prev) => !prev)}
-                className="flex items-center gap-2 py-1 pl-1 pr-2.5 rounded-xl hover:bg-slate-100 border border-slate-200 text-xs text-slate-700 transition-all focus:outline-none cursor-pointer bg-white shadow-xs"
+                className="flex items-center gap-1.5 sm:gap-2 py-1 pl-1 pr-2 sm:pr-2.5 rounded-xl hover:bg-slate-100 border border-slate-200 text-xs text-slate-700 transition-all focus:outline-none cursor-pointer bg-white shadow-xs shrink-0"
               >
-                <div className="relative">
+                <div className="relative shrink-0">
                   <ExecutiveAvatar
                     name={user.name || user.email || 'Operator'}
                     avatarUrl={user.avatarUrl}
@@ -241,7 +258,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="hidden sm:inline font-semibold text-slate-800 max-w-[120px] truncate">
                   {user.name || 'Operator'}
                 </span>
-                <ChevronDown className="w-3 h-3 text-slate-400" />
+                <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
               </button>
 
               {/* Comprehensive Workspace Command Menu */}
@@ -437,18 +454,18 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => onOpenAuth?.('login')}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-all cursor-pointer"
+                className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-all cursor-pointer whitespace-nowrap"
               >
                 Sign In
               </button>
               <button
                 type="button"
                 onClick={() => onOpenAuth?.('signup')}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all cursor-pointer"
+                className="hidden min-[420px]:inline-flex px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all cursor-pointer whitespace-nowrap"
               >
                 Get Started
               </button>
@@ -456,6 +473,15 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
+
+      {/* Mobile Navigation Row (underneath brand logo and actions on mobile only) */}
+      {onNavigate && (
+        <div className="md:hidden mt-2 pt-1 border-t border-slate-100 max-w-7xl mx-auto">
+          <nav className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/80 overflow-x-auto no-scrollbar">
+            {renderNavButtons(true)}
+          </nav>
+        </div>
+      )}
     </header>
   );
 };

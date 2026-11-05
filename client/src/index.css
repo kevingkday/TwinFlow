@@ -22,6 +22,15 @@
 }
 
 @layer utilities {
+  /* Utility to hide scrollbars while preserving touch/scroll momentum */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
   .pro-card {
     background: #FFFFFF;
     border: 1px solid #E2E8F0;
