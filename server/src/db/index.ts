@@ -19,6 +19,7 @@ export type Bindings = {
   GHL_DEFAULT_TIMEZONE?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
   ASSETS?: Fetcher;
 };
 

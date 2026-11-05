@@ -121,7 +121,8 @@ export function parseGoogleJwt(token: string): {
 }
 
 /**
- * Verifies a Google ID Token using Google's tokeninfo API with fallback
+ * Verifies a Google ID Token using Google's tokeninfo API.
+ * An unverified JWT is rejected even if its payload contains an email.
  */
 export async function verifyGoogleIdToken(
   idToken: string,
@@ -142,7 +143,10 @@ export async function verifyGoogleIdToken(
         picture?: string;
         aud?: string;
       };
-      if (data.email && data.sub) {
+      const emailVerified = (data as { email_verified?: boolean | string }).email_verified;
+      const audienceOk = !expectedClientId || data.aud === expectedClientId;
+      const verifiedOk = emailVerified === undefined || emailVerified === true || emailVerified === 'true';
+      if (data.email && data.sub && audienceOk && verifiedOk) {
         return {
           email: data.email.toLowerCase(),
           name: data.name,
@@ -155,8 +159,8 @@ export async function verifyGoogleIdToken(
     console.warn('[Google Auth] Error verifying token with tokeninfo API:', err);
   }
 
-  // Fallback to direct JWT parsing
-  return parseGoogleJwt(idToken);
+  // Never accept an unverified JWT payload. tokeninfo is the only success path.
+  return null;
 }
 
 /**

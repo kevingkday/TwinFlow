@@ -8,44 +8,6 @@ import { planNewsQueryWithAI } from '../services/aiQueryPlanner';
 
 export const userRouter = new Hono<{ Bindings: Bindings }>();
 
-/**
- * Helper to retrieve or initialize the default operator user
- */
-export async function getOrCreateUser(db: ReturnType<typeof getDb>): Promise<typeof schema.users.$inferSelect> {
-  const existing = await db.query.users.findFirst();
-  if (existing) return existing;
-
-  const newUser: typeof schema.users.$inferInsert = {
-    id: 'usr_default',
-    email: 'operator@twinflow.ai',
-    name: 'Operator',
-    organization: 'TwinFlow Demo',
-    passwordHash: null,
-    googleId: null,
-    avatarUrl: null,
-    ghlSubaccountId: 'y3KLRBUZzf2t45o7rzp9',
-    ghlApiKey: null,
-    creditBalance: 500,
-    streakCount: 0,
-    totalPoints: 0,
-    icpQuery: null,
-    targetIndustries: null,
-    targetTriggers: null,
-    targetRoles: null,
-    valueProp: null,
-    companyDescription: null,
-    servicesOffered: null,
-    productsOffered: null,
-    website: null,
-    onboardingCompleted: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  await db.insert(schema.users).values(newUser);
-  return newUser as typeof schema.users.$inferSelect;
-}
-
 export function formatUserProfile(user: typeof schema.users.$inferSelect, env?: Bindings) {
   const hasCustomGhlKey = Boolean(
     user.ghlApiKey && user.ghlApiKey.length > 10 && !user.ghlApiKey.includes('your_')

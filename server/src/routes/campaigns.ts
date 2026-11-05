@@ -114,6 +114,7 @@ campaignsRouter.get('/', async (c) => {
         .from(schema.signals)
         .where(
           and(
+            eq(schema.signals.userId, user.id),
             eq(schema.signals.status, 'queued'),
             cmp.isDefault
               ? sql`(${schema.signals.campaignId} = ${cmp.id} OR ${schema.signals.campaignId} IS NULL)`
@@ -496,6 +497,14 @@ campaignsRouter.delete('/:id', async (c) => {
   }
 
   const campaignId = c.req.param('id');
+  const campaign = await db.query.campaigns.findFirst({
+    where: and(eq(schema.campaigns.id, campaignId), eq(schema.campaigns.userId, user.id)),
+  });
+
+  if (!campaign || campaign.status !== 'active') {
+    return c.json({ success: false, error: 'Campaign not found' }, 404);
+  }
+
   const allActive = await db.query.campaigns.findMany({
     where: and(
       eq(schema.campaigns.userId, user.id),
@@ -516,7 +525,7 @@ campaignsRouter.delete('/:id', async (c) => {
       status: 'archived',
       updatedAt: new Date().toISOString(),
     })
-    .where(eq(schema.campaigns.id, campaignId));
+    .where(and(eq(schema.campaigns.id, campaignId), eq(schema.campaigns.userId, user.id)));
 
   // If deleted campaign was active, switch to first remaining
   if (user.activeCampaignId === campaignId) {
