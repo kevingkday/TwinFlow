@@ -253,7 +253,7 @@ async function scoreLiveArticle(persona: Persona, article: SerpArticle): Promise
   let text = `${article.title}\n${article.snippet}`;
   if (process.env.FIRECRAWL_API_KEY) {
     const crawled = await crawlArticle(article.url, process.env.FIRECRAWL_API_KEY, article.snippet);
-    text = `${text}\n${crawled.markdown.slice(0, 6000)}`;
+    text = `${text}\n${crawled.markdown.slice(0, 18000)}`;
   }
   const judgment = await judgeArticleRelevance(
     persona,
@@ -274,7 +274,9 @@ async function scoreLiveArticle(persona: Persona, article: SerpArticle): Promise
   const domain = usableCompanyDomain(enriched.companyDomain);
   let reachable = false;
   let apolloStatus = 'not_called';
-  if (process.env.APOLLO_API_KEY && candidate && domain) {
+  if (!judgment.relevant) {
+    apolloStatus = 'skipped_not_relevant';
+  } else if (process.env.APOLLO_API_KEY && candidate && domain) {
     const match = await findApolloContact(candidate.name, candidate.role, domain, process.env.APOLLO_API_KEY);
     apolloStatus = match.status;
     reachable = match.matched && match.status === 'verified';
@@ -352,12 +354,24 @@ async function main() {
       limit,
       false
     );
-    const afterSearch = await searchQueries(
-      [afterPlan.primaryQuery, ...afterPlan.fallbackQueries],
-      afterPlan.geographicFocus.gl,
-      limit,
-      true
-    );
+    const afterSearch = process.env.SERP_API_KEY
+      ? {
+          source: 'serpapi',
+          articles: await fetchSerpNews(
+            afterPlan.primaryQuery,
+            process.env.SERP_API_KEY,
+            limit,
+            afterPlan.geographicFocus.gl,
+            afterPlan.fallbackQueries,
+            { allowSampleFallback: false, searchTiers: afterPlan.searchTiers }
+          ),
+        }
+      : await searchQueries(
+          (afterPlan.searchTiers || []).flatMap((tier) => tier.queries).concat(afterPlan.primaryQuery, ...afterPlan.fallbackQueries),
+          afterPlan.geographicFocus.gl,
+          limit,
+          true
+        );
 
     const beforeRows = beforeSearch.articles.map((article) => scoreArticle(persona, article, 'before'));
     for (const row of beforeRows) {

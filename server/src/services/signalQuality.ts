@@ -43,6 +43,17 @@ const STOP_NAME = new Set(
 
 export const SPORTS_QUERY_EXCLUSION = '-NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster';
 
+const SPORTS_TOKENS = ['NHL', 'CFL', 'NFL', 'NBA', 'MLB', 'soccer', 'hockey', 'roster'];
+
+/** Append sports exclusions once, even if the query already contains them. */
+export function withSportsExclusion(query: string): string {
+  let stripped = query;
+  for (const token of SPORTS_TOKENS) {
+    stripped = stripped.replace(new RegExp(`\\s*-${token}\\b`, 'gi'), '');
+  }
+  return `${stripped.replace(/\s+/g, ' ').trim()} ${SPORTS_QUERY_EXCLUSION}`.replace(/\s+/g, ' ').trim();
+}
+
 export function isSportsArticle(title: string, publisher = ''): boolean {
   return /\b(nhl|cfl|nfl|nba|mlb|mls|soccer|hockey|roster|touchdown|playoff|premier league)\b/i.test(
     `${title} ${publisher}`
@@ -149,9 +160,9 @@ export function extractNamedPeople(text: string): NamedPerson[] {
 }
 
 export function nameAppearsInText(name: string, text: string): boolean {
-  const person = acceptName(name) || '';
-  if (!person) return false;
-  const haystack = normalizeApostrophes(text).toLowerCase();
+  const person = normalizeApostrophes(name).normalize('NFC').trim().replace(/\s+/g, ' ');
+  if (person.split(' ').filter(Boolean).length < 2) return false;
+  const haystack = normalizeApostrophes(text).normalize('NFC').toLowerCase();
   return haystack.includes(person.toLowerCase());
 }
 

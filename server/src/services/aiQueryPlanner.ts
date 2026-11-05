@@ -1,4 +1,4 @@
-import { SPORTS_QUERY_EXCLUSION } from './signalQuality';
+import { withSportsExclusion } from './signalQuality';
 
 /**
  * AI News Query Planner Service (Powered by GPT-4o)
@@ -20,9 +20,15 @@ export interface QueryPlannerInput {
   website?: string;
 }
 
+export interface SearchTier {
+  label: 'city' | 'region' | 'country';
+  queries: string[];
+}
+
 export interface QueryPlanResult {
   primaryQuery: string;
   fallbackQueries: string[];
+  searchTiers: SearchTier[];
   geographicFocus: {
     locationClean: string;
     gl: string; // Google country code e.g. 'us', 'ca', 'gb'
@@ -80,23 +86,19 @@ export async function planNewsQueryWithAI(
 Your task is to analyze a user's location, commercial intent, and free-form mission description, and generate high-precision Google News queries that uncover actionable business catalysts.
 
 CRITICAL RULES FOR GOOGLE NEWS SEARCH QUERIES:
-1. SEVERAL SHORT QUERIES, NOT ONE STACKED OR:
-   - Do not put OR groups in a query. Stacked ORs return nothing for narrow niches.
-   - Do not put when:14d or any when: operator in the query text. Recency is applied by the search API and a date check in code.
-   - Each query is a city plus ONE quoted trigger phrase, then sports exclusions: -NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster
-   - Use industry-specific phrases, not generic "expansion":
-     "joins as CFO", "appointed chief risk officer", "captive insurance company formed", "signs lease", "raises Series", "breaks ground"
-   - One of the fallback queries should name a trade outlet for the vertical: Insurance Business, Canadian Underwriter, Bisnow, BetaKit, or ConstructConnect.
-   - Example primary: Vancouver "appointed chief risk officer" -NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster
-   - Example fallback: Dallas "signs lease" -NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster
-   - Example outlet fallback: Bisnow Dallas office -NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster
-   - Return 3 additional fallbackQueries, each a different simple phrase.
-
-2. INTENT ALIGNMENT:
-   - "sales_client_acquisition": Companies appointing executives, opening sites, winning contracts, or raising money in the seller's industry.
-   - "subcontractor_partners": Commercial project awards, groundbreakings, and facility expansions that name an owner or project lead.
-   - "job_seeking": Companies appointing leadership or opening a regional hub.
-   - "investing": Funding, acquisitions, and succession that name a founder, CEO, or CFO.
+1. SEARCH THE BUYER'S EVENTS, NOT THE SELLER'S TRADE:
+   - A cyber/AI insurance broker sells to technology companies. Search "Vancouver technology funding" or "Vancouver technology hires", never "Insurance Business Vancouver" or "Canadian Underwriter".
+   - A managed IT provider sells to local operating companies. Search "Ontario company expansion" or "Ontario company hires", never the insurance trade press.
+   - A captive consultant searches companies that might form a captive ("company captive", "forms captive"), not generic insurance appointments.
+   - A commercial real estate broker searches tenants and occupiers ("Dallas office lease", "Dallas headquarters").
+   - A contractor searches project owners ("Calgary construction breaks ground").
+   - A SaaS marketing agency searches software companies ("Toronto software raises", "Toronto software hires").
+2. SHORT QUERIES, THEN WIDEN GEOGRAPHY:
+   - No OR groups. No when: operators. No mandatory quoted exact phrases.
+   - Each query is place + buyer sector + one trigger word (funding, hires, expansion, lease, breaks ground, captive).
+   - primaryQuery uses the city. fallbackQueries use the same phrases with the province/state, then the country, so thin cities can widen.
+   - One fallback may be a real site: restriction for a trade outlet that covers the BUYER sector: site:betakit.com, site:bisnow.com, site:constructconnect.com, or site:captiveinsurancetimes.com. Do not use the outlet name as a keyword.
+   - Do not add sports minus-terms yourself. They are appended once later.
 
 You must respond with valid JSON adhering to this schema:
 {
@@ -178,18 +180,21 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
         const content = data.choices?.[0]?.message?.content;
         if (content) {
           const parsed = JSON.parse(content) as QueryPlanResult;
-          if (parsed.primaryQuery && !/\bOR\b/.test(parsed.primaryQuery)) {
-            const clean = (value: string) =>
-              `${value.replace(/\bwhen:\d+d\b/gi, ' ').replace(/\s+/g, ' ').trim()} ${SPORTS_QUERY_EXCLUSION}`
-                .replace(/\s+/g, ' ')
-                .trim();
+          if (parsed.primaryQuery) {
+            const buyerPlan = generateAlgorithmicQueryPlan({
+              location,
+              userIntent: intent,
+              userMission: mission,
+              targetIndustries: industries,
+              targetTriggers: triggers,
+              valueProp,
+              defaultGl,
+            });
             return {
-              ...parsed,
-              primaryQuery: clean(parsed.primaryQuery),
-              fallbackQueries: (parsed.fallbackQueries || [])
-                .filter((item) => item && !/\bOR\b/.test(item))
-                .map(clean),
-              modelUsed,
+              ...buyerPlan,
+              missionSummary: parsed.missionSummary || buyerPlan.missionSummary,
+              recommendedPitchAngle: parsed.recommendedPitchAngle || buyerPlan.recommendedPitchAngle,
+              modelUsed: `${modelUsed}+buyer_tiers`,
             };
           }
         }
@@ -222,43 +227,84 @@ export function generateAlgorithmicQueryPlan(params: {
 }): QueryPlanResult {
   const { location, userIntent, userMission, targetIndustries, targetTriggers, defaultGl } = params;
 
-  let geoAnchor = '';
-  if (location && !location.toLowerCase().includes('nationwide') && !location.toLowerCase().includes('remote')) {
-    geoAnchor = location.split(',')[0].trim().split(' ').slice(0, 2).join(' ');
+  const parts = location.split(',').map((part) => part.trim()).filter(Boolean);
+  const regionNames = /^(ontario|alberta|british columbia|quebec|texas|california|florida|new york)$/i;
+  let city = '';
+  let region = '';
+  let country = '';
+  if (parts.length >= 3) {
+    city = parts[0];
+    region = parts[1];
+    country = parts.slice(2).join(' ');
+  } else if (parts.length === 2) {
+    if (regionNames.test(parts[0])) {
+      region = parts[0];
+      country = parts[1];
+    } else {
+      city = parts[0];
+      country = parts[1];
+    }
+  } else {
+    city = parts[0] || '';
   }
 
-  let indAnchor = (targetIndustries[0] || 'commercial').replace(/&/g, ' ').split('/')[0].trim();
-  indAnchor = indAnchor.split(/\s+/).slice(0, 2).join(' ');
-  const blob = `${indAnchor} ${targetIndustries.join(' ')} ${targetTriggers.join(' ')} ${userMission}`.toLowerCase();
+  const blob = `${targetIndustries.join(' ')} ${targetTriggers.join(' ')} ${userMission} ${params.valueProp}`.toLowerCase();
+  let sector = 'company';
+  let triggers = ['funding', 'hires', 'expansion'];
+  let site = '';
+  if (/captive/.test(blob)) {
+    sector = 'company';
+    triggers = ['captive', 'forms captive', 'self-insured'];
+    site = 'captiveinsurancetimes.com';
+  } else if (/managed it|msp|managed services/.test(blob)) {
+    sector = 'company';
+    triggers = ['hires', 'expansion', 'opens'];
+    site = 'betakit.com';
+  } else if (/insurance/.test(blob) && /tech|technology|software|smb/.test(blob)) {
+    sector = 'technology';
+    triggers = ['funding', 'hires', 'expansion'];
+    site = 'betakit.com';
+  } else if (/lease|real estate|tenant|office/.test(blob)) {
+    sector = 'office';
+    triggers = ['lease', 'headquarters', 'hires'];
+    site = 'bisnow.com';
+  } else if (/construct|contractor|builder/.test(blob) || userIntent === 'subcontractor_partners') {
+    sector = 'construction';
+    triggers = ['breaks ground', 'awarded', 'development'];
+    site = 'constructconnect.com';
+  } else if (/saas|software|marketing/.test(blob)) {
+    sector = 'software';
+    triggers = ['raises', 'funding', 'hires'];
+    site = 'betakit.com';
+  }
 
-  const q = (phrase: string) => [geoAnchor, phrase, SPORTS_QUERY_EXCLUSION].filter(Boolean).join(' ');
-  const phrases: string[] = [];
-  if (/captive/.test(blob)) phrases.push('"captive insurance company formed"');
-  if (/cyber|msp|managed|ciso/.test(blob)) phrases.push('"appointed" CISO');
-  if (/insurance|risk|cyber|captive/.test(blob)) {
-    phrases.push('"joins as CFO"', '"appointed chief risk officer"', '"Insurance Business"', '"Canadian Underwriter"');
+  const stems = triggers.map((trigger) => `${sector} ${trigger}`);
+  if (site) stems.push(`site:${site} ${sector}`);
+
+  const tier = (label: SearchTier['label'], place: string): SearchTier | null => {
+    if (!place) return null;
+    return {
+      label,
+      queries: stems.map((stem) => withSportsExclusion(`${place} ${stem}`)),
+    };
+  };
+  const searchTiers = [tier('city', city), tier('region', region), tier('country', country)].filter(
+    (item): item is SearchTier => Boolean(item)
+  );
+  if (searchTiers.length === 0) {
+    searchTiers.push({
+      label: 'country',
+      queries: stems.map((stem) => withSportsExclusion(stem)),
+    });
   }
-  if (/lease|office|industrial|estate|bisnow|broker/.test(blob)) {
-    phrases.push('"signs lease"', 'Bisnow', '"joins as" broker');
-  }
-  if (/software|saas|marketing|betakit/.test(blob)) {
-    phrases.push('"raises Series"', 'BetaKit', '"joins as" CMO');
-  }
-  if (/construct|contractor|builder/.test(blob) || userIntent === 'subcontractor_partners') {
-    phrases.push('"breaks ground"', 'ConstructConnect', '"awarded" contract');
-  }
-  if (phrases.length < 3) {
-    phrases.push(`"${indAnchor}" appointed`, '"raises Series"', '"signs lease"');
-  }
-  const unique = [...new Set(phrases.map((phrase) => q(phrase)))];
-  const primary = unique[0];
-  const fallback1 = unique[1] || q('"joins as CFO"');
-  const fallback2 = unique[2] || q('"raises Series"');
-  const fallback3 = unique[3] || q('"breaks ground"');
+  const cityQueries = searchTiers[0].queries;
+  const primary = cityQueries[0];
+  const geoAnchor = city || region || country;
 
   return {
     primaryQuery: primary,
-    fallbackQueries: [fallback1, fallback2, fallback3],
+    fallbackQueries: cityQueries.slice(1),
+    searchTiers,
     geographicFocus: {
       locationClean: location || 'Nationwide',
       gl: defaultGl,
@@ -266,7 +312,7 @@ export function generateAlgorithmicQueryPlan(params: {
     },
     missionSummary:
       userMission ||
-      `Finding ${indAnchor} opportunities in ${location || 'target markets'} for ${userIntent}`,
+      `Finding ${sector} opportunities in ${location || 'target markets'} for ${userIntent}`,
     recommendedPitchAngle:
       userIntent === 'job_seeking'
         ? 'Reach out as an experienced executive operator ready to support their regional scaling.'

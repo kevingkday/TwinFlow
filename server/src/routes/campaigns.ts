@@ -248,9 +248,10 @@ campaignsRouter.post('/', async (c) => {
     const newsArticles = await fetchSerpNews(
       queryPlan.primaryQuery,
       c.env.SERP_API_KEY,
-      3,
+      8,
       queryPlan.geographicFocus?.gl,
-      queryPlan.fallbackQueries
+      queryPlan.fallbackQueries,
+      { searchTiers: queryPlan.searchTiers }
     );
 
     for (const art of newsArticles) {
@@ -269,7 +270,10 @@ campaignsRouter.post('/', async (c) => {
           { title: art.title, publisher: art.publisher, text: `${art.snippet}\n${crawl.markdown}` },
           c.env.OPENAI_API_KEY
         );
-        if (!judgment.relevant) continue;
+        if (!judgment.relevant) {
+          console.log(`[Relevance] rejected "${art.title}" from "${art.query || ''}": ${judgment.relevantReason}`);
+          continue;
+        }
         const enriched = await enrichSignalWithLLM(
           art.title,
           crawl.markdown,

@@ -15,12 +15,20 @@ export function publishedAtFromHoursAgo(hoursAgo: number): string {
 }
 
 function fromRelativePhrase(value: string): string | null {
-  const match = /^(\d+)\s+(minute|hour|day|week)s?\s+ago$/i.exec(value.trim());
+  if (/^yesterday$/i.test(value.trim())) return publishedAtFromHoursAgo(24);
+  const match = /^(\d+)\s+(minute|hour|hr|day|week)s?\s+ago$/i.exec(value.trim());
   if (!match) return null;
   const amount = Number(match[1]);
   const unit = match[2].toLowerCase();
+  const unitName = unit.toLowerCase();
   const hours =
-    unit === 'minute' ? amount / 60 : unit === 'hour' ? amount : unit === 'day' ? amount * 24 : amount * 24 * 7;
+    unitName === 'minute'
+      ? amount / 60
+      : unitName === 'hour' || unitName === 'hr'
+        ? amount
+        : unitName === 'day'
+          ? amount * 24
+          : amount * 24 * 7;
   return publishedAtFromHoursAgo(hours);
 }
 
@@ -45,9 +53,10 @@ export function parsePublishedAtOrNull(value: unknown): string | null {
       if (relative) return relative;
 
       const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+      const serpStamp = trimmed.replace(/,\s*\+\d{4}\s*UTC/i, '');
       const parsed = dateOnly
         ? new Date(Date.UTC(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 12, 0, 0))
-        : new Date(trimmed);
+        : new Date(serpStamp);
       if (!Number.isNaN(parsed.getTime()) && parsed.getTime() >= EARLIEST_ARTICLE_MS) {
         return parsed.toISOString();
       }

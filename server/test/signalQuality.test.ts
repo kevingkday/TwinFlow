@@ -10,7 +10,9 @@ import {
   isRecentPublished,
   isRelevantToProfile,
   isVerifiedEmailStatus,
+  nameAppearsInText,
   usableCompanyDomain,
+  withSportsExclusion,
 } from '../src/services/signalQuality';
 
 const broker = {
@@ -27,11 +29,14 @@ describe('signal quality', () => {
     expect(plan.modelUsed).toBe('algorithmic_fallback');
     expect(plan.primaryQuery.toLowerCase()).not.toContain('when:');
     expect(plan.primaryQuery).not.toMatch(/\bOR\b/);
-    expect(plan.primaryQuery).toContain('-NHL');
-    expect(plan.primaryQuery.toLowerCase()).toMatch(/appointed|joins as|raises series|signs lease|captive|ciso/);
+    expect(plan.primaryQuery).not.toMatch(/Insurance Business|Canadian Underwriter/);
+    expect((plan.primaryQuery.match(/-NHL/g) || []).length).toBe(1);
+    expect(plan.primaryQuery.toLowerCase()).toContain('technology');
     expect(plan.primaryQuery).toContain('Vancouver');
     expect(plan.geographicFocus.gl).toBe('ca');
-    expect(plan.fallbackQueries.length).toBeGreaterThanOrEqual(3);
+    expect(plan.searchTiers.map((tier) => tier.label)).toEqual(['city', 'region', 'country']);
+    expect(plan.searchTiers.some((tier) => tier.queries.some((query) => query.includes('site:betakit.com')))).toBe(true);
+    expect(withSportsExclusion(`${plan.primaryQuery}`).match(/-NHL/g)?.length).toBe(1);
   });
 
   it('rejects listicles and keeps a named appointment', () => {
@@ -106,5 +111,6 @@ describe('signal quality', () => {
     expect(isNonBuyerRole('Chief risk officer')).toBe(false);
     expect(usableCompanyDomain('https://www.OceanFalls.com/about')).toBe('oceanfalls.com');
     expect(usableCompanyDomain('example.com')).toBe('');
+    expect(nameAppearsInText('José Muñoz', 'The board appointed José Muñoz chief executive.')).toBe(true);
   });
 });

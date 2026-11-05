@@ -4,6 +4,7 @@
  */
 
 import { parsePublishedAtOrNull } from './publishedAt';
+import type { SearchTier } from './aiQueryPlanner';
 import { isLowYieldArticle, isRecentPublished, isSportsArticle } from './signalQuality';
 
 export interface SerpArticle {
@@ -12,6 +13,7 @@ export interface SerpArticle {
   url: string;
   snippet: string;
   publishedAt: string;
+  query?: string;
 }
 
 const FALLBACK_NEWS_POOL: SerpArticle[] = [
@@ -69,6 +71,8 @@ const FALLBACK_NEWS_POOL: SerpArticle[] = [
 export interface FetchSerpNewsOptions {
   /** Built-in sample headlines. Production callers must leave this false. */
   allowSampleFallback?: boolean;
+  /** City, then province/state, then country. Widens until `limit` articles are kept. */
+  searchTiers?: SearchTier[];
 }
 
 const SAMPLE_ARTICLE_URLS = new Set(FALLBACK_NEWS_POOL.map((article) => article.url));
@@ -81,6 +85,29 @@ export function sampleArticles(limit = 3): SerpArticle[] {
   return FALLBACK_NEWS_POOL.slice(0, limit);
 }
 
+type NewsHit = {
+  title?: string;
+  link?: string;
+  source?: { name?: string } | string;
+  snippet?: string;
+  date?: string;
+};
+
+async function requestNews(query: string, apiKey: string, gl: string, tbs?: string): Promise<NewsHit[]> {
+  const params = new URLSearchParams({
+    engine: 'google_news',
+    q: query,
+    api_key: apiKey,
+    gl,
+    hl: 'en',
+  });
+  if (tbs) params.set('tbs', tbs);
+  const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
+  if (!response.ok) throw new Error(`SerpAPI error status: ${response.status}`);
+  const json = (await response.json()) as { news_results?: NewsHit[] };
+  return json.news_results || [];
+}
+
 export async function fetchSerpNews(
   query: string,
   apiKey?: string,
@@ -90,58 +117,78 @@ export async function fetchSerpNews(
   options?: FetchSerpNewsOptions
 ): Promise<SerpArticle[]> {
   const cleanKey = (apiKey || '').trim();
-  const queriesToTry = [query, ...(fallbackQueries || [])].filter(Boolean);
+  const tiers: SearchTier[] = options?.searchTiers?.length
+    ? options.searchTiers
+    : [{ label: 'city', queries: [query, ...(fallbackQueries || [])].filter(Boolean) }];
 
   if (cleanKey && !cleanKey.includes('your_') && cleanKey.length > 10) {
     const collected: SerpArticle[] = [];
     const seen = new Set<string>();
 
-    for (const q of queriesToTry) {
-      try {
-        const endpoint = `https://serpapi.com/search.json?engine=google_news&q=${encodeURIComponent(
-          q
-        )}&api_key=${encodeURIComponent(cleanKey)}&gl=${encodeURIComponent(gl)}&hl=en&tbs=${encodeURIComponent('qdr:w2')}`;
-
-        const response = await fetch(endpoint);
-        if (!response.ok) {
-          throw new Error(`SerpAPI error status: ${response.status}`);
+    for (const tier of tiers) {
+      for (const q of tier.queries) {
+        try {
+          let hits = await requestNews(q, cleanKey, gl, 'qdr:w2');
+          let usedTbs = true;
+          if (hits.length === 0) {
+            console.warn(`[SerpAPI] tbs=qdr:w2 returned 0 raw results for "${q}". Retrying without tbs.`);
+            hits = await requestNews(q, cleanKey, gl);
+            usedTbs = false;
+          }
+          let dateRejected = 0;
+          let dateUnparsed = 0;
+          let filtered = 0;
+          let kept = 0;
+          for (const item of hits) {
+            const publisherName =
+              typeof item.source === 'object' && item.source !== null
+                ? item.source.name || 'News Source'
+                : (item.source as string) || 'News Source';
+            const title = item.title || '';
+            const url = item.link || '';
+            if (!url || !title || isLowYieldArticle(title, publisherName, url) || isSportsArticle(title, publisherName)) {
+              filtered += 1;
+              continue;
+            }
+            const publishedAt = parsePublishedAtOrNull(item.date);
+            if (!publishedAt) {
+              dateUnparsed += 1;
+              if (!usedTbs) {
+                dateRejected += 1;
+                console.warn(`[SerpAPI] unparsed date "${item.date || ''}" for "${title}"`);
+                continue;
+              }
+            } else if (!isRecentPublished(publishedAt)) {
+              dateRejected += 1;
+              continue;
+            }
+            const key = title.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            kept += 1;
+            collected.push({
+              title,
+              publisher: publisherName,
+              url,
+              snippet: item.snippet || title,
+              publishedAt: publishedAt || new Date().toISOString(),
+              query: q,
+            });
+            if (collected.length >= limit) {
+              console.log(
+                `[SerpAPI] ${tier.label} "${q}" raw=${hits.length} dateRejected=${dateRejected} dateUnparsed=${dateUnparsed} filtered=${filtered} kept=${kept}`
+              );
+              return collected;
+            }
+          }
+          console.log(
+            `[SerpAPI] ${tier.label} "${q}" raw=${hits.length} dateRejected=${dateRejected} dateUnparsed=${dateUnparsed} filtered=${filtered} kept=${kept}`
+          );
+        } catch (err) {
+          console.warn(`SerpAPI query failed for "${q}":`, err);
         }
-
-        const json = (await response.json()) as {
-          news_results?: Array<{
-            title?: string;
-            link?: string;
-            source?: { name?: string } | string;
-            snippet?: string;
-            date?: string;
-          }>;
-        };
-
-        for (const item of json.news_results || []) {
-          const publisherName =
-            typeof item.source === 'object' && item.source !== null
-              ? item.source.name || 'News Source'
-              : (item.source as string) || 'News Source';
-          const title = item.title || 'Market Signal Headline';
-          const url = item.link || '';
-          if (!url || isLowYieldArticle(title, publisherName, url) || isSportsArticle(title, publisherName)) continue;
-          const publishedAt = parsePublishedAtOrNull(item.date);
-          if (!publishedAt || !isRecentPublished(publishedAt)) continue;
-          const key = title.toLowerCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          collected.push({
-            title,
-            publisher: publisherName,
-            url,
-            snippet: item.snippet || title,
-            publishedAt,
-          });
-          if (collected.length >= limit) return collected;
-        }
-      } catch (err) {
-        console.warn(`SerpAPI query failed for "${q}":`, err);
       }
+      if (collected.length >= limit) break;
     }
 
     if (collected.length > 0) return collected;

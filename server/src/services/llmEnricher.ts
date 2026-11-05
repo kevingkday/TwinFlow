@@ -66,7 +66,9 @@ Analyze the provided news headline and article text to extract actionable outbou
 
 PERSON RULES (STRICTLY ENFORCED):
 - Name a person only when the article prints their first and last name. Copy it verbatim.
-- Only decision makers employed by the company the story is about. Exclude journalists, reporters, analysts, politicians, and public officials.
+- Only decision makers employed by the company the story is about. Each detected contact must include that person's own company and domain.
+- If the article is a roundup naming people at more than one company, return no decision maker and an empty detectedContacts list.
+- Exclude journalists, reporters, analysts, politicians, and public officials. Preserve Unicode letters in names.
 - "the CEO", "a spokesperson", "executives", and "new leadership" are not a person. Leave decisionMaker.name as "" in that case.
 - Never invent, infer, or recall a name from outside the article.
 - companyDomain is the subject company's real website domain if the article states it. Use "" if it is not known. Do not invent a domain.
@@ -98,7 +100,7 @@ You must respond with valid JSON adhering exactly to this structure:
     "company": "Company name"
   },
   "detectedContacts": [
-    { "name": "Only a person whose full name appears in the article", "role": "Title from the article", "company": "Company name" }
+    { "name": "Full name at the subject company", "role": "Their title", "company": "That person's employer", "domain": "employer.com" }
   ],
   "coldIntroHook": "I saw the recent article regarding [Company]'s [milestone].",
   "pitchSubject": "quick question re: [milestone / Company]",
@@ -127,7 +129,7 @@ ${operatorValueProp ? `Sender Value Proposition / What we do: ${operatorValuePro
 ${intentGuidance}
 
 Article Content:
-${articleMarkdown.slice(0, 4000)}
+${articleMarkdown.slice(0, 18000)}
 
 Extract and generate the structured JSON intelligence object.`;
 
@@ -172,19 +174,24 @@ Extract and generate the structured JSON intelligence object.`;
               : generateHeuristicPeerRoles(parsed.signalType || 'Enterprise Expansion');
 
             const sourceText = `${headline}\n${articleMarkdown}`;
-            const extracted = [
+            const fromModel = [
               ...(parsed.detectedContacts || []),
-              ...(parsed.decisionMaker ? [parsed.decisionMaker] : []),
-              ...extractNamedPeople(sourceText),
+              ...(parsed.decisionMaker?.name ? [parsed.decisionMaker] : []),
             ].filter((person) => person?.name && nameAppearsInText(person.name, sourceText) && !isNonBuyerRole(person.role || ''));
-            const uniquePeople = extracted.filter(
-              (person, index, list) => list.findIndex((item) => item.name.toLowerCase() === person.name.toLowerCase()) === index
+            const companies = new Set(
+              fromModel.map((person) => (person.company || parsed.companyName || '').trim().toLowerCase()).filter(Boolean)
             );
+            const uniquePeople = companies.size > 1
+              ? []
+              : fromModel.filter(
+                  (person, index, list) => list.findIndex((item) => item.name.toLowerCase() === person.name.toLowerCase()) === index
+                );
             const modelName = parsed.decisionMaker?.name || '';
             const modelRole = parsed.decisionMaker?.role || '';
-            const modelOk = nameAppearsInText(modelName, sourceText) && !isNonBuyerRole(modelRole);
-            const verifiedName = modelOk ? modelName : uniquePeople[0]?.name || '';
-            const verifiedRole = modelOk ? modelRole : uniquePeople[0]?.role || '';
+            const modelOk =
+              uniquePeople.length > 0 && nameAppearsInText(modelName, sourceText) && !isNonBuyerRole(modelRole);
+            const verifiedName = uniquePeople.length === 0 ? '' : modelOk ? modelName : uniquePeople[0]?.name || '';
+            const verifiedRole = uniquePeople.length === 0 ? '' : modelOk ? modelRole : uniquePeople[0]?.role || '';
 
             return {
               companyName: parsed.companyName,

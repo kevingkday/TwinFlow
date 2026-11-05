@@ -8,6 +8,10 @@ export interface RelevanceJudgment {
   locationReason: string;
   buyerPersonaMatch: boolean;
   buyerPersonaReason: string;
+  buyerCompany?: string;
+  triggerEvent?: string;
+  namedPerson?: string;
+  evidenceQuotes?: string[];
   modelUsed: string;
 }
 
@@ -51,15 +55,25 @@ Read the full profile and the article. Respond with JSON only:
   "buyerPersonaReason": "One sentence on whether this company would buy what the user sells"
 }
 
+Also include:
+{
+  "buyerCompany": "The single operating company that could buy from the user, or empty",
+  "triggerEvent": "The event at that company, or empty",
+  "namedPerson": "A person employed at that same company, or empty",
+  "evidenceQuotes": ["Short quotes from the article proving the company, the event, and the person"]
+}
+
 Rules:
-- relevant is true only when locationMatch and buyerPersonaMatch are both true, and the story is a real company event (hire, funding, lease, contract, expansion, captive formation), not a listicle or charity drive.
+- relevant is true only when locationMatch, buyerPersonaMatch, AND an explicit chain all hold: one buyer company, a trigger event at that company, and a named person who works at that company. Each link must be backed by a quote in evidenceQuotes. If any link is missing, relevant is false.
+- Judge the BUYER, not the seller's own industry. A cyber insurance broker's buyers are technology companies that just raised, expanded, or hired. A generic insurance-trade personnel move is not a match.
+- Captive insurance consulting is stricter: buyerPersonaMatch is true only when the company is a sizable operating company, group, or association that could form or expand a captive. Generic insurance appointments, brokerage M&A, and insurance-industry news are not matches.
 - A commercial real estate brokerage hiring brokers, or a tenant signing a lease, in the user's city IS a buyer match for a commercial real estate broker.
 - A software company raising a Series round in the user's market IS a buyer match for a B2B SaaS marketing agency.
-- An insurer, brokerage, or tech firm appointing a CFO, CISO, or chief risk officer IS a buyer match for a cyber or captive insurance broker when the geography matches.
-- A contractor cares about groundbreakings and awarded commercial projects in their region.
+- A contractor cares about one owner's groundbreaking or awarded project in their region.
+- A roundup that names people at several different companies is not a match.
 - GoFundMe, personal crowdfunding, and consumer charity drives are not buyer matches.
 - A story set in a different metro is locationMatch false. Florida is not Dallas. Vancouver is not Toronto.
-- Do not treat a keyword accident ("cyber" inside an unrelated word, or the user's city mentioned in passing) as a match.`;
+- Do not treat a keyword accident as a match.`;
 
   const userPrompt = `SELLER PROFILE
 Location: ${profile.location || 'unspecified'}
@@ -76,7 +90,7 @@ ARTICLE
 Publisher: ${article.publisher || 'unknown'}
 Headline: ${article.title}
 Body:
-${article.text.slice(0, 6000)}`;
+${article.text.slice(0, 18000)}`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -103,15 +117,21 @@ ${article.text.slice(0, 6000)}`;
     const content = json.choices?.[0]?.message?.content;
     if (!content) return keywordJudgment(profile, article.title, article.text, article.publisher || '');
     const parsed = JSON.parse(content) as Partial<RelevanceJudgment>;
+    const quotes = Array.isArray(parsed.evidenceQuotes) ? parsed.evidenceQuotes.filter((quote) => quote && quote.trim()) : [];
     const locationMatch = Boolean(parsed.locationMatch);
     const buyerPersonaMatch = Boolean(parsed.buyerPersonaMatch);
+    const chain = Boolean(parsed.buyerCompany && parsed.triggerEvent && parsed.namedPerson && quotes.length > 0);
     return {
-      relevant: locationMatch && buyerPersonaMatch && parsed.relevant !== false,
+      relevant: chain && locationMatch && buyerPersonaMatch,
       relevantReason: parsed.relevantReason || '',
       locationMatch,
       locationReason: parsed.locationReason || '',
       buyerPersonaMatch,
       buyerPersonaReason: parsed.buyerPersonaReason || '',
+      buyerCompany: parsed.buyerCompany || '',
+      triggerEvent: parsed.triggerEvent || '',
+      namedPerson: parsed.namedPerson || '',
+      evidenceQuotes: quotes,
       modelUsed: 'gpt-4o-mini',
     };
   } catch (err) {
