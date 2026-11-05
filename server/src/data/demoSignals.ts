@@ -1,3 +1,5 @@
+import { publishedAtFromHoursAgo } from '../services/publishedAt';
+
 export interface DemoSignalItem {
   id: string;
   parentSignalId?: string | null;
@@ -42,8 +44,8 @@ export const DEMO_SIGNALS: DemoSignalItem[] = [
   {
     id: 'demo-sig-001',
     title: 'Apex Commercial Partners Breaks Ground on $65M Logistics Distribution Facility in Dallas',
-    sourceUrl: 'https://cpexecutive.com/apex-commercial-dallas-logistics',
-    publishedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    sourceUrl: 'Example: Commercial Property Executive (not a live link)',
+    publishedAt: '',
     summaryBullets: [
       'Apex Commercial broke ground on a new 450,000 sq ft regional logistics distribution center in Dallas.',
       'Active capital expenditure allocated across engineering, infrastructure, equipment, and facility technology.',
@@ -97,8 +99,8 @@ export const DEMO_SIGNALS: DemoSignalItem[] = [
   {
     id: 'demo-sig-002',
     title: 'HyperScale Technologies Closes $42M Series B to Accelerate Commercial Expansion',
-    sourceUrl: 'https://techcrunch.com/hyperscale-technologies-series-b',
-    publishedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+    sourceUrl: 'Example: TechCrunch (not a live link)',
+    publishedAt: '',
     summaryBullets: [
       'Closed $42M Series B funding led by premier institutional investors to expand regional enterprise accounts.',
       'Ramping commercial headcount rapidly with dedicated budget for software, services, and operational tools.',
@@ -152,8 +154,8 @@ export const DEMO_SIGNALS: DemoSignalItem[] = [
   {
     id: 'demo-sig-003',
     title: 'FinMatrix Appoints Former Stripe Executive Marcus Vance as Chief Commercial Officer',
-    sourceUrl: 'https://bloomberg.com/news/finmatrix-appoints-cco',
-    publishedAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
+    sourceUrl: 'Example: Bloomberg (not a live link)',
+    publishedAt: '',
     summaryBullets: [
       'Marcus Vance joins FinMatrix as CCO following executive leadership roles at Stripe.',
       'Mandated to review partner integrations and build out commercial GTM operations.',
@@ -207,8 +209,8 @@ export const DEMO_SIGNALS: DemoSignalItem[] = [
   {
     id: 'demo-sig-004',
     title: 'Nexus Robotics Inks $18M Supply Chain Deal Across 14 Regional Distribution Hubs',
-    sourceUrl: 'https://venturebeat.com/nexus-robotics-freight-deal',
-    publishedAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
+    sourceUrl: 'Example: VentureBeat (not a live link)',
+    publishedAt: '',
     summaryBullets: [
       'Awarded major multi-site deployment covering 14 high-throughput logistics distribution hubs.',
       'Active expansion requiring partner vendor coordination, systems integration, and field support.',
@@ -262,8 +264,8 @@ export const DEMO_SIGNALS: DemoSignalItem[] = [
   {
     id: 'demo-sig-005',
     title: 'CloudVault Systems Unveils Enterprise Security Architecture for Multi-Region Institutions',
-    sourceUrl: 'https://siliconangle.com/cloudvault-kubernetes-mesh',
-    publishedAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
+    sourceUrl: 'Example: SiliconANGLE (not a live link)',
+    publishedAt: '',
     summaryBullets: [
       'Announced general availability of enterprise zero-trust infrastructure for regulated organizations.',
       'Achieved key enterprise compliance certifications ahead of annual RFP and vendor selection cycles.',
@@ -315,4 +317,21 @@ export const DEMO_SIGNALS: DemoSignalItem[] = [
     },
   },
 ];
+
+const DEMO_PUBLISHED_HOURS_AGO = [2, 4, 6, 8, 12];
+
+/**
+ * Guest deck payload. Publication times are computed on each request so a
+ * module-init clock at the Unix epoch cannot freeze every card on 1969-12-31.
+ * Article fields are plain-text examples, not links.
+ */
+export function publicDemoSignals(): DemoSignalItem[] {
+  return DEMO_SIGNALS.filter((signal) => signal.id.startsWith('demo-')).map((signal, index) => ({
+    ...signal,
+    contact: signal.contact ? { ...signal.contact } : null,
+    contacts: signal.contacts.map((contact) => ({ ...contact })),
+    outreachDraft: signal.outreachDraft ? { ...signal.outreachDraft } : null,
+    publishedAt: publishedAtFromHoursAgo(DEMO_PUBLISHED_HOURS_AGO[index] ?? 2),
+  }));
+}
 

@@ -12,7 +12,7 @@ import {
 import { findApolloContact } from '../services/apollo';
 import { upsertContact, createNote, createOpportunity, listAgencySubaccounts } from '../services/ghl';
 import { getSessionUser } from './auth';
-import { DEMO_SIGNALS } from '../data/demoSignals';
+import { publicDemoSignals } from '../data/demoSignals';
 
 export const signalsRouter = new Hono<{ Bindings: Bindings }>();
 
@@ -123,11 +123,12 @@ signalsRouter.get('/deck', async (c) => {
 
     // If visitor is unauthenticated (demo mode), serve the generic, universal public demo deck
     if (!sessionUser) {
+      const signals = publicDemoSignals();
       return c.json({
         success: true,
         isDemo: true,
-        count: DEMO_SIGNALS.length,
-        signals: DEMO_SIGNALS,
+        count: signals.length,
+        signals,
         approvedCount: 0,
         user: {
           id: 'demo_operator',

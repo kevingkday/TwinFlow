@@ -24,6 +24,7 @@ import { LinkedInIcon } from './icons';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
 import { openEmailClient } from '../utils/email';
 import type { LeadCardData, SwipeAction, DecisionMaker } from '../types/lead';
+import { isExternalArticleUrl } from '../utils/publishedAt';
 
 interface SwipeCardProps {
   lead: LeadCardData;
@@ -214,15 +215,19 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
           <div className="flex items-center gap-2 mt-2 text-xs text-slate-500 font-medium">
             <span className="text-slate-600 font-semibold">{lead.source}</span>
             <span>•</span>
-            <a
-              href={lead.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold hover:underline"
-            >
-              Read full article <ExternalLink className="w-3 h-3" />
-            </a>
+            {isExternalArticleUrl(lead.sourceUrl) ? (
+              <a
+                href={lead.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold hover:underline"
+              >
+                Read full article <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <span className="text-slate-400">Example coverage, not a live link</span>
+            )}
           </div>
 
           {/* Executive Article Summary Callout */}

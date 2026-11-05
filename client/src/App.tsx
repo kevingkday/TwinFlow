@@ -33,14 +33,11 @@ import { MakeNewsModal } from './components/MakeNewsModal';
 import { playSound } from './utils/audio';
 import { authFetch } from './utils/api';
 import { Radio, Check, AlertCircle } from 'lucide-react';
+import { LegalPage } from './components/LegalPage';
+import { articleSourceLabel, formatPublishedAgo } from './utils/publishedAt';
 
 function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
-  let hostname = 'TechWire';
-  try {
-    hostname = new URL(item.sourceUrl).hostname.replace('www.', '');
-  } catch {
-    hostname = 'Market Wire';
-  }
+  const hostname = articleSourceLabel(item.sourceUrl, 'Market Wire');
 
   const bodyWords = item.outreachDraft?.body ? item.outreachDraft.body.split(/\s+/).length : 50;
   const readSeconds = Math.max(25, Math.ceil((bodyWords / 180) * 60));
@@ -80,7 +77,7 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
     companyName: item.companyName,
     source: hostname,
     sourceUrl: item.sourceUrl,
-    publishedAgo: item.parentSignalId ? 'Branched Lead' : 'Live Signal',
+    publishedAgo: item.parentSignalId ? 'Branched Lead' : formatPublishedAgo(item.publishedAt),
     category: item.signalType as SignalCategory,
     fitScore: 94 + (item.id.charCodeAt(item.id.length - 1) % 5),
     summaryBullets:
@@ -875,6 +872,10 @@ export const App: React.FC = () => {
   }, [handleSwipe, handleUndo, leads]);
 
   const activeLead = leads[0] || null;
+  const legalPath = typeof window !== 'undefined' ? window.location.pathname.replace(/\/+$/, '') : '';
+  if (legalPath === '/privacy' || legalPath === '/terms') {
+    return <LegalPage page={legalPath === '/privacy' ? 'privacy' : 'terms'} />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 relative">

@@ -3,6 +3,8 @@
  * Queries Google News via SerpAPI and extracts article title, publisher, URL, snippet, and publish date.
  */
 
+import { normalizePublishedAt } from './publishedAt';
+
 export interface SerpArticle {
   title: string;
   publisher: string;
@@ -109,7 +111,7 @@ export async function fetchSerpNews(
               publisher: publisherName,
               url: item.link || `https://news.google.com/search?q=${encodeURIComponent(q)}`,
               snippet: item.snippet || item.title || 'Market trigger announcement.',
-              publishedAt: item.date || new Date().toISOString(),
+              publishedAt: normalizePublishedAt(item.date, 1),
             };
           });
         }

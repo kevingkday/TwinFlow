@@ -6,6 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [assets]
 directory = "client/dist"
 binding = "ASSETS"
+not_found_handling = "single-page-application"
 
 # Cloudflare D1 Database binding
 [[d1_databases]]
