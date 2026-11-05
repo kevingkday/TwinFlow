@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { hasExplicitLocalEvidence, validateSignalEvidence } from '../src/services/buyerProfile';
 import { planNewsQueryWithAI } from '../src/services/aiQueryPlanner';
 import { generateHeuristicEnrichment } from '../src/services/llmEnricher';
 import { fetchSerpNews, isSampleArticle } from '../src/services/serpNews';
@@ -34,9 +35,34 @@ describe('signal quality', () => {
     expect(plan.primaryQuery.toLowerCase()).toContain('technology');
     expect(plan.primaryQuery).toContain('Vancouver');
     expect(plan.geographicFocus.gl).toBe('ca');
-    expect(plan.searchTiers.map((tier) => tier.label)).toEqual(['city', 'region', 'country']);
-    expect(plan.searchTiers.some((tier) => tier.queries.some((query) => query.includes('site:betakit.com')))).toBe(true);
+    expect(plan.queryLadder.serviceArea).toBe('local');
+    expect(plan.queryLadder.site).toBe('betakit.com');
+    expect(plan.primaryQuery).not.toMatch(/\bCanada\b/);
+    const contentTerms = plan.primaryQuery.split(/\s+/).filter((term) => term && !term.startsWith('-'));
+    expect(contentTerms.length).toBeLessThanOrEqual(3);
     expect(withSportsExclusion(`${plan.primaryQuery}`).match(/-NHL/g)?.length).toBe(1);
+  });
+
+  it('keeps software and agencies national and licensed services inside their state', async () => {
+    const agency = await planNewsQueryWithAI({
+      location: 'Toronto, Ontario, Canada',
+      userIntent: 'sales_client_acquisition',
+      userMission: 'B2B SaaS marketing agency',
+      targetIndustries: ['software'],
+      targetTriggers: ['funding'],
+    });
+    expect(agency.queryLadder.serviceArea).toBe('national');
+    expect(agency.primaryQuery).not.toContain('Toronto');
+    const local = await planNewsQueryWithAI({
+      location: 'Dallas, Texas, United States',
+      userIntent: 'sales_client_acquisition',
+      userMission: 'Commercial real estate broker for law firms',
+      targetIndustries: ['real estate'],
+      targetTriggers: ['lease'],
+    });
+    expect(local.queryLadder.serviceArea).toBe('local');
+    expect(local.primaryQuery).toContain('Dallas');
+    expect(local.primaryQuery).not.toMatch(/United States/);
   });
 
   it('rejects listicles and keeps a named appointment', () => {
@@ -112,5 +138,38 @@ describe('signal quality', () => {
     expect(usableCompanyDomain('https://www.OceanFalls.com/about')).toBe('oceanfalls.com');
     expect(usableCompanyDomain('example.com')).toBe('');
     expect(nameAppearsInText('José Muñoz', 'The board appointed José Muñoz chief executive.')).toBe(true);
+  });
+
+  it('requires an explicit city or province and a quoted employer match', () => {
+    expect(hasExplicitLocalEvidence('A Canadian firm expanded nationally', 'Vancouver, British Columbia, Canada', false).ok).toBe(false);
+    expect(hasExplicitLocalEvidence('The Vancouver firm opened an office', 'Vancouver, British Columbia, Canada', false).ok).toBe(true);
+
+    const source = 'Acme Software in Vancouver hired Dana Cho as CFO. Dana Cho joined Acme Software this week.';
+    expect(
+      validateSignalEvidence({
+        sourceText: source,
+        buyerCompany: 'Acme Software',
+        namedPerson: 'Dana Cho',
+        personEmployer: 'Acme Software',
+        personRole: 'CFO',
+        quotes: ['hired Dana Cho as CFO'],
+        location: 'Vancouver, British Columbia, Canada',
+        allowNationalSearch: false,
+        extractedName: 'Dana Cho',
+        extractedEmployer: 'Acme Software',
+      }).ok
+    ).toBe(true);
+    expect(
+      validateSignalEvidence({
+        sourceText: 'Dana Cho joined Hub International in Toronto this week.',
+        buyerCompany: 'Hub International',
+        namedPerson: 'Dana Cho',
+        personEmployer: 'Hub International',
+        personRole: 'broker',
+        quotes: ['Dana Cho joined Hub International'],
+        location: 'Toronto, Ontario, Canada',
+        allowNationalSearch: false,
+      }).ok
+    ).toBe(false);
   });
 });

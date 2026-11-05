@@ -9,6 +9,10 @@ export interface Campaign {
   targetRoles: string[];
   valueProp: string;
   icpQuery: string;
+  buyerIndustries?: string[];
+  buyerRoles?: string[];
+  buyerCompanySize?: 'smb' | 'midmarket' | 'enterprise' | 'any';
+  serviceArea?: 'local' | 'national';
   isDefault: boolean;
   leadsCount: number;
   isActive: boolean;

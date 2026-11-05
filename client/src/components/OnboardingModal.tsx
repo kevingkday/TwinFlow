@@ -18,6 +18,7 @@ import {
 import type { UserProfile } from '../types/lead';
 import type { Campaign } from '../types/campaign';
 import { playSound } from '../utils/audio';
+import { deriveBuyerProfile } from '../utils/buyerProfile';
 
 interface OnboardingModalProps {
   isOpen: boolean;
@@ -266,6 +267,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     'President / General Manager (GM)',
     'VP of Sales / Business Development',
   ]);
+  const suggestedBuyers = deriveBuyerProfile({ userMission, userIntent, targetIndustries: selectedIndustries });
+  const [buyerIndustriesText, setBuyerIndustriesText] = useState(suggestedBuyers.buyerIndustries.join(', '));
+  const [buyerRolesText, setBuyerRolesText] = useState(suggestedBuyers.buyerRoles.join(', '));
+  const [buyerCompanySize, setBuyerCompanySize] = useState<'smb' | 'midmarket' | 'enterprise' | 'any'>(suggestedBuyers.buyerCompanySize);
+  const [serviceArea, setServiceArea] = useState<'local' | 'national'>(suggestedBuyers.serviceArea);
 
     React.useEffect(() => {
     if (campaign) {
@@ -282,6 +288,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       if (campaign.targetRoles && campaign.targetRoles.length > 0) {
         setSelectedRoles(campaign.targetRoles);
       }
+      if (campaign.buyerIndustries?.length) setBuyerIndustriesText(campaign.buyerIndustries.join(', '));
+      if (campaign.buyerRoles?.length) setBuyerRolesText(campaign.buyerRoles.join(', '));
+      if (campaign.buyerCompanySize) setBuyerCompanySize(campaign.buyerCompanySize);
+      if (campaign.serviceArea) setServiceArea(campaign.serviceArea);
     } else if (user) {
       setCampaignName('');
       if (user.targetLocation) setTargetLocation(user.targetLocation);
@@ -345,6 +355,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             targetTriggers: selectedTriggers,
             targetRoles: selectedRoles,
             valueProp: userMission,
+            buyerIndustries: buyerIndustriesText.split(',').map((item) => item.trim()).filter(Boolean),
+            buyerRoles: buyerRolesText.split(',').map((item) => item.trim()).filter(Boolean),
+            buyerCompanySize,
+            serviceArea,
           }),
         });
       } else {
@@ -360,6 +374,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             targetTriggers: selectedTriggers,
             targetRoles: selectedRoles,
             valueProp: userMission,
+            buyerIndustries: buyerIndustriesText.split(',').map((item) => item.trim()).filter(Boolean),
+            buyerRoles: buyerRolesText.split(',').map((item) => item.trim()).filter(Boolean),
+            buyerCompanySize,
+            serviceArea,
             makeActive: true,
           }),
         });
@@ -581,6 +599,45 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                     <p className="text-[10px] text-slate-500 mt-1">
                       Be natural. Our AI will dissect this to find the high-intent keywords that return active opportunities.
                     </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                      Where you can sell
+                    </label>
+                    <select
+                      value={serviceArea}
+                      onChange={(e) => setServiceArea(e.target.value === 'national' ? 'national' : 'local')}
+                      className="w-full bg-white text-slate-900 border border-slate-300 rounded-xl p-2.5 text-xs"
+                    >
+                      <option value="local">Licensed locally — city, then state or province only</option>
+                      <option value="national">Anywhere — software, SaaS, and agencies</option>
+                    </select>
+                    <p className="text-[10px] text-slate-500">
+                      Suggested buyers: {suggestedBuyers.buyerIndustries.join(', ')}. Edit if that is wrong.
+                    </p>
+                    <input
+                      value={buyerIndustriesText}
+                      onChange={(e) => setBuyerIndustriesText(e.target.value)}
+                      className="w-full bg-white text-slate-900 border border-slate-300 rounded-xl p-2.5 text-xs"
+                      placeholder="Buyer industries, comma separated"
+                    />
+                    <input
+                      value={buyerRolesText}
+                      onChange={(e) => setBuyerRolesText(e.target.value)}
+                      className="w-full bg-white text-slate-900 border border-slate-300 rounded-xl p-2.5 text-xs"
+                      placeholder="Buyer roles, comma separated"
+                    />
+                    <select
+                      value={buyerCompanySize}
+                      onChange={(e) => setBuyerCompanySize(e.target.value as 'smb' | 'midmarket' | 'enterprise' | 'any')}
+                      className="w-full bg-white text-slate-900 border border-slate-300 rounded-xl p-2.5 text-xs"
+                    >
+                      <option value="smb">Buyer size: small business</option>
+                      <option value="midmarket">Buyer size: mid-market</option>
+                      <option value="enterprise">Buyer size: enterprise</option>
+                      <option value="any">Buyer size: any</option>
+                    </select>
                   </div>
                 </div>
               )}

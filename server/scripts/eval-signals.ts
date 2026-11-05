@@ -23,6 +23,7 @@ import { crawlArticle } from '../src/services/firecrawl';
 import { findApolloContact } from '../src/services/apollo';
 import { enrichSignalWithLLM } from '../src/services/llmEnricher';
 import { judgeArticleRelevance } from '../src/services/relevanceJudge';
+import { validateSignalEvidence } from '../src/services/buyerProfile';
 import {
   classifyArticleType,
   extractNamedPeople,
@@ -272,10 +273,22 @@ async function scoreLiveArticle(persona: Persona, article: SerpArticle): Promise
     ? enriched.decisionMaker
     : null;
   const domain = usableCompanyDomain(enriched.companyDomain);
+  const evidence = validateSignalEvidence({
+    sourceText: text,
+    buyerCompany: judgment.buyerCompany || enriched.companyName,
+    namedPerson: judgment.namedPerson || candidate?.name || '',
+    personEmployer: enriched.decisionMaker?.company || enriched.companyName,
+    personRole: candidate?.role || '',
+    quotes: judgment.evidenceQuotes || [],
+    location: persona.location || '',
+    allowNationalSearch: Boolean(persona.allowNationalSearch),
+    extractedName: candidate?.name,
+    extractedEmployer: enriched.decisionMaker?.company || enriched.companyName,
+  });
   let reachable = false;
   let apolloStatus = 'not_called';
-  if (!judgment.relevant) {
-    apolloStatus = 'skipped_not_relevant';
+  if (!judgment.relevant || !evidence.ok) {
+    apolloStatus = !judgment.relevant ? 'skipped_not_relevant' : 'evidence_rejected';
   } else if (process.env.APOLLO_API_KEY && candidate && domain) {
     const match = await findApolloContact(candidate.name, candidate.role, domain, process.env.APOLLO_API_KEY);
     apolloStatus = match.status;
@@ -363,7 +376,7 @@ async function main() {
             limit,
             afterPlan.geographicFocus.gl,
             afterPlan.fallbackQueries,
-            { allowSampleFallback: false, searchTiers: afterPlan.searchTiers }
+            { allowSampleFallback: false, searchTiers: afterPlan.searchTiers, queryLadder: afterPlan.queryLadder }
           ),
         }
       : await searchQueries(

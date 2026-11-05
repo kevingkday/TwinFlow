@@ -80,7 +80,7 @@ export function isVerifiedEmailStatus(status?: string | null): boolean {
 
 export function isLowYieldArticle(title: string, publisher = '', url = ''): boolean {
   const haystack = `${title} ${publisher} ${url}`;
-  return LOW_YIELD_TITLE.test(title) || LOW_YIELD_SOURCE.test(haystack);
+  return LOW_YIELD_TITLE.test(title) || LOW_YIELD_SOURCE.test(haystack) || /\b(federal budget|parliament|white paper|editorial|national policy|bill c-)\b/i.test(title);
 }
 
 export function classifyArticleType(title: string, body = ''): ArticleType {

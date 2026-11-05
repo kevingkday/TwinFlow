@@ -8,6 +8,8 @@ export interface ScrapedArticleResult {
   title?: string;
   sourceUrl: string;
   success: boolean;
+  /** Original publication time from the source page, when the crawl reports one. */
+  publishedAt?: string | null;
 }
 
 export async function crawlArticle(
@@ -39,16 +41,28 @@ export async function crawlArticle(
           success?: boolean;
           data?: {
             markdown?: string;
-            metadata?: { title?: string };
+            metadata?: {
+              title?: string;
+              publishedTime?: string;
+              date?: string;
+              [key: string]: unknown;
+            };
           };
         };
 
         if (json.data?.markdown) {
+          const meta = json.data.metadata || {};
+          const published =
+            (typeof meta.publishedTime === 'string' && meta.publishedTime) ||
+            (typeof meta['article:published_time'] === 'string' && (meta['article:published_time'] as string)) ||
+            (typeof meta.date === 'string' && meta.date) ||
+            null;
           return {
             markdown: json.data.markdown,
             title: json.data.metadata?.title,
             sourceUrl: url,
             success: true,
+            publishedAt: published,
           };
         }
       }

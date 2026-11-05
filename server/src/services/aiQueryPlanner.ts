@@ -1,4 +1,5 @@
 import { withSportsExclusion } from './signalQuality';
+import { deriveBuyerProfile } from './buyerProfile';
 
 /**
  * AI News Query Planner Service (Powered by GPT-4o)
@@ -18,6 +19,22 @@ export interface QueryPlannerInput {
   servicesOffered?: string[];
   productsOffered?: string[];
   website?: string;
+  targetRoles?: string[];
+  buyerIndustries?: string[];
+  buyerRoles?: string[];
+  buyerCompanySize?: 'smb' | 'midmarket' | 'enterprise' | 'any';
+  serviceArea?: 'local' | 'national';
+  allowNationalSearch?: boolean;
+}
+
+/** Starting terms for a 2–3 word Google News ladder. Fetch adds or drops one term after seeing counts. */
+export interface QueryLadder {
+  serviceArea: 'local' | 'national';
+  sector: string;
+  trigger: string;
+  city: string;
+  region: string;
+  site?: string;
 }
 
 export interface SearchTier {
@@ -29,6 +46,7 @@ export interface QueryPlanResult {
   primaryQuery: string;
   fallbackQueries: string[];
   searchTiers: SearchTier[];
+  queryLadder: QueryLadder;
   geographicFocus: {
     locationClean: string;
     gl: string; // Google country code e.g. 'us', 'ca', 'gb'
@@ -189,6 +207,10 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
               targetTriggers: triggers,
               valueProp,
               defaultGl,
+              serviceArea: input.serviceArea,
+              buyerIndustries: input.buyerIndustries,
+              buyerRoles: input.buyerRoles,
+              buyerCompanySize: input.buyerCompanySize,
             });
             return {
               ...buyerPlan,
@@ -224,6 +246,10 @@ export function generateAlgorithmicQueryPlan(params: {
   targetTriggers: string[];
   valueProp: string;
   defaultGl: string;
+  serviceArea?: 'local' | 'national';
+  buyerIndustries?: string[];
+  buyerRoles?: string[];
+  buyerCompanySize?: 'smb' | 'midmarket' | 'enterprise' | 'any';
 }): QueryPlanResult {
   const { location, userIntent, userMission, targetIndustries, targetTriggers, defaultGl } = params;
 
@@ -248,63 +274,51 @@ export function generateAlgorithmicQueryPlan(params: {
     city = parts[0] || '';
   }
 
-  const blob = `${targetIndustries.join(' ')} ${targetTriggers.join(' ')} ${userMission} ${params.valueProp}`.toLowerCase();
-  let sector = 'company';
-  let triggers = ['funding', 'hires', 'expansion'];
-  let site = '';
-  if (/captive/.test(blob)) {
-    sector = 'company';
-    triggers = ['captive', 'forms captive', 'self-insured'];
-    site = 'captiveinsurancetimes.com';
-  } else if (/managed it|msp|managed services/.test(blob)) {
-    sector = 'company';
-    triggers = ['hires', 'expansion', 'opens'];
-    site = 'betakit.com';
-  } else if (/insurance/.test(blob) && /tech|technology|software|smb/.test(blob)) {
-    sector = 'technology';
-    triggers = ['funding', 'hires', 'expansion'];
-    site = 'betakit.com';
-  } else if (/lease|real estate|tenant|office/.test(blob)) {
-    sector = 'office';
-    triggers = ['lease', 'headquarters', 'hires'];
-    site = 'bisnow.com';
-  } else if (/construct|contractor|builder/.test(blob) || userIntent === 'subcontractor_partners') {
-    sector = 'construction';
-    triggers = ['breaks ground', 'awarded', 'development'];
-    site = 'constructconnect.com';
-  } else if (/saas|software|marketing/.test(blob)) {
-    sector = 'software';
-    triggers = ['raises', 'funding', 'hires'];
-    site = 'betakit.com';
-  }
+  const buyer = deriveBuyerProfile({
+    location,
+    userIntent,
+    userMission,
+    targetIndustries,
+    targetTriggers,
+    valueProp: params.valueProp,
+    buyerIndustries: params.buyerIndustries,
+    buyerRoles: params.buyerRoles,
+    buyerCompanySize: params.buyerCompanySize,
+    serviceArea: params.serviceArea,
+  });
+  const sector = (buyer.buyerIndustries[0] || 'company').split(' ').slice(0, 2).join(' ');
+  const trigger = (targetTriggers[0] || 'expansion').split(/\s+/)[0] || 'expansion';
+  let site: string | undefined;
+  if (/technology|software/.test(sector)) site = 'betakit.com';
+  else if (/law|occupier|professional/.test(sector)) site = 'bisnow.com';
+  else if (/developer|building|owner/.test(sector)) site = 'constructconnect.com';
+  else if (/captive/i.test(userMission)) site = 'captiveinsurancetimes.com';
+  else site = 'newswire.ca';
 
-  const stems = triggers.map((trigger) => `${sector} ${trigger}`);
-  if (site) stems.push(`site:${site} ${sector}`);
-
-  const tier = (label: SearchTier['label'], place: string): SearchTier | null => {
-    if (!place) return null;
-    return {
-      label,
-      queries: stems.map((stem) => withSportsExclusion(`${place} ${stem}`)),
-    };
+  const place = buyer.serviceArea === 'national' ? '' : city || region;
+  const startTerms = [place, sector, trigger].filter(Boolean).slice(0, 3);
+  const primary = withSportsExclusion(startTerms.join(' '));
+  const queryLadder: QueryLadder = {
+    serviceArea: buyer.serviceArea,
+    sector,
+    trigger,
+    city,
+    region,
+    site,
   };
-  const searchTiers = [tier('city', city), tier('region', region), tier('country', country)].filter(
-    (item): item is SearchTier => Boolean(item)
-  );
-  if (searchTiers.length === 0) {
-    searchTiers.push({
-      label: 'country',
-      queries: stems.map((stem) => withSportsExclusion(stem)),
-    });
-  }
-  const cityQueries = searchTiers[0].queries;
-  const primary = cityQueries[0];
-  const geoAnchor = city || region || country;
+  const searchTiers: SearchTier[] = [
+    {
+      label: buyer.serviceArea === 'national' ? 'country' : city ? 'city' : 'region',
+      queries: [primary],
+    },
+  ];
+  const geoAnchor = place || country || 'any location';
 
   return {
     primaryQuery: primary,
-    fallbackQueries: cityQueries.slice(1),
+    fallbackQueries: [],
     searchTiers,
+    queryLadder,
     geographicFocus: {
       locationClean: location || 'Nationwide',
       gl: defaultGl,

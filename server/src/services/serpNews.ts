@@ -4,8 +4,8 @@
  */
 
 import { parsePublishedAtOrNull } from './publishedAt';
-import type { SearchTier } from './aiQueryPlanner';
-import { isLowYieldArticle, isRecentPublished, isSportsArticle } from './signalQuality';
+import type { QueryLadder, SearchTier } from './aiQueryPlanner';
+import { isLowYieldArticle, isRecentPublished, isSportsArticle, withSportsExclusion } from './signalQuality';
 
 export interface SerpArticle {
   title: string;
@@ -71,9 +71,13 @@ const FALLBACK_NEWS_POOL: SerpArticle[] = [
 export interface FetchSerpNewsOptions {
   /** Built-in sample headlines. Production callers must leave this false. */
   allowSampleFallback?: boolean;
-  /** City, then province/state, then country. Widens until `limit` articles are kept. */
+  /** City, then province/state. National only when the ladder service area is national. */
   searchTiers?: SearchTier[];
+  /** 2–3 terms. Fetch adds or removes one term after each result count. At most 4 queries. */
+  queryLadder?: QueryLadder;
 }
+
+const MAX_LADDER_QUERIES = 4;
 
 const SAMPLE_ARTICLE_URLS = new Set(FALLBACK_NEWS_POOL.map((article) => article.url));
 
@@ -125,70 +129,115 @@ export async function fetchSerpNews(
     const collected: SerpArticle[] = [];
     const seen = new Set<string>();
 
-    for (const tier of tiers) {
-      for (const q of tier.queries) {
+    const runQuery = async (q: string, label: string): Promise<number> => {
+      let hits = await requestNews(q, cleanKey, gl, 'qdr:w2');
+      let usedTbs = true;
+      if (hits.length === 0) {
+        console.warn(`[SerpAPI] tbs=qdr:w2 returned 0 raw results for "${q}". Retrying without tbs.`);
+        hits = await requestNews(q, cleanKey, gl);
+        usedTbs = false;
+      }
+      let dateRejected = 0;
+      let dateUnparsed = 0;
+      let filtered = 0;
+      let kept = 0;
+      for (const item of hits) {
+        const publisherName =
+          typeof item.source === 'object' && item.source !== null
+            ? item.source.name || 'News Source'
+            : (item.source as string) || 'News Source';
+        const title = item.title || '';
+        const url = item.link || '';
+        if (!url || !title || isLowYieldArticle(title, publisherName, url) || isSportsArticle(title, publisherName)) {
+          filtered += 1;
+          continue;
+        }
+        const publishedAt = parsePublishedAtOrNull(item.date);
+        if (!publishedAt) {
+          dateUnparsed += 1;
+          if (!usedTbs) {
+            dateRejected += 1;
+            console.warn(`[SerpAPI] unparsed date "${item.date || ''}" for "${title}"`);
+            continue;
+          }
+        } else if (!isRecentPublished(publishedAt)) {
+          dateRejected += 1;
+          continue;
+        }
+        const key = title.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        kept += 1;
+        collected.push({
+          title,
+          publisher: publisherName,
+          url,
+          snippet: item.snippet || title,
+          publishedAt: publishedAt || new Date().toISOString(),
+          query: q,
+        });
+        if (collected.length >= limit) break;
+      }
+      console.log(
+        `[SerpAPI] ${label} "${q}" raw=${hits.length} dateRejected=${dateRejected} dateUnparsed=${dateUnparsed} filtered=${filtered} kept=${kept}`
+      );
+      return hits.length;
+    };
+
+    if (options?.queryLadder) {
+      const ladder = options.queryLadder;
+      const place = ladder.serviceArea === 'national' ? '' : ladder.city || ladder.region;
+      let terms = [place, ladder.sector, ladder.trigger].filter(Boolean).slice(0, 3);
+      let widened = false;
+      let usedSite = false;
+      const seenQueries = new Set<string>();
+      for (let attempt = 0; attempt < MAX_LADDER_QUERIES && collected.length < limit; attempt += 1) {
+        const q = withSportsExclusion(terms.join(' '));
+        if (seenQueries.has(q)) break;
+        seenQueries.add(q);
+        let raw = 0;
         try {
-          let hits = await requestNews(q, cleanKey, gl, 'qdr:w2');
-          let usedTbs = true;
-          if (hits.length === 0) {
-            console.warn(`[SerpAPI] tbs=qdr:w2 returned 0 raw results for "${q}". Retrying without tbs.`);
-            hits = await requestNews(q, cleanKey, gl);
-            usedTbs = false;
-          }
-          let dateRejected = 0;
-          let dateUnparsed = 0;
-          let filtered = 0;
-          let kept = 0;
-          for (const item of hits) {
-            const publisherName =
-              typeof item.source === 'object' && item.source !== null
-                ? item.source.name || 'News Source'
-                : (item.source as string) || 'News Source';
-            const title = item.title || '';
-            const url = item.link || '';
-            if (!url || !title || isLowYieldArticle(title, publisherName, url) || isSportsArticle(title, publisherName)) {
-              filtered += 1;
-              continue;
-            }
-            const publishedAt = parsePublishedAtOrNull(item.date);
-            if (!publishedAt) {
-              dateUnparsed += 1;
-              if (!usedTbs) {
-                dateRejected += 1;
-                console.warn(`[SerpAPI] unparsed date "${item.date || ''}" for "${title}"`);
-                continue;
-              }
-            } else if (!isRecentPublished(publishedAt)) {
-              dateRejected += 1;
-              continue;
-            }
-            const key = title.toLowerCase();
-            if (seen.has(key)) continue;
-            seen.add(key);
-            kept += 1;
-            collected.push({
-              title,
-              publisher: publisherName,
-              url,
-              snippet: item.snippet || title,
-              publishedAt: publishedAt || new Date().toISOString(),
-              query: q,
-            });
-            if (collected.length >= limit) {
-              console.log(
-                `[SerpAPI] ${tier.label} "${q}" raw=${hits.length} dateRejected=${dateRejected} dateUnparsed=${dateUnparsed} filtered=${filtered} kept=${kept}`
-              );
-              return collected;
-            }
-          }
-          console.log(
-            `[SerpAPI] ${tier.label} "${q}" raw=${hits.length} dateRejected=${dateRejected} dateUnparsed=${dateUnparsed} filtered=${filtered} kept=${kept}`
-          );
+          raw = await runQuery(q, ladder.serviceArea);
         } catch (err) {
           console.warn(`SerpAPI query failed for "${q}":`, err);
+          break;
         }
+        if (collected.length >= limit) break;
+        if (raw === 0 && terms.length >= 3) {
+          terms = terms.slice(0, -1);
+          continue;
+        }
+        if (raw === 0 && ladder.serviceArea === 'local' && !widened && ladder.city && ladder.region) {
+          widened = true;
+          terms = [ladder.region, ladder.sector];
+          continue;
+        }
+        if (raw > 12 && terms.length < 3) {
+          terms = [...terms, ladder.trigger].slice(0, 3);
+          continue;
+        }
+        if (!usedSite && ladder.site && collected.length < limit) {
+          usedSite = true;
+          terms = (ladder.serviceArea === 'local'
+            ? [`site:${ladder.site}`, place || ladder.region, ladder.sector]
+            : [`site:${ladder.site}`, ladder.sector, ladder.trigger]
+          ).filter(Boolean).slice(0, 3);
+          continue;
+        }
+        break;
       }
-      if (collected.length >= limit) break;
+    } else {
+      for (const tier of tiers) {
+        for (const q of tier.queries) {
+          try {
+            await runQuery(q, tier.label);
+          } catch (err) {
+            console.warn(`SerpAPI query failed for "${q}":`, err);
+          }
+          if (collected.length >= limit) return collected;
+        }
+        if (collected.length >= limit) break;
+      }
     }
 
     if (collected.length > 0) return collected;

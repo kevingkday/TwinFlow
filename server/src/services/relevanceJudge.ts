@@ -66,7 +66,8 @@ Also include:
 Rules:
 - relevant is true only when locationMatch, buyerPersonaMatch, AND an explicit chain all hold: one buyer company, a trigger event at that company, and a named person who works at that company. Each link must be backed by a quote in evidenceQuotes. If any link is missing, relevant is false.
 - Judge the BUYER, not the seller's own industry. A cyber insurance broker's buyers are technology companies that just raised, expanded, or hired. A generic insurance-trade personnel move is not a match.
-- Captive insurance consulting is stricter: buyerPersonaMatch is true only when the company is a sizable operating company, group, or association that could form or expand a captive. Generic insurance appointments, brokerage M&A, and insurance-industry news are not matches.
+- Captive insurance consulting is stricter: the buyer must be an operating company that could own a captive. Insurance brokers, advisers, and intermediaries such as Hub International, Marsh, or Aon are never the buyer.
+- Dallas law firms opening an office are tenant prospects for a commercial real estate broker. An Ontario manufacturer is a prospect for a managed IT provider.
 - A commercial real estate brokerage hiring brokers, or a tenant signing a lease, in the user's city IS a buyer match for a commercial real estate broker.
 - A software company raising a Series round in the user's market IS a buyer match for a B2B SaaS marketing agency.
 - A contractor cares about one owner's groundbreaking or awarded project in their region.
@@ -75,16 +76,16 @@ Rules:
 - A story set in a different metro is locationMatch false. Florida is not Dallas. Vancouver is not Toronto.
 - Do not treat a keyword accident as a match.`;
 
-  const userPrompt = `SELLER PROFILE
-Location: ${profile.location || 'unspecified'}
-Intent: ${profile.userIntent || 'sales_client_acquisition'}
-Company: ${profile.companyDescription || ''}
-Mission: ${profile.userMission || ''}
-Industries: ${(profile.targetIndustries || []).join(', ')}
-Triggers: ${(profile.targetTriggers || []).join(', ')}
-Services: ${(profile.servicesOffered || []).join(', ')}
-Products: ${(profile.productsOffered || []).join(', ')}
-Value proposition: ${profile.valueProp || ''}
+  const userPrompt = `SELLER (context only; do not match this industry):
+Location setting: ${profile.location || 'unspecified'}
+National widening allowed: ${profile.allowNationalSearch ? 'yes' : 'no'}
+What they sell: ${profile.userMission || profile.valueProp || ''}
+
+BUYER CRITERIA (judge the article against these):
+Eligible industries: ${(profile.buyerIndustries || []).join(', ') || 'operating companies that would buy from this seller'}
+Roles worth contacting: ${(profile.buyerRoles || []).join(', ') || 'operator or finance leader'}
+Company size: ${profile.buyerCompanySize || 'any'}
+Geography rule: the article must name the city or the province/state. The word Canadian does not prove Vancouver or British Columbia. A national story matches only when national widening is allowed.
 
 ARTICLE
 Publisher: ${article.publisher || 'unknown'}

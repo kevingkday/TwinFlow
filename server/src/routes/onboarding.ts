@@ -95,7 +95,7 @@ onboardingRouter.post('/', async (c) => {
       8,
       queryPlan.geographicFocus.gl,
       queryPlan.fallbackQueries,
-      { searchTiers: queryPlan.searchTiers }
+      { searchTiers: queryPlan.searchTiers, queryLadder: queryPlan.queryLadder }
     );
 
     for (const art of newsArticles) {

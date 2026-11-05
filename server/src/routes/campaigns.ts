@@ -4,8 +4,10 @@ import { getDb, schema } from '../db';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import { getSessionUser } from './auth';
 import { planNewsQueryWithAI } from '../services/aiQueryPlanner';
-import { isLowYieldArticle, isNonBuyerRole, isSportsArticle, usableCompanyDomain } from '../services/signalQuality';
+import { isLowYieldArticle, isNonBuyerRole, isRecentPublished, isSportsArticle, usableCompanyDomain } from '../services/signalQuality';
 import { judgeArticleRelevance } from '../services/relevanceJudge';
+import { deriveBuyerProfile, validateSignalEvidence } from '../services/buyerProfile';
+import { parsePublishedAtOrNull } from '../services/publishedAt';
 import { fetchSerpNews } from '../services/serpNews';
 import { crawlArticle } from '../services/firecrawl';
 import { enrichSignalWithLLM } from '../services/llmEnricher';
@@ -137,6 +139,10 @@ campaignsRouter.get('/', async (c) => {
         targetRoles: cmp.targetRoles ? JSON.parse(cmp.targetRoles) : [],
         valueProp: cmp.valueProp || '',
         icpQuery: cmp.icpQuery || '',
+        buyerIndustries: cmp.buyerIndustries ? JSON.parse(cmp.buyerIndustries) : [],
+        buyerRoles: cmp.buyerRoles ? JSON.parse(cmp.buyerRoles) : [],
+        buyerCompanySize: cmp.buyerCompanySize || 'any',
+        serviceArea: cmp.serviceArea || 'local',
         isDefault: Boolean(cmp.isDefault),
         leadsCount,
         isActive: cmp.id === activeId,
@@ -175,6 +181,11 @@ campaignsRouter.post('/', async (c) => {
     targetRoles?: string[];
     valueProp?: string;
     makeActive?: boolean;
+    buyerIndustries?: string[];
+    buyerRoles?: string[];
+    buyerCompanySize?: 'smb' | 'midmarket' | 'enterprise' | 'any';
+    serviceArea?: 'local' | 'national';
+    allowNationalSearch?: boolean;
   };
 
   try {
@@ -190,8 +201,20 @@ campaignsRouter.post('/', async (c) => {
   const targetTriggers = Array.isArray(body.targetTriggers) ? body.targetTriggers : [];
   const targetRoles = Array.isArray(body.targetRoles) ? body.targetRoles : [];
   const valueProp = (body.valueProp || '').trim();
+  const buyer = deriveBuyerProfile({
+    location: targetLocation,
+    userIntent,
+    userMission,
+    targetIndustries,
+    targetTriggers,
+    targetRoles,
+    valueProp,
+    buyerIndustries: body.buyerIndustries,
+    buyerRoles: body.buyerRoles,
+    buyerCompanySize: body.buyerCompanySize,
+    serviceArea: body.serviceArea,
+  });
 
-  // Synthesize calibrated ICP query
   const queryPlan = await planNewsQueryWithAI(
     {
       location: targetLocation,
@@ -199,7 +222,9 @@ campaignsRouter.post('/', async (c) => {
       userMission,
       targetIndustries,
       targetTriggers,
+      targetRoles,
       valueProp,
+      ...buyer,
     },
     c.env.OPENAI_API_KEY
   );
@@ -223,6 +248,11 @@ campaignsRouter.post('/', async (c) => {
     targetRoles: JSON.stringify(targetRoles),
     valueProp: valueProp || queryPlan.missionSummary,
     icpQuery: queryPlan.primaryQuery,
+    buyerIndustries: JSON.stringify(buyer.buyerIndustries),
+    buyerRoles: JSON.stringify(buyer.buyerRoles),
+    buyerCompanySize: buyer.buyerCompanySize,
+    serviceArea: buyer.serviceArea,
+    allowNationalSearch: buyer.allowNationalSearch,
     isDefault: false,
     status: 'active',
     createdAt: now,
@@ -251,13 +281,16 @@ campaignsRouter.post('/', async (c) => {
       8,
       queryPlan.geographicFocus?.gl,
       queryPlan.fallbackQueries,
-      { searchTiers: queryPlan.searchTiers }
+      { searchTiers: queryPlan.searchTiers, queryLadder: queryPlan.queryLadder }
     );
 
+    const seenEvents = new Set<string>();
     for (const art of newsArticles) {
       try {
         if (isLowYieldArticle(art.title, art.publisher, art.url) || isSportsArticle(art.title, art.publisher)) continue;
         const crawl = await crawlArticle(art.url, c.env.FIRECRAWL_API_KEY, art.snippet);
+        const sourceDate = parsePublishedAtOrNull(crawl.publishedAt);
+        if (sourceDate && !isRecentPublished(sourceDate)) continue;
         const judgment = await judgeArticleRelevance(
           {
             location: targetLocation,
@@ -265,7 +298,9 @@ campaignsRouter.post('/', async (c) => {
             userMission,
             targetIndustries,
             targetTriggers,
+            targetRoles,
             valueProp,
+            ...buyer,
           },
           { title: art.title, publisher: art.publisher, text: `${art.snippet}\n${crawl.markdown}` },
           c.env.OPENAI_API_KEY
@@ -284,6 +319,25 @@ campaignsRouter.post('/', async (c) => {
         );
 
         if (!enriched.decisionMaker?.name || isNonBuyerRole(enriched.decisionMaker.role || '')) continue;
+        const evidence = validateSignalEvidence({
+          sourceText: `${art.title}\n${art.snippet}\n${crawl.markdown}`,
+          buyerCompany: judgment.buyerCompany || enriched.companyName,
+          namedPerson: judgment.namedPerson || enriched.decisionMaker.name,
+          personEmployer: enriched.decisionMaker.company || enriched.companyName,
+          personRole: enriched.decisionMaker.role || '',
+          quotes: judgment.evidenceQuotes || [],
+          location: targetLocation,
+          allowNationalSearch: buyer.allowNationalSearch,
+          extractedName: enriched.decisionMaker.name,
+          extractedEmployer: enriched.decisionMaker.company || enriched.companyName,
+        });
+        if (!evidence.ok) {
+          console.log(`[Evidence] rejected "${art.title}": ${evidence.reason}`);
+          continue;
+        }
+        const eventKey = `${(judgment.buyerCompany || enriched.companyName).toLowerCase()}|${(judgment.triggerEvent || art.title).toLowerCase().slice(0, 80)}`;
+        if (seenEvents.has(eventKey)) continue;
+        seenEvents.add(eventKey);
         const domain = usableCompanyDomain(enriched.companyDomain);
         const apollo = domain
           ? await findApolloContact(enriched.decisionMaker.name, enriched.decisionMaker.role, domain, c.env.APOLLO_API_KEY)
@@ -437,6 +491,10 @@ campaignsRouter.patch('/:id', async (c) => {
     targetTriggers?: string[];
     targetRoles?: string[];
     valueProp?: string;
+    buyerIndustries?: string[];
+    buyerRoles?: string[];
+    buyerCompanySize?: 'smb' | 'midmarket' | 'enterprise' | 'any';
+    serviceArea?: 'local' | 'national';
   };
 
   try {
@@ -453,6 +511,19 @@ campaignsRouter.patch('/:id', async (c) => {
   const targetTriggers = body.targetTriggers !== undefined ? body.targetTriggers : (campaign.targetTriggers ? JSON.parse(campaign.targetTriggers) : []);
   const targetRoles = body.targetRoles !== undefined ? body.targetRoles : (campaign.targetRoles ? JSON.parse(campaign.targetRoles) : []);
   const valueProp = body.valueProp !== undefined ? body.valueProp.trim() : campaign.valueProp;
+  const buyer = deriveBuyerProfile({
+    location: targetLocation || '',
+    userIntent: userIntent || 'sales_client_acquisition',
+    userMission: userMission || '',
+    targetIndustries,
+    targetTriggers,
+    targetRoles,
+    valueProp: valueProp || '',
+    buyerIndustries: body.buyerIndustries,
+    buyerRoles: body.buyerRoles,
+    buyerCompanySize: body.buyerCompanySize,
+    serviceArea: body.serviceArea,
+  });
 
   // Re-calibrate query plan
   const queryPlan = await planNewsQueryWithAI(
@@ -462,7 +533,9 @@ campaignsRouter.patch('/:id', async (c) => {
       userMission: userMission || '',
       targetIndustries,
       targetTriggers,
+      targetRoles,
       valueProp: valueProp || '',
+      ...buyer,
     },
     c.env.OPENAI_API_KEY
   );
@@ -480,6 +553,11 @@ campaignsRouter.patch('/:id', async (c) => {
       targetRoles: JSON.stringify(targetRoles),
       valueProp: valueProp || queryPlan.missionSummary,
       icpQuery: queryPlan.primaryQuery,
+      buyerIndustries: JSON.stringify(buyer.buyerIndustries),
+      buyerRoles: JSON.stringify(buyer.buyerRoles),
+      buyerCompanySize: buyer.buyerCompanySize,
+      serviceArea: buyer.serviceArea,
+      allowNationalSearch: buyer.allowNationalSearch,
       updatedAt: now,
     })
     .where(eq(schema.campaigns.id, campaignId));
