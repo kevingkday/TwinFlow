@@ -18,6 +18,7 @@ import { LinkedInIcon } from './icons';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
 import { openEmailClient } from '../utils/email';
 import type { LeadCardData, SwipeAction } from '../types/lead';
+import { isExternalArticleUrl } from '../utils/publishedAt';
 
 interface LeadDetailPaneProps {
   lead: LeadCardData | null;
@@ -347,14 +348,18 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
             {/* Source publication reference */}
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
               <span className="text-slate-600">Source Publication: <strong className="text-slate-900">{lead.source}</strong></span>
-              <a
-                href={lead.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold"
-              >
-                Open Article <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+              {isExternalArticleUrl(lead.sourceUrl) ? (
+                <a
+                  href={lead.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold"
+                >
+                  Open Article <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              ) : (
+                <span className="text-slate-400">Example coverage, not a live link</span>
+              )}
             </div>
           </div>
         )}

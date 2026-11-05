@@ -27,6 +27,7 @@ import type { UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
 import { authFetch } from '../utils/api';
 import { openEmailClient } from '../utils/email';
+import { isExternalArticleUrl } from '../utils/publishedAt';
 
 interface ContactsPageProps {
   user: UserProfile | null;
@@ -533,7 +534,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                           <div className="min-w-0">
                             <div className="font-bold text-slate-900 text-sm truncate flex items-center gap-1.5">
                               <span>{c.companyName}</span>
-                              {c.sourceUrl && (
+                              {isExternalArticleUrl(c.sourceUrl) && (
                                 <a
                                   href={c.sourceUrl}
                                   target="_blank"
@@ -726,7 +727,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                       </div>
                     </div>
 
-                    {group.sourceUrl && (
+                    {isExternalArticleUrl(group.sourceUrl) && (
                       <a
                         href={group.sourceUrl}
                         target="_blank"
@@ -915,7 +916,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                     ))}
                   </ul>
                 )}
-                {selectedContactForModal.sourceUrl && (
+                {isExternalArticleUrl(selectedContactForModal.sourceUrl) && (
                   <div className="mt-3 pt-2.5 border-t border-slate-200/80 flex items-center justify-between">
                     <a
                       href={selectedContactForModal.sourceUrl}

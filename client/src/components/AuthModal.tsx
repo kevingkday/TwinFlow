@@ -447,6 +447,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             </div>
 
+            {mode === 'signup' && (
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                By creating an account you agree to the{' '}
+                <a href="/terms" className="text-blue-700 underline">Terms</a>
+                {' '}and{' '}
+                <a href="/privacy" className="text-blue-700 underline">Privacy Policy</a>.
+                Both documents are templates pending legal review. You are responsible for CASL and CAN-SPAM compliance on messages you send.
+              </p>
+            )}
+
             <button
               type="submit"
               disabled={isLoading}

@@ -362,7 +362,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </ul>
               </div>
               <div className="mt-6 pt-4 border-t border-slate-100 text-[11px] text-blue-700 font-medium">
-                Average reply rate: <strong>14% - 28%</strong> (10x lift on trigger-based outreach)
+                Reply rate depends on your offer and list. TwinFlow does not publish a measured reply-rate figure.
               </div>
             </div>
           </div>
@@ -837,6 +837,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             >
               Sign In
             </button>
+            <a href="/privacy" className="hover:text-slate-900 transition-colors">
+              Privacy
+            </a>
+            <a href="/terms" className="hover:text-slate-900 transition-colors">
+              Terms
+            </a>
           </div>
         </footer>
       </div>
