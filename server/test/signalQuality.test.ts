@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { planNewsQueryWithAI } from '../src/services/aiQueryPlanner';
 import { generateHeuristicEnrichment } from '../src/services/llmEnricher';
+import { fetchSerpNews, isSampleArticle } from '../src/services/serpNews';
 import {
   classifyArticleType,
   extractNamedPeople,
   isLowYieldArticle,
+  isNonBuyerRole,
   isRecentPublished,
   isRelevantToProfile,
+  isVerifiedEmailStatus,
+  usableCompanyDomain,
 } from '../src/services/signalQuality';
 
 const broker = {
@@ -21,11 +25,13 @@ describe('signal quality', () => {
   it('builds a recent person-naming query instead of a generic expansion query', async () => {
     const plan = await planNewsQueryWithAI(broker);
     expect(plan.modelUsed).toBe('algorithmic_fallback');
-    expect(plan.primaryQuery).toContain('when:14d');
-    expect(plan.primaryQuery.toLowerCase()).toMatch(/appointed|named|hires/);
+    expect(plan.primaryQuery.toLowerCase()).not.toContain('when:');
+    expect(plan.primaryQuery).not.toMatch(/\bOR\b/);
+    expect(plan.primaryQuery).toContain('-NHL');
+    expect(plan.primaryQuery.toLowerCase()).toMatch(/appointed|joins as|raises series|signs lease|captive|ciso/);
     expect(plan.primaryQuery).toContain('Vancouver');
     expect(plan.geographicFocus.gl).toBe('ca');
-    expect(plan.fallbackQueries[0]).toMatch(/breaks ground|awarded|expansion/);
+    expect(plan.fallbackQueries.length).toBeGreaterThanOrEqual(3);
   });
 
   it('rejects listicles and keeps a named appointment', () => {
@@ -83,5 +89,22 @@ describe('signal quality', () => {
     const now = Date.parse('2026-11-05T12:00:00.000Z');
     expect(isRecentPublished('2026-10-30T13:17:36.000Z', now)).toBe(true);
     expect(isRecentPublished('2026-07-30T07:00:00.000Z', now)).toBe(false);
+  });
+
+  it('does not substitute sample headlines unless demo mode is explicit', async () => {
+    const liveEmpty = await fetchSerpNews('Vancouver cyber', undefined, 3, 'ca');
+    expect(liveEmpty).toEqual([]);
+    const samples = await fetchSerpNews('Vancouver cyber', undefined, 2, 'ca', undefined, { allowSampleFallback: true });
+    expect(samples).toHaveLength(2);
+    expect(samples.every((article) => isSampleArticle(article))).toBe(true);
+  });
+
+  it('treats only a verified Apollo status as reachable and rejects guessed domains', () => {
+    expect(isVerifiedEmailStatus('verified')).toBe(true);
+    expect(isVerifiedEmailStatus('guessed')).toBe(false);
+    expect(isNonBuyerRole('Insurance reporter')).toBe(true);
+    expect(isNonBuyerRole('Chief risk officer')).toBe(false);
+    expect(usableCompanyDomain('https://www.OceanFalls.com/about')).toBe('oceanfalls.com');
+    expect(usableCompanyDomain('example.com')).toBe('');
   });
 });

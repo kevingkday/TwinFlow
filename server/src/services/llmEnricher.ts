@@ -1,4 +1,4 @@
-import { extractNamedPeople, nameAppearsInText } from './signalQuality';
+import { extractNamedPeople, isNonBuyerRole, nameAppearsInText, usableCompanyDomain } from './signalQuality';
 
 /**
  * OpenAI (gpt-4o-mini) LLM Enrichment Service Adapter
@@ -66,9 +66,11 @@ Analyze the provided news headline and article text to extract actionable outbou
 
 PERSON RULES (STRICTLY ENFORCED):
 - Name a person only when the article prints their first and last name. Copy it verbatim.
+- Only decision makers employed by the company the story is about. Exclude journalists, reporters, analysts, politicians, and public officials.
 - "the CEO", "a spokesperson", "executives", and "new leadership" are not a person. Leave decisionMaker.name as "" in that case.
 - Never invent, infer, or recall a name from outside the article.
-- Set relevantToSender to false when the story is a listicle, wire roundup, stock recap, or is outside the sender's industry and geography.
+- companyDomain is the subject company's real website domain if the article states it. Use "" if it is not known. Do not invent a domain.
+- Set relevantToSender to false when the story is a listicle, wire roundup, stock recap, charity drive, or is outside the sender's industry and geography.
 
 CRITICAL EMAIL COPY RULES (STRICTLY ENFORCED):
 - NO AI SLOP. Absolutely NO buzzwords, clichés, or marketing jargon (e.g. do NOT use "synergy", "game-changer", "delighted", "streamlining", "frictionless", "hyper-tailored", "leverage", "exponential", "in today's fast-paced environment", "catalyst", "unleash", "triage deck", "supercharge").
@@ -170,18 +172,23 @@ Extract and generate the structured JSON intelligence object.`;
               : generateHeuristicPeerRoles(parsed.signalType || 'Enterprise Expansion');
 
             const sourceText = `${headline}\n${articleMarkdown}`;
-            const extracted = extractNamedPeople(sourceText);
+            const extracted = [
+              ...(parsed.detectedContacts || []),
+              ...(parsed.decisionMaker ? [parsed.decisionMaker] : []),
+              ...extractNamedPeople(sourceText),
+            ].filter((person) => person?.name && nameAppearsInText(person.name, sourceText) && !isNonBuyerRole(person.role || ''));
+            const uniquePeople = extracted.filter(
+              (person, index, list) => list.findIndex((item) => item.name.toLowerCase() === person.name.toLowerCase()) === index
+            );
             const modelName = parsed.decisionMaker?.name || '';
-            const verifiedName = nameAppearsInText(modelName, sourceText)
-              ? modelName
-              : extracted[0]?.name || '';
-            const verifiedRole = verifiedName
-              ? (nameAppearsInText(modelName, sourceText) ? parsed.decisionMaker?.role : extracted[0]?.role) || 'Executive'
-              : '';
+            const modelRole = parsed.decisionMaker?.role || '';
+            const modelOk = nameAppearsInText(modelName, sourceText) && !isNonBuyerRole(modelRole);
+            const verifiedName = modelOk ? modelName : uniquePeople[0]?.name || '';
+            const verifiedRole = modelOk ? modelRole : uniquePeople[0]?.role || '';
 
             return {
               companyName: parsed.companyName,
-              companyDomain: parsed.companyDomain || `${parsed.companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+              companyDomain: usableCompanyDomain(parsed.companyDomain),
               signalType: parsed.signalType || 'Enterprise Expansion',
               industryTags: Array.isArray(parsed.industryTags) && parsed.industryTags.length > 0
                 ? parsed.industryTags
@@ -197,7 +204,11 @@ Extract and generate the structured JSON intelligence object.`;
                 role: verifiedRole,
                 company: parsed.companyName,
               },
-              detectedContacts: extracted,
+              detectedContacts: uniquePeople.map((person) => ({
+                name: person.name,
+                role: person.role || '',
+                company: parsed.companyName,
+              })),
               coldIntroHook: parsed.coldIntroHook || `I saw the recent article in ${publisher} regarding ${parsed.companyName}'s upcoming plans.`,
               pitchSubject: parsed.pitchSubject || `quick question re: ${parsed.companyName}`,
               pitchBody: parsed.pitchBody || `Hi ${(verifiedName || 'there').split(' ')[0] || 'there'},\n\nI saw the recent article in ${publisher} regarding ${parsed.companyName}'s expansion plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`,
@@ -280,7 +291,7 @@ export function generateHeuristicEnrichment(
     company = firstWordMatch[1].trim();
   }
 
-  const cleanDomain = `${company.toLowerCase().replace(/[^a-z0-9]/g, '')}.io`;
+  const cleanDomain = '';
 
   // Detect signal type
   let signalType = 'Enterprise Expansion';

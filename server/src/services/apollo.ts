@@ -1,3 +1,5 @@
+import { isVerifiedEmailStatus } from './signalQuality';
+
 /**
  * Apollo Contact Matching Service Adapter
  * Takes extracted person's name, role, and company domain to query Apollo for a verified
@@ -49,6 +51,7 @@ export async function findApolloContact(
         const json = (await response.json()) as {
           person?: {
             email?: string;
+            email_status?: string;
             linkedin_url?: string;
             photo_url?: string;
             id?: string;
@@ -69,10 +72,10 @@ export async function findApolloContact(
           }
         }
 
-        if (json.person?.email) {
+        if (json.person?.email && isVerifiedEmailStatus(json.person.email_status)) {
           return {
             email: json.person.email,
-            linkedinUrl: json.person.linkedin_url || `https://linkedin.com/in/${firstName.toLowerCase()}-${lastName.toLowerCase()}`,
+            linkedinUrl: json.person.linkedin_url,
             avatarUrl,
             matched: true,
             status: 'verified',

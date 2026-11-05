@@ -2,13 +2,15 @@
  * Repeatable news-signal eval.
  *
  * Uses planNewsQueryWithAI (the same planner as onboarding and campaigns).
- * Search uses SerpAPI when SERP_API_KEY is set. Otherwise it reads the public
- * Google News RSS feed for those queries. Firecrawl runs only when
- * FIRECRAWL_API_KEY is set, and only for the first article of each persona.
- * Apollo runs only when APOLLO_API_KEY is set, and only for one extracted
- * name per persona. This script never sends email.
+ * Search uses SerpAPI when SERP_API_KEY is set (tbs=qdr:w2, no sample
+ * headlines). Otherwise it reads public Google News RSS. Firecrawl runs on
+ * every after-set article when FIRECRAWL_API_KEY is set. Relevance is a
+ * gpt-4o-mini judgment when OPENAI_API_KEY is set. Apollo people/match runs
+ * with the extracted company domain; reachable counts only email_status
+ * verified. This script never sends email.
  *
  *   npm run eval:signals --prefix server
+ *   npm run eval:signals --prefix server -- --limit=10
  *
  * The "before" column freezes the previous generic expansion query and the
  * old habit of treating an invented name as a contact. The "after" column
@@ -16,16 +18,21 @@
  * the article prints a full name.
  */
 import { planNewsQueryWithAI, type QueryPlannerInput } from '../src/services/aiQueryPlanner';
-import { fetchSerpNews, type SerpArticle } from '../src/services/serpNews';
+import { fetchSerpNews, isSampleArticle, type SerpArticle } from '../src/services/serpNews';
 import { crawlArticle } from '../src/services/firecrawl';
 import { findApolloContact } from '../src/services/apollo';
+import { enrichSignalWithLLM } from '../src/services/llmEnricher';
+import { judgeArticleRelevance } from '../src/services/relevanceJudge';
 import {
   classifyArticleType,
   extractNamedPeople,
   findReachableEmail,
   isLowYieldArticle,
+  isNonBuyerRole,
   isRecentPublished,
   isRelevantToProfile,
+  isSportsArticle,
+  usableCompanyDomain,
   type ArticleType,
 } from '../src/services/signalQuality';
 
@@ -110,6 +117,10 @@ interface ScoredArticle {
   personName: string | null;
   reachable: boolean;
   lowYield: boolean;
+  sample: boolean;
+  locationReason: string;
+  buyerReason: string;
+  apolloStatus: string;
 }
 
 function legacyQuery(persona: Persona): { primaryQuery: string; fallbackQueries: string[]; gl: string } {
@@ -190,17 +201,18 @@ async function searchQueries(
   for (const query of queries) {
     let batch: SerpArticle[] = [];
     if (serpKey) {
-      batch = await fetchSerpNews(query, serpKey, limit, gl);
-      if (batch.some((article) => article.url.includes('cpexecutive.com/apex-breaks-ground'))) {
-        source = 'serpapi-simulated-fallback';
-        batch = [];
+      batch = await fetchSerpNews(query, serpKey, limit, gl, undefined, { allowSampleFallback: false });
+      if (batch.some((article) => isSampleArticle(article))) {
+        source = 'sample-articles';
       }
     }
     if (!serpKey) {
       batch = await fetchPublicNews(query, gl, limit);
     }
     for (const article of batch) {
-      if (dropLowYield && isLowYieldArticle(article.title, article.publisher, article.url)) continue;
+      if (isSampleArticle(article)) continue;
+      if (dropLowYield && (isLowYieldArticle(article.title, article.publisher, article.url) || isSportsArticle(article.title, article.publisher))) continue;
+      if (dropLowYield && article.publishedAt && !isRecentPublished(article.publishedAt)) continue;
       const key = article.title.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -230,6 +242,61 @@ function scoreArticle(persona: Persona, article: SerpArticle, mode: 'before' | '
     personName: namesPerson ? person : null,
     reachable: Boolean(email),
     lowYield: isLowYieldArticle(article.title, article.publisher, article.url),
+    sample: isSampleArticle(article),
+    locationReason: '',
+    buyerReason: '',
+    apolloStatus: 'not_called',
+  };
+}
+
+async function scoreLiveArticle(persona: Persona, article: SerpArticle): Promise<ScoredArticle> {
+  let text = `${article.title}\n${article.snippet}`;
+  if (process.env.FIRECRAWL_API_KEY) {
+    const crawled = await crawlArticle(article.url, process.env.FIRECRAWL_API_KEY, article.snippet);
+    text = `${text}\n${crawled.markdown.slice(0, 6000)}`;
+  }
+  const judgment = await judgeArticleRelevance(
+    persona,
+    { title: article.title, publisher: article.publisher, text },
+    process.env.OPENAI_API_KEY
+  );
+  const enriched = await enrichSignalWithLLM(
+    article.title,
+    text,
+    article.publisher,
+    process.env.OPENAI_API_KEY,
+    persona.valueProp,
+    persona.userIntent
+  );
+  const candidate = enriched.decisionMaker?.name && !isNonBuyerRole(enriched.decisionMaker.role || '')
+    ? enriched.decisionMaker
+    : null;
+  const domain = usableCompanyDomain(enriched.companyDomain);
+  let reachable = false;
+  let apolloStatus = 'not_called';
+  if (process.env.APOLLO_API_KEY && candidate && domain) {
+    const match = await findApolloContact(candidate.name, candidate.role, domain, process.env.APOLLO_API_KEY);
+    apolloStatus = match.status;
+    reachable = match.matched && match.status === 'verified';
+  } else if (candidate && !domain) {
+    apolloStatus = 'no_domain';
+  }
+  return {
+    title: article.title,
+    publisher: article.publisher,
+    url: article.url,
+    publishedAt: article.publishedAt,
+    articleType: classifyArticleType(article.title, text),
+    relevant: judgment.relevant,
+    recent: isRecentPublished(article.publishedAt),
+    namesPerson: Boolean(candidate),
+    personName: candidate?.name || null,
+    reachable,
+    lowYield: isLowYieldArticle(article.title, article.publisher, article.url),
+    sample: isSampleArticle(article),
+    locationReason: judgment.locationReason,
+    buyerReason: judgment.buyerPersonaReason,
+    apolloStatus,
   };
 }
 
@@ -256,15 +323,23 @@ async function enrichOne(persona: Persona, articles: SerpArticle[]): Promise<voi
   }
 }
 
+function articleLimit(): number {
+  const fromArg = process.argv.find((arg) => arg.startsWith('--limit='));
+  const raw = Number(fromArg ? fromArg.split('=')[1] : process.env.EVAL_LIMIT || 8);
+  if (!Number.isFinite(raw)) return 8;
+  return Math.min(10, Math.max(8, Math.round(raw)));
+}
+
 async function main() {
-  const limit = 5;
+  const limit = articleLimit();
   const lines: string[] = [];
   const typeHits = new Map<ArticleType, { articles: number; named: number }>();
   const examples: { good: ScoredArticle[]; bad: ScoredArticle[] } = { good: [], bad: [] };
 
   console.log(`Search mode: ${process.env.SERP_API_KEY ? 'SerpAPI' : 'public Google News RSS (SERP_API_KEY unset)'}`);
-  console.log(`Firecrawl: ${process.env.FIRECRAWL_API_KEY ? 'on, 1 article/persona' : 'off'}`);
-  console.log(`Apollo: ${process.env.APOLLO_API_KEY ? 'on, 1 name/persona' : 'off'}`);
+  console.log(`Firecrawl: ${process.env.FIRECRAWL_API_KEY ? 'on, every after-set article' : 'off'}`);
+  console.log(`Apollo: ${process.env.APOLLO_API_KEY ? 'on, verified email_status only' : 'off'}`);
+  console.log(`Articles per persona: ${limit}`);
   console.log(`OpenAI planner: ${process.env.OPENAI_API_KEY ? 'on' : 'algorithmic fallback'}`);
   console.log('');
 
@@ -277,36 +352,21 @@ async function main() {
       limit,
       false
     );
-    const afterPool = await searchQueries(
+    const afterSearch = await searchQueries(
       [afterPlan.primaryQuery, ...afterPlan.fallbackQueries],
       afterPlan.geographicFocus.gl,
-      8,
+      limit,
       true
     );
-    const afterSearch = {
-      source: afterPool.source,
-      articles: afterPool.articles
-        .filter(
-          (article) =>
-            !isLowYieldArticle(article.title, article.publisher, article.url) &&
-            isRelevantToProfile(persona, article.title, article.snippet, article.publisher)
-        )
-        .sort((a, b) => {
-          const namedDelta =
-            Number(extractNamedPeople(`${b.title} ${b.snippet}`).length > 0) -
-            Number(extractNamedPeople(`${a.title} ${a.snippet}`).length > 0);
-          if (namedDelta !== 0) return namedDelta;
-          return Number(isRecentPublished(b.publishedAt)) - Number(isRecentPublished(a.publishedAt));
-        })
-        .slice(0, limit),
-    };
-    await enrichOne(persona, afterSearch.articles);
 
     const beforeRows = beforeSearch.articles.map((article) => scoreArticle(persona, article, 'before'));
     for (const row of beforeRows) {
       if (!row.relevant && examples.bad.length < 5) examples.bad.push(row);
     }
-    const afterRows = afterSearch.articles.map((article) => scoreArticle(persona, article, 'after'));
+    const afterRows: ScoredArticle[] = [];
+    for (const article of afterSearch.articles) {
+      afterRows.push(await scoreLiveArticle(persona, article));
+    }
 
     for (const row of afterRows) {
       const bucket = typeHits.get(row.articleType) || { articles: 0, named: 0 };
@@ -354,7 +414,7 @@ async function main() {
   }
   console.log('\n### Good examples');
   for (const row of examples.good) {
-    console.log(`- [${row.articleType}] ${row.title} (${row.personName || 'no name'})`);
+    console.log(`- [${row.articleType}] ${row.title} (${row.personName || 'no name'}; ${row.apolloStatus}; ${row.buyerReason})`);
   }
   console.log('\n### Bad examples');
   for (const row of examples.bad) {

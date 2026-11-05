@@ -4,7 +4,8 @@ import { getDb, schema } from '../db';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import { getSessionUser } from './auth';
 import { planNewsQueryWithAI } from '../services/aiQueryPlanner';
-import { isLowYieldArticle, isRelevantToProfile } from '../services/signalQuality';
+import { isLowYieldArticle, isNonBuyerRole, isSportsArticle, usableCompanyDomain } from '../services/signalQuality';
+import { judgeArticleRelevance } from '../services/relevanceJudge';
 import { fetchSerpNews } from '../services/serpNews';
 import { crawlArticle } from '../services/firecrawl';
 import { enrichSignalWithLLM } from '../services/llmEnricher';
@@ -254,25 +255,21 @@ campaignsRouter.post('/', async (c) => {
 
     for (const art of newsArticles) {
       try {
-        if (isLowYieldArticle(art.title, art.publisher, art.url)) continue;
-        if (
-          !isRelevantToProfile(
-            {
-              location: targetLocation,
-              userIntent,
-              userMission,
-              targetIndustries,
-              targetTriggers,
-              valueProp,
-            },
-            art.title,
-            art.snippet,
-            art.publisher
-          )
-        ) {
-          continue;
-        }
-        const crawl = await crawlArticle(art.url, c.env.FIRECRAWL_API_KEY);
+        if (isLowYieldArticle(art.title, art.publisher, art.url) || isSportsArticle(art.title, art.publisher)) continue;
+        const crawl = await crawlArticle(art.url, c.env.FIRECRAWL_API_KEY, art.snippet);
+        const judgment = await judgeArticleRelevance(
+          {
+            location: targetLocation,
+            userIntent,
+            userMission,
+            targetIndustries,
+            targetTriggers,
+            valueProp,
+          },
+          { title: art.title, publisher: art.publisher, text: `${art.snippet}\n${crawl.markdown}` },
+          c.env.OPENAI_API_KEY
+        );
+        if (!judgment.relevant) continue;
         const enriched = await enrichSignalWithLLM(
           art.title,
           crawl.markdown,
@@ -282,14 +279,11 @@ campaignsRouter.post('/', async (c) => {
           userIntent
         );
 
-        if (!enriched.decisionMaker?.name) continue;
-        const domain = enriched.companyDomain || `${enriched.companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
-        const apollo = await findApolloContact(
-          enriched.decisionMaker.name,
-          enriched.decisionMaker.role,
-          domain,
-          c.env.APOLLO_API_KEY
-        );
+        if (!enriched.decisionMaker?.name || isNonBuyerRole(enriched.decisionMaker.role || '')) continue;
+        const domain = usableCompanyDomain(enriched.companyDomain);
+        const apollo = domain
+          ? await findApolloContact(enriched.decisionMaker.name, enriched.decisionMaker.role, domain, c.env.APOLLO_API_KEY)
+          : { matched: false, status: 'fallback' as const, email: undefined, linkedinUrl: undefined };
 
         const sigId = `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         const cntId = `cnt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;

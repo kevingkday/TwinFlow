@@ -41,6 +41,32 @@ const STOP_NAME = new Set(
   ]
 );
 
+export const SPORTS_QUERY_EXCLUSION = '-NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster';
+
+export function isSportsArticle(title: string, publisher = ''): boolean {
+  return /\b(nhl|cfl|nfl|nba|mlb|mls|soccer|hockey|roster|touchdown|playoff|premier league)\b/i.test(
+    `${title} ${publisher}`
+  );
+}
+
+export function isNonBuyerRole(role: string): boolean {
+  return /\b(journalist|reporter|columnist|editor|correspondent|analyst|commentator|politician|mayor|councillor|minister|senator|governor|mp|mla|public official|coach|athlete|goaltender)\b/i.test(
+    role || ''
+  );
+}
+
+export function usableCompanyDomain(domain?: string | null): string {
+  if (!domain) return '';
+  const host = domain.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0].replace(/^www\./, '');
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host)) return '';
+  if (host === 'example.com' || host.endsWith('.example')) return '';
+  return host;
+}
+
+export function isVerifiedEmailStatus(status?: string | null): boolean {
+  return (status || '').trim().toLowerCase() === 'verified';
+}
+
 export function isLowYieldArticle(title: string, publisher = '', url = ''): boolean {
   const haystack = `${title} ${publisher} ${url}`;
   return LOW_YIELD_TITLE.test(title) || LOW_YIELD_SOURCE.test(haystack);

@@ -3,8 +3,8 @@
  * Queries Google News via SerpAPI and extracts article title, publisher, URL, snippet, and publish date.
  */
 
-import { normalizePublishedAt } from './publishedAt';
-import { isLowYieldArticle } from './signalQuality';
+import { parsePublishedAtOrNull } from './publishedAt';
+import { isLowYieldArticle, isRecentPublished, isSportsArticle } from './signalQuality';
 
 export interface SerpArticle {
   title: string;
@@ -66,24 +66,41 @@ const FALLBACK_NEWS_POOL: SerpArticle[] = [
   },
 ];
 
+export interface FetchSerpNewsOptions {
+  /** Built-in sample headlines. Production callers must leave this false. */
+  allowSampleFallback?: boolean;
+}
+
+const SAMPLE_ARTICLE_URLS = new Set(FALLBACK_NEWS_POOL.map((article) => article.url));
+
+export function isSampleArticle(article: { url?: string | null }): boolean {
+  return Boolean(article.url && SAMPLE_ARTICLE_URLS.has(article.url));
+}
+
+export function sampleArticles(limit = 3): SerpArticle[] {
+  return FALLBACK_NEWS_POOL.slice(0, limit);
+}
+
 export async function fetchSerpNews(
   query: string,
   apiKey?: string,
   limit = 3,
   gl = 'us',
-  fallbackQueries?: string[]
+  fallbackQueries?: string[],
+  options?: FetchSerpNewsOptions
 ): Promise<SerpArticle[]> {
   const cleanKey = (apiKey || '').trim();
+  const queriesToTry = [query, ...(fallbackQueries || [])].filter(Boolean);
 
-  // If live SerpAPI key is available and not a placeholder, query live Google News
   if (cleanKey && !cleanKey.includes('your_') && cleanKey.length > 10) {
-    const queriesToTry = [query, ...(fallbackQueries || [])];
+    const collected: SerpArticle[] = [];
+    const seen = new Set<string>();
 
     for (const q of queriesToTry) {
       try {
         const endpoint = `https://serpapi.com/search.json?engine=google_news&q=${encodeURIComponent(
           q
-        )}&api_key=${encodeURIComponent(cleanKey)}&gl=${encodeURIComponent(gl)}&hl=en`;
+        )}&api_key=${encodeURIComponent(cleanKey)}&gl=${encodeURIComponent(gl)}&hl=en&tbs=${encodeURIComponent('qdr:w2')}`;
 
         const response = await fetch(endpoint);
         if (!response.ok) {
@@ -100,30 +117,42 @@ export async function fetchSerpNews(
           }>;
         };
 
-        if (json.news_results && Array.isArray(json.news_results) && json.news_results.length > 0) {
-          const articles = json.news_results
-            .map((item) => {
-              const publisherName =
-                typeof item.source === 'object' && item.source !== null
-                  ? item.source.name || 'News Source'
-                  : (item.source as string) || 'News Source';
-              return {
-                title: item.title || 'Market Signal Headline',
-                publisher: publisherName,
-                url: item.link || `https://news.google.com/search?q=${encodeURIComponent(q)}`,
-                snippet: item.snippet || item.title || 'Market trigger announcement.',
-                publishedAt: normalizePublishedAt(item.date, 1),
-              };
-            })
-            .filter((item) => !isLowYieldArticle(item.title, item.publisher, item.url));
-          if (articles.length > 0) return articles.slice(0, limit);
+        for (const item of json.news_results || []) {
+          const publisherName =
+            typeof item.source === 'object' && item.source !== null
+              ? item.source.name || 'News Source'
+              : (item.source as string) || 'News Source';
+          const title = item.title || 'Market Signal Headline';
+          const url = item.link || '';
+          if (!url || isLowYieldArticle(title, publisherName, url) || isSportsArticle(title, publisherName)) continue;
+          const publishedAt = parsePublishedAtOrNull(item.date);
+          if (!publishedAt || !isRecentPublished(publishedAt)) continue;
+          const key = title.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          collected.push({
+            title,
+            publisher: publisherName,
+            url,
+            snippet: item.snippet || title,
+            publishedAt,
+          });
+          if (collected.length >= limit) return collected;
         }
       } catch (err) {
         console.warn(`SerpAPI query failed for "${q}":`, err);
       }
     }
+
+    if (collected.length > 0) return collected;
+    console.warn(`[SerpAPI] No recent articles for "${query}". Not substituting sample headlines.`);
+    return [];
   }
 
-  // Graceful fallback: return top matching simulated signals from pool
-  return FALLBACK_NEWS_POOL.slice(0, limit);
+  if (options?.allowSampleFallback) {
+    return sampleArticles(limit);
+  }
+
+  console.warn(`[SerpAPI] No live key for "${query}". Returning no articles.`);
+  return [];
 }

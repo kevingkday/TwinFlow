@@ -30,10 +30,12 @@ function fromRelativePhrase(value: string): string | null {
  * roll them back a calendar day. Unusable values, including the epoch, use
  * the fallback age instead of 1969-12-31.
  */
-export function normalizePublishedAt(value: unknown, fallbackHoursAgo = 1): string {
+/** Null when the value is missing, the epoch, or not a real date. Does not invent a timestamp. */
+export function parsePublishedAtOrNull(value: unknown): string | null {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
     const ms = value < 1e12 ? value * 1000 : value;
     if (ms >= EARLIEST_ARTICLE_MS) return new Date(ms).toISOString();
+    return null;
   }
 
   if (typeof value === 'string') {
@@ -52,5 +54,9 @@ export function normalizePublishedAt(value: unknown, fallbackHoursAgo = 1): stri
     }
   }
 
-  return publishedAtFromHoursAgo(fallbackHoursAgo);
+  return null;
+}
+
+export function normalizePublishedAt(value: unknown, fallbackHoursAgo = 1): string {
+  return parsePublishedAtOrNull(value) || publishedAtFromHoursAgo(fallbackHoursAgo);
 }

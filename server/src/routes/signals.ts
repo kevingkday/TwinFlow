@@ -13,7 +13,8 @@ import { findApolloContact } from '../services/apollo';
 import { upsertContact, createNote, createOpportunity, listAgencySubaccounts } from '../services/ghl';
 import { getSessionUser } from './auth';
 import { publicDemoSignals } from '../data/demoSignals';
-import { isLowYieldArticle } from '../services/signalQuality';
+import { isLowYieldArticle, isNonBuyerRole, isSportsArticle, usableCompanyDomain } from '../services/signalQuality';
+import { judgeArticleRelevance } from '../services/relevanceJudge';
 import { APPROVAL_CREDIT_COST, BRANCH_SCOUT_CREDIT_COST, DEV_REPLENISH_CREDITS } from '../services/credits';
 
 export const signalsRouter = new Hono<{ Bindings: Bindings }>();
@@ -282,7 +283,7 @@ signalsRouter.post('/ingest', async (c) => {
     const now = new Date().toISOString();
 
     for (const article of articles) {
-      if (isLowYieldArticle(article.title, article.publisher, article.url)) continue;
+      if (isLowYieldArticle(article.title, article.publisher, article.url) || isSportsArticle(article.title, article.publisher)) continue;
       // Deduplicate by URL
       const existingByUrl = await db.query.signals.findFirst({
         where: and(eq(schema.signals.sourceUrl, article.url), eq(schema.signals.userId, user.id)),
@@ -300,10 +301,35 @@ signalsRouter.post('/ingest', async (c) => {
         article.title,
         crawled.markdown,
         article.publisher,
-        c.env.OPENAI_API_KEY
+        c.env.OPENAI_API_KEY,
+        user.valueProp || user.userMission || undefined,
+        user.userIntent || undefined
       );
 
-      if (!enriched.decisionMaker?.name) continue;
+      const asList = (value?: string | null) => {
+        if (!value) return [];
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      };
+      const judgment = await judgeArticleRelevance(
+        {
+          location: user.targetLocation || undefined,
+          userIntent: user.userIntent || undefined,
+          userMission: user.userMission || undefined,
+          targetIndustries: asList(user.targetIndustries),
+          targetTriggers: asList(user.targetTriggers),
+          valueProp: user.valueProp || undefined,
+          companyDescription: user.companyDescription || undefined,
+        },
+        { title: article.title, publisher: article.publisher, text: `${article.snippet}\n${crawled.markdown}` },
+        c.env.OPENAI_API_KEY
+      );
+      if (!judgment.relevant) continue;
+      if (!enriched.decisionMaker?.name || isNonBuyerRole(enriched.decisionMaker.role || '')) continue;
 
       // Deduplicate by company name if already queued
       const existingByCompany = await db.query.signals.findFirst({
@@ -314,12 +340,15 @@ signalsRouter.post('/ingest', async (c) => {
       }
 
       // 4. Apollo Contact Matching
-      const apolloMatch = await findApolloContact(
-        enriched.decisionMaker.name,
-        enriched.decisionMaker.role,
-        enriched.companyDomain,
-        c.env.APOLLO_API_KEY
-      );
+      const companyDomain = usableCompanyDomain(enriched.companyDomain);
+      const apolloMatch = companyDomain
+        ? await findApolloContact(
+            enriched.decisionMaker.name,
+            enriched.decisionMaker.role,
+            companyDomain,
+            c.env.APOLLO_API_KEY
+          )
+        : { matched: false, status: 'fallback' as const };
 
       // Generate distinct deterministic/unique IDs
       const uniqueSuffix = Math.random().toString(36).substring(2, 8);

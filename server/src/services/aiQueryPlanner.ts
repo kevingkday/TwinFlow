@@ -1,3 +1,5 @@
+import { SPORTS_QUERY_EXCLUSION } from './signalQuality';
+
 /**
  * AI News Query Planner Service (Powered by GPT-4o)
  * Analyzes free-form user mission, intent, and location to synthesize
@@ -78,15 +80,17 @@ export async function planNewsQueryWithAI(
 Your task is to analyze a user's location, commercial intent, and free-form mission description, and generate high-precision Google News queries that uncover actionable business catalysts.
 
 CRITICAL RULES FOR GOOGLE NEWS SEARCH QUERIES:
-1. THE PRODUCT NEEDS A NAMED PERSON, NOT A TREND PIECE:
-   - The buyer will email one human mentioned in the article. Queries must favor headlines that name someone.
-   - High-yield article types: leadership appointment ("appointed", "named", "hires", "joins as"), contract award, groundbreaking, facility expansion, headquarters lease, funding that names a founder or CFO.
-   - Low-yield types to exclude with minus terms: wire roundups, listicles, "top 10", "what to know", weekly recaps, stock movers, aggregator reprints.
-   - Every query must include when:14d so results are from the last two weeks.
-   - Use a short geo anchor + one industry keyword + an OR group. OR groups and when:14d may push the query past 6 words. Do not write a full sentence.
-   - Example primary: Vancouver cybersecurity ("appointed" OR "named" OR "hires") when:14d -roundup -"top 10"
-   - Example project fallback: Calgary construction ("breaks ground" OR "awarded") when:14d -roundup
-   - Example people fallback: Dallas "commercial real estate" (CEO OR founder OR president) when:14d
+1. SEVERAL SHORT QUERIES, NOT ONE STACKED OR:
+   - Do not put OR groups in a query. Stacked ORs return nothing for narrow niches.
+   - Do not put when:14d or any when: operator in the query text. Recency is applied by the search API and a date check in code.
+   - Each query is a city plus ONE quoted trigger phrase, then sports exclusions: -NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster
+   - Use industry-specific phrases, not generic "expansion":
+     "joins as CFO", "appointed chief risk officer", "captive insurance company formed", "signs lease", "raises Series", "breaks ground"
+   - One of the fallback queries should name a trade outlet for the vertical: Insurance Business, Canadian Underwriter, Bisnow, BetaKit, or ConstructConnect.
+   - Example primary: Vancouver "appointed chief risk officer" -NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster
+   - Example fallback: Dallas "signs lease" -NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster
+   - Example outlet fallback: Bisnow Dallas office -NHL -CFL -NFL -NBA -MLB -soccer -hockey -roster
+   - Return 3 additional fallbackQueries, each a different simple phrase.
 
 2. INTENT ALIGNMENT:
    - "sales_client_acquisition": Companies appointing executives, opening sites, winning contracts, or raising money in the seller's industry.
@@ -98,8 +102,9 @@ You must respond with valid JSON adhering to this schema:
 {
   "primaryQuery": "Best 3-6 word Google News query",
   "fallbackQueries": [
-    "Slightly broader alternative query",
-    "Alternative trigger angle query"
+    "Second simple phrase query",
+    "Third simple phrase query",
+    "Trade-outlet query"
   ],
   "geographicFocus": {
     "locationClean": "City, State or Country",
@@ -173,9 +178,17 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
         const content = data.choices?.[0]?.message?.content;
         if (content) {
           const parsed = JSON.parse(content) as QueryPlanResult;
-          if (parsed.primaryQuery) {
+          if (parsed.primaryQuery && !/\bOR\b/.test(parsed.primaryQuery)) {
+            const clean = (value: string) =>
+              `${value.replace(/\bwhen:\d+d\b/gi, ' ').replace(/\s+/g, ' ').trim()} ${SPORTS_QUERY_EXCLUSION}`
+                .replace(/\s+/g, ' ')
+                .trim();
             return {
               ...parsed,
+              primaryQuery: clean(parsed.primaryQuery),
+              fallbackQueries: (parsed.fallbackQueries || [])
+                .filter((item) => item && !/\bOR\b/.test(item))
+                .map(clean),
               modelUsed,
             };
           }
@@ -209,40 +222,43 @@ export function generateAlgorithmicQueryPlan(params: {
 }): QueryPlanResult {
   const { location, userIntent, userMission, targetIndustries, targetTriggers, defaultGl } = params;
 
-  // Extract short city or region anchor
   let geoAnchor = '';
   if (location && !location.toLowerCase().includes('nationwide') && !location.toLowerCase().includes('remote')) {
-    const parts = location.split(',')[0].trim().split(' ');
-    geoAnchor = parts.slice(0, 2).join(' ');
+    geoAnchor = location.split(',')[0].trim().split(' ').slice(0, 2).join(' ');
   }
 
-  // Extract industry anchor (first two meaningful words, not a slash-delimited list)
   let indAnchor = (targetIndustries[0] || 'commercial').replace(/&/g, ' ').split('/')[0].trim();
   indAnchor = indAnchor.split(/\s+/).slice(0, 2).join(' ');
+  const blob = `${indAnchor} ${targetIndustries.join(' ')} ${targetTriggers.join(' ')} ${userMission}`.toLowerCase();
 
-  const personTriggers = '("appointed" OR "hires" OR "joins")';
-  const projectTriggers =
-    userIntent === 'subcontractor_partners'
-      ? '("breaks ground" OR "awarded" OR "contract")'
-      : userIntent === 'investing'
-      ? '("raises" OR "acquisition" OR "appoints")'
-      : '("breaks ground" OR "awarded" OR "expansion" OR "headquarters")';
-  const roleTriggers =
-    userIntent === 'job_seeking'
-      ? '(CEO OR "vice president" OR director OR appointed OR named)'
-      : '(CEO OR founder OR president OR CFO OR appointed OR named)';
-  const exclude = '-roundup -"top 10" -listicle -"what to know"';
-  const recent = 'when:14d';
-
-  const primary = [geoAnchor, indAnchor, personTriggers, recent, exclude].filter(Boolean).join(' ');
-  const fallback1 = [geoAnchor, indAnchor, projectTriggers, recent, '-roundup'].filter(Boolean).join(' ');
-  // The third query drops the 14-day operator so a thin niche still returns
-  // articles. Recency is scored separately instead of hiding every result.
-  const fallback2 = [geoAnchor, `"${indAnchor}"`, roleTriggers].filter(Boolean).join(' ');
+  const q = (phrase: string) => [geoAnchor, phrase, SPORTS_QUERY_EXCLUSION].filter(Boolean).join(' ');
+  const phrases: string[] = [];
+  if (/captive/.test(blob)) phrases.push('"captive insurance company formed"');
+  if (/cyber|msp|managed|ciso/.test(blob)) phrases.push('"appointed" CISO');
+  if (/insurance|risk|cyber|captive/.test(blob)) {
+    phrases.push('"joins as CFO"', '"appointed chief risk officer"', '"Insurance Business"', '"Canadian Underwriter"');
+  }
+  if (/lease|office|industrial|estate|bisnow|broker/.test(blob)) {
+    phrases.push('"signs lease"', 'Bisnow', '"joins as" broker');
+  }
+  if (/software|saas|marketing|betakit/.test(blob)) {
+    phrases.push('"raises Series"', 'BetaKit', '"joins as" CMO');
+  }
+  if (/construct|contractor|builder/.test(blob) || userIntent === 'subcontractor_partners') {
+    phrases.push('"breaks ground"', 'ConstructConnect', '"awarded" contract');
+  }
+  if (phrases.length < 3) {
+    phrases.push(`"${indAnchor}" appointed`, '"raises Series"', '"signs lease"');
+  }
+  const unique = [...new Set(phrases.map((phrase) => q(phrase)))];
+  const primary = unique[0];
+  const fallback1 = unique[1] || q('"joins as CFO"');
+  const fallback2 = unique[2] || q('"raises Series"');
+  const fallback3 = unique[3] || q('"breaks ground"');
 
   return {
     primaryQuery: primary,
-    fallbackQueries: [fallback1, fallback2],
+    fallbackQueries: [fallback1, fallback2, fallback3],
     geographicFocus: {
       locationClean: location || 'Nationwide',
       gl: defaultGl,
