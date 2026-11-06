@@ -153,13 +153,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setTimezone(user.timezone || 'America/Vancouver');
       setCompanyDescription(user.companyDescription || '');
       setWebsite(user.website || '');
-      setTargetLocation(user.targetLocation || 'Dallas-Fort Worth, TX');
+      setTargetLocation(user.targetLocation || '');
       setUserIntent(user.userIntent || 'sales_client_acquisition');
       setUserMission(user.userMission || '');
       setValueProp(user.valueProp || '');
-      setServicesOffered(ensureArray(user.servicesOffered, ['Commercial Roofing', 'Facility Renovation']));
-      setProductsOffered(ensureArray(user.productsOffered, ['TPO Roofing Membranes', 'Commercial Chillers']));
-      setTargetRoles(ensureArray(user.targetRoles, ['CEO', 'VP Operations', 'Procurement Director']));
+      setServicesOffered(ensureArray(user.servicesOffered, []));
+      setProductsOffered(ensureArray(user.productsOffered, []));
+      setTargetRoles(ensureArray(user.targetRoles, ['CEO', 'Owner', 'Managing Partner']));
       if (user.icpQuery) {
         setCalibratedQuery(user.icpQuery);
       }
@@ -291,9 +291,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           setCalibratedQuery(data.queryPlan.primaryQuery);
         }
         const syncMsg = data.crmSyncResult?.message ? ` • ${data.crmSyncResult.message}` : '';
+        const rawQuery = data.queryPlan?.primaryQuery || calibratedQuery;
+        const cleanQuery = rawQuery.split(/\s+/).filter((t: string) => !t.startsWith('-')).join(' ');
         setStatusMessage({
           type: 'success',
-          text: `Profile saved successfully! Market radar recalibrated to: "${data.queryPlan?.primaryQuery || calibratedQuery}"${syncMsg}`,
+          text: `Profile saved successfully! Market radar recalibrated to: "${cleanQuery || rawQuery}"${syncMsg}`,
         });
       } else {
         playSound('error');
@@ -434,12 +436,33 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   queries. Updates here recalibrate your live intelligence deck in real time.
                 </p>
               </div>
-              <div className="flex items-center gap-2 self-start md:self-center">
-                <span className="text-[11px] font-semibold text-slate-500">Active Query:</span>
-                <span className="font-mono text-xs px-3 py-1.5 rounded-lg bg-white border border-blue-200 text-blue-700 font-bold shadow-xs">
-                  "{calibratedQuery}"
-                </span>
-              </div>
+              {(() => {
+                const tokens = (calibratedQuery || '').split(/\s+/).filter(Boolean);
+                const searchKeywords = tokens.filter((t) => !t.startsWith('-')).join(' ');
+                const negativeExclusions = tokens.filter((t) => t.startsWith('-')).join(' ');
+
+                return (
+                  <div className="flex flex-col gap-1.5 self-start md:self-end text-left md:text-right">
+                    <div className="flex items-center gap-2 md:justify-end">
+                      <span className="text-[11px] font-semibold text-slate-500">Target Keywords:</span>
+                      <span className="font-mono text-xs px-3 py-1.5 rounded-lg bg-white border border-blue-200 text-blue-700 font-bold shadow-xs">
+                        "{searchKeywords || calibratedQuery}"
+                      </span>
+                    </div>
+                    {negativeExclusions && (
+                      <div className="flex items-center gap-1.5 md:justify-end text-[10px] text-slate-500">
+                        <span className="text-slate-400">Excluding sports & noise:</span>
+                        <span
+                          className="font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 text-[10px]"
+                          title="Negative keywords (-token) tell Google News to exclude sports trades, rosters, and non-commercial articles"
+                        >
+                          {negativeExclusions}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

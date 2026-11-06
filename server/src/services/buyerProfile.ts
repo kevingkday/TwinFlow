@@ -14,7 +14,7 @@ export interface BuyerProfile {
 function inferServiceArea(blob: string, intent?: string): ServiceArea {
   if (/saas|\bsoftware\b|marketing agency|demand generation/.test(blob)) return 'national';
   if (
-    /lawyer|law firm|insurance broker|accountant|\bcpa\b|contractor|managed it|\bmsp\b|real estate|commercial broker/.test(blob) ||
+    /lawyer|law firm|insurance|brokerage|accountant|\bcpa\b|contractor|managed it|\bmsp\b|real estate|commercial broker/.test(blob) ||
     intent === 'subcontractor_partners'
   ) {
     return 'local';
@@ -56,10 +56,19 @@ export function deriveBuyerProfile(input: QueryPlannerInput): BuyerProfile {
       allowNationalSearch,
     };
   }
-  if (/cyber insurance|ai liability|insurance broker/.test(blob)) {
+  if (/cyber insurance|ai liability/.test(blob)) {
     return {
       buyerIndustries: ['technology', 'software'],
       buyerRoles: ['CEO', 'CFO', 'founder'],
+      buyerCompanySize: 'smb',
+      serviceArea,
+      allowNationalSearch,
+    };
+  }
+  if (/property and casualty|casualty insurance|p&c|commercial insurance|commercial lines|insurance broker|insurance brokerage|insurance services/.test(blob)) {
+    return {
+      buyerIndustries: ['contractors', 'manufacturing', 'logistics', 'commercial real estate'],
+      buyerRoles: ['CFO', 'COO', 'CEO', 'risk manager', 'owner'],
       buyerCompanySize: 'smb',
       serviceArea,
       allowNationalSearch,

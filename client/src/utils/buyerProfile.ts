@@ -47,8 +47,11 @@ export function deriveBuyerProfile(input: BuyerProfileInput): BuyerProfile {
   if (/managed it|\bmsp\b|managed services/.test(blob)) {
     return { buyerIndustries: ['manufacturing', 'professional services', 'local business'], buyerRoles: ['owner', 'operations director'], buyerCompanySize: 'smb', serviceArea };
   }
-  if (/cyber insurance|ai liability|insurance broker/.test(blob)) {
+  if (/cyber insurance|ai liability/.test(blob)) {
     return { buyerIndustries: ['technology', 'software'], buyerRoles: ['CEO', 'CFO', 'founder'], buyerCompanySize: 'smb', serviceArea };
+  }
+  if (/property and casualty|casualty insurance|p&c|commercial insurance|commercial lines|insurance broker|insurance brokerage|insurance services/.test(blob)) {
+    return { buyerIndustries: ['contractors', 'manufacturing', 'logistics', 'commercial real estate'], buyerRoles: ['CFO', 'COO', 'CEO', 'risk manager', 'owner'], buyerCompanySize: 'smb', serviceArea };
   }
   if (/real estate|tenant representation|\blease\b|commercial broker/.test(blob)) {
     return { buyerIndustries: ['law firms', 'professional services', 'corporate occupiers'], buyerRoles: ['managing partner', 'office director'], buyerCompanySize: 'any', serviceArea };
