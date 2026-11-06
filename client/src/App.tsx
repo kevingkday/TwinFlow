@@ -340,11 +340,15 @@ export const App: React.FC = () => {
     });
 
     try {
+      const activeQuery =
+        userProfile?.icpQuery ||
+        campaigns.find((c) => c.id === activeCampaignId)?.icpQuery ||
+        'commercial expansion OR new facility OR contract award';
       const res = await authFetch('/api/signals/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: 'Series A OR expansion OR hired CEO',
+          query: activeQuery,
           limit: 3,
         }),
       });
@@ -353,15 +357,21 @@ export const App: React.FC = () => {
       const data = await res.json();
 
       if (data.success) {
-        setScoutToast({
-          message:
-            data.ingestedCount > 0
-              ? `AI Scout successfully enriched ${data.ingestedCount} new signals!`
-              : 'Signals scanned; all recent items already in queue.',
-          type: 'success',
-        });
-        if (soundEnabled) playSound('streak');
-        triggerConfetti();
+        if (data.ingestedCount > 0) {
+          setScoutToast({
+            message: `AI Scout successfully enriched ${data.ingestedCount} new signals!`,
+            type: 'success',
+          });
+          if (soundEnabled) playSound('streak');
+          triggerConfetti();
+        } else {
+          setScoutToast({
+            message:
+              data.message ||
+              'Scout complete: No new unread articles matching this query. Try resetting the demo batch or tweaking keywords.',
+            type: 'info',
+          });
+        }
         await fetchDeck();
       } else {
         setScoutToast({
@@ -764,17 +774,25 @@ export const App: React.FC = () => {
   }, [history, soundEnabled]);
 
   const handleReset = async () => {
-    await fetchDeck();
-    if (leads.length === 0) {
-      setLeads(INITIAL_LEADS);
-      setHistory([]);
-      setStats((prev) => ({
-        ...prev,
-        approvedCount: 0,
-        passedCount: 0,
-        remainingCount: INITIAL_LEADS.length,
-      }));
+    try {
+      const res = await authFetch('/api/signals/reset', { method: 'POST' });
+      if (res.ok) {
+        setScoutToast({
+          message: 'Reset demo cards! Fresh signals loaded into queue.',
+          type: 'success',
+        });
+        if (soundEnabled) playSound('streak');
+      }
+    } catch {
+      // Local fallback
     }
+    await fetchDeck();
+    setHistory([]);
+    setStats((prev) => ({
+      ...prev,
+      approvedCount: 0,
+      passedCount: 0,
+    }));
   };
 
   const handleUpdateDraft = (leadId: string, subject: string, body: string) => {

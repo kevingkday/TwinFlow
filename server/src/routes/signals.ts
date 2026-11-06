@@ -80,6 +80,72 @@ async function ensureBranchesForSignal(
   return created;
 }
 
+export async function seedStarterSignalsForUser(
+  db: ReturnType<typeof getDb>,
+  userId: string,
+  campaignId?: string | null
+): Promise<number> {
+  const demos = publicDemoSignals().slice(0, 5);
+  const now = new Date().toISOString();
+  let count = 0;
+
+  for (let idx = 0; idx < demos.length; idx++) {
+    const d = demos[idx];
+    const uniqueSuffix = `${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
+    const sigId = `sig_${uniqueSuffix}`;
+    const cntId = `cnt_${uniqueSuffix}`;
+    const drfId = `drf_${uniqueSuffix}`;
+
+    await db.insert(schema.signals).values({
+      id: sigId,
+      userId,
+      campaignId: campaignId || null,
+      parentSignalId: null,
+      title: d.title,
+      sourceUrl: d.sourceUrl,
+      publishedAt: d.publishedAt || now,
+      summaryBullets: JSON.stringify(d.summaryBullets),
+      articleSummary: d.articleSummary || null,
+      companyName: d.companyName,
+      signalType: d.signalType,
+      industryTags: JSON.stringify(d.industryTags || []),
+      status: 'queued',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (d.contact) {
+      await db.insert(schema.contacts).values({
+        id: cntId,
+        signalId: sigId,
+        name: d.contact.name,
+        title: d.contact.title,
+        email: d.contact.email || null,
+        linkedinUrl: d.contact.linkedinUrl || null,
+        avatarUrl: d.contact.avatarUrl || null,
+        ghlContactId: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      if (d.outreachDraft) {
+        await db.insert(schema.outreachDrafts).values({
+          id: drfId,
+          signalId: sigId,
+          contactId: cntId,
+          subject: d.outreachDraft.subject,
+          body: d.outreachDraft.body,
+          status: 'draft',
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+    count++;
+  }
+  return count;
+}
+
 /**
  * GET /api/signals/deck
  * Returns up to 10 unreviewed signals ('queued') with extracted contact and initial draft,
@@ -128,7 +194,7 @@ signalsRouter.get('/deck', async (c) => {
       deckConditions.push(eq(schema.signals.campaignId, targetCampaignId));
     }
 
-    const queuedSignals = await db.query.signals.findMany({
+    let queuedSignals = await db.query.signals.findMany({
       where: and(...deckConditions),
       limit: 10,
       orderBy: [desc(schema.signals.createdAt)],
@@ -141,6 +207,35 @@ signalsRouter.get('/deck', async (c) => {
         outreachDrafts: true,
       },
     });
+
+    const approvedCountRes = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.signals)
+      .where(and(eq(schema.signals.status, 'approved'), eq(schema.signals.userId, user.id)));
+    const approvedCount = Number(approvedCountRes[0]?.count || 0);
+
+    const dismissedCountRes = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.signals)
+      .where(and(eq(schema.signals.status, 'dismissed'), eq(schema.signals.userId, user.id)));
+    const dismissedCount = Number(dismissedCountRes[0]?.count || 0);
+
+    if (queuedSignals.length === 0 && (approvedCount + dismissedCount === 0)) {
+      await seedStarterSignalsForUser(db, user.id, targetCampaignId);
+      queuedSignals = await db.query.signals.findMany({
+        where: and(...deckConditions),
+        limit: 10,
+        orderBy: [desc(schema.signals.createdAt)],
+        with: {
+          contacts: {
+            with: {
+              outreachDrafts: true,
+            },
+          },
+          outreachDrafts: true,
+        },
+      });
+    }
 
     // Format cards for the frontend deck
     const formattedCards = queuedSignals.map((sig) => {
@@ -217,12 +312,6 @@ signalsRouter.get('/deck', async (c) => {
       };
     });
 
-    const approvedCountRes = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.signals)
-      .where(and(eq(schema.signals.status, 'approved'), eq(schema.signals.userId, user.id)));
-    const approvedCount = Number(approvedCountRes[0]?.count || 0);
-
     return c.json({
       success: true,
       count: formattedCards.length,
@@ -246,6 +335,38 @@ signalsRouter.get('/deck', async (c) => {
       500
     );
   }
+});
+
+/**
+ * POST /api/signals/reset
+ * Resets the demo/starter batch for the current operator, loading fresh signals into D1.
+ */
+signalsRouter.post('/reset', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Database binding unavailable' }, 500);
+  }
+  const user = await getSessionUser(c);
+  if (!user) return authenticationRequired(c);
+
+  const db = getDb(c.env.DB);
+  const targetCampaignId = c.req.query('campaignId') || user.activeCampaignId;
+
+  // Clear queued signals for this user to avoid stale duplicates
+  await db
+    .delete(schema.signals)
+    .where(
+      and(
+        eq(schema.signals.userId, user.id),
+        eq(schema.signals.status, 'queued')
+      )
+    );
+
+  const count = await seedStarterSignalsForUser(db, user.id, targetCampaignId);
+
+  return c.json({
+    success: true,
+    message: `Reset demo batch successfully. ${count} signals loaded into queue.`,
+  });
 });
 
 /**
@@ -276,8 +397,10 @@ signalsRouter.post('/ingest', async (c) => {
   try {
     const db = getDb(c.env.DB);
 
-    // 1. SerpAPI News Query
-    const articles = await fetchSerpNews(query, c.env.SERP_API_KEY, limit);
+    // 1. SerpAPI News Query (with sample fallback if live key is not provisioned)
+    const articles = await fetchSerpNews(query, c.env.SERP_API_KEY, limit, 'us', undefined, {
+      allowSampleFallback: !c.env.SERP_API_KEY,
+    });
 
     const ingestedSignals = [];
     const now = new Date().toISOString();
@@ -449,7 +572,10 @@ signalsRouter.post('/ingest', async (c) => {
       success: true,
       ingestedCount: ingestedSignals.length,
       signals: ingestedSignals,
-      message: `Ingested and enriched ${ingestedSignals.length} new signals from "${query}".`,
+      message:
+        ingestedSignals.length > 0
+          ? `Ingested and enriched ${ingestedSignals.length} new signals from "${query}".`
+          : `No new unread articles matched "${query}" right now. Try resetting the demo batch or broadening search criteria.`,
     });
   } catch (error) {
     console.error('Error during signal ingestion pipeline:', error);
