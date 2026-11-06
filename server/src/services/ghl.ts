@@ -460,6 +460,7 @@ export interface GhlCreateSubaccountInput {
   companyName?: string;
   country?: string;
   timezone?: string;
+  snapshotId?: string;
 }
 
 export interface GhlCreateSubaccountResult {
@@ -477,7 +478,8 @@ export interface GhlCreateSubaccountResult {
 export async function createSubaccount(
   input: GhlCreateSubaccountInput,
   agencyApiKey?: string,
-  companyId?: string
+  companyId?: string,
+  snapshotId?: string
 ): Promise<GhlCreateSubaccountResult> {
   const cleanKey = (agencyApiKey || '').trim();
   const cleanCompanyId = (companyId || '').trim();
@@ -485,6 +487,7 @@ export async function createSubaccount(
   const locationName = input.companyName || input.name || 'User Workspace';
   const country = input.country || 'CA';
   const timezone = input.timezone || 'America/Vancouver';
+  const targetSnapshotId = (snapshotId || input.snapshotId || '').trim();
 
   if (cleanKey && !cleanKey.includes('your_') && cleanKey.length > 15) {
     try {
@@ -495,6 +498,9 @@ export async function createSubaccount(
         country,
         timezone,
       };
+      if (targetSnapshotId) {
+        payload.snapshotId = targetSnapshotId;
+      }
 
       const response = await fetch(`${GHL_API_BASE}/locations/`, {
         method: 'POST',

@@ -980,9 +980,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Private Integration Token:</span>
+                      <span className="text-slate-500">Connection Method:</span>
                       <span className="font-mono font-semibold text-slate-800">
-                        {user?.hasCustomGhlKey ? 'Active (pit-••••••••)' : 'Agency Default'}
+                        {user?.ghlAuthMethod === 'oauth'
+                          ? 'OAuth 2.0 (Active)'
+                          : user?.hasCustomGhlKey
+                          ? 'Private Token (Active)'
+                          : user?.isGhlConnected
+                          ? 'Connected'
+                          : 'Not Connected'}
                       </span>
                     </div>
                   </div>
@@ -1061,7 +1067,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       onClick={onOpenCrmSettings}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-all cursor-pointer"
                     >
-                      <span>Configure CRM Tokens & Scopes</span>
+                      <span>Configure HighLevel Integration</span>
                       <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                     </button>
                   </div>

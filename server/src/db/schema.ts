@@ -200,6 +200,43 @@ export const outreachDrafts = sqliteTable('outreach_drafts', {
 });
 
 /**
+ * GoHighLevel OAuth 2.0 Authorization States
+ * Ephemeral cryptographically random state tokens for CSRF protection during OAuth code flow
+ */
+export const ghlOauthStates = sqliteTable('ghl_oauth_states', {
+  state: text('state').primaryKey(),
+  userId: text('user_id').notNull(),
+  creatorId: text('creator_id'),
+  userEmail: text('user_email').notNull(),
+  redirectAfter: text('redirect_after'),
+  expiresAt: integer('expires_at').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+/**
+ * GoHighLevel OAuth 2.0 Connections & Auto-Provisioned Credentials
+ * Stores encrypted access and refresh tokens, scopes, subaccount IDs,
+ * and auto-provisioned HighLevel Sub-Account admin login credentials
+ */
+export const ghlOauthConnections = sqliteTable('ghl_oauth_connections', {
+  userId: text('user_id').primaryKey(),
+  creatorId: text('creator_id'),
+  locationId: text('location_id').notNull(),
+  companyId: text('company_id'),
+  userType: text('user_type').default('Location'),
+  scope: text('scope'),
+  accessTokenEnc: text('access_token_enc'),
+  refreshTokenEnc: text('refresh_token_enc'),
+  expiresAt: integer('expires_at'),
+  connectedByEmail: text('connected_by_email'),
+  subaccountUserId: text('subaccount_user_id'),
+  subaccountLoginEmail: text('subaccount_login_email'),
+  subaccountTempPasswordEnc: text('subaccount_temp_password_enc'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+/**
  * Drizzle ORM Relations
  */
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -283,6 +320,13 @@ export const outreachDraftsRelations = relations(outreachDrafts, ({ one }) => ({
   }),
 }));
 
+export const ghlOauthConnectionsRelations = relations(ghlOauthConnections, ({ one }) => ({
+  user: one(users, {
+    fields: [ghlOauthConnections.userId],
+    references: [users.id],
+  }),
+}));
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
@@ -306,3 +350,9 @@ export type InsertContact = typeof contacts.$inferInsert;
 
 export type OutreachDraft = typeof outreachDrafts.$inferSelect;
 export type InsertOutreachDraft = typeof outreachDrafts.$inferInsert;
+
+export type GhlOauthState = typeof ghlOauthStates.$inferSelect;
+export type InsertGhlOauthState = typeof ghlOauthStates.$inferInsert;
+
+export type GhlOauthConnection = typeof ghlOauthConnections.$inferSelect;
+export type InsertGhlOauthConnection = typeof ghlOauthConnections.$inferInsert;

@@ -15,6 +15,11 @@ export type Bindings = {
   GHL_STAGE_ID?: string;
   GHL_AGENCY_API_KEY?: string;
   GHL_COMPANY_ID?: string;
+  GHL_CLIENT_ID?: string;
+  GHL_CLIENT_SECRET?: string;
+  GHL_SNAPSHOT_ID?: string;
+  GHL_TOKEN_ENCRYPTION_KEY?: string;
+  APP_URL?: string;
   GHL_DEFAULT_COUNTRY?: string;
   GHL_DEFAULT_TIMEZONE?: string;
   GOOGLE_CLIENT_ID?: string;

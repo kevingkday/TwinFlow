@@ -11,6 +11,8 @@ import {
   exchangeGoogleAuthCode,
 } from '../services/auth';
 import { createSubaccount } from '../services/ghl';
+import { createSubaccountAdminUser } from '../services/ghlOAuth';
+import { encryptAtRest } from '../services/crypto';
 
 export const authRouter = new Hono<{ Bindings: Bindings }>();
 
@@ -144,10 +146,24 @@ async function handleSignup(c: Context<{ Bindings: Bindings }>) {
       companyName: organization || `${name}'s Workspace`,
       country: c.env.GHL_DEFAULT_COUNTRY || 'CA',
       timezone: c.env.GHL_DEFAULT_TIMEZONE || 'America/Vancouver',
+      snapshotId: c.env.GHL_SNAPSHOT_ID,
+    },
+    c.env.GHL_AGENCY_API_KEY,
+    c.env.GHL_COMPANY_ID,
+    c.env.GHL_SNAPSHOT_ID
+  );
+
+  // 1b. Auto-create Sub-Account Admin Login User for HighLevel authorization
+  const adminUser = await createSubaccountAdminUser(
+    {
+      locationId: subaccount.id,
+      email,
+      name,
     },
     c.env.GHL_AGENCY_API_KEY,
     c.env.GHL_COMPANY_ID
   );
+  const tempPassEnc = await encryptAtRest(adminUser.password, c.env.GHL_TOKEN_ENCRYPTION_KEY);
 
   // 2. Insert user into D1
   const newUser: typeof schema.users.$inferInsert = {
@@ -168,6 +184,21 @@ async function handleSignup(c: Context<{ Bindings: Bindings }>) {
   };
 
   await db.insert(schema.users).values(newUser);
+
+  // 2b. Store initial Sub-Account credentials in ghl_oauth_connections
+  await db.insert(schema.ghlOauthConnections).values({
+    userId,
+    creatorId: userId,
+    locationId: subaccount.id,
+    companyId: c.env.GHL_COMPANY_ID || null,
+    userType: 'Location',
+    connectedByEmail: email,
+    subaccountUserId: adminUser.userId || null,
+    subaccountLoginEmail: adminUser.email,
+    subaccountTempPasswordEnc: tempPassEnc,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   // 3. Grant starter 500 credits transaction
   await db.insert(schema.creditTransactions).values({
@@ -344,7 +375,7 @@ authRouter.post('/google', async (c) => {
       user = (await db.query.users.findFirst({ where: eq(schema.users.id, user.id) })) || user;
     }
   } else {
-    // New Google user: Auto-create GHL subaccount
+    // New Google user: Auto-create GHL subaccount & Sub-Account Admin User
     const subaccount = await createSubaccount(
       {
         name: `${name}'s Workspace`,
@@ -352,10 +383,23 @@ authRouter.post('/google', async (c) => {
         companyName: `${name}'s Workspace`,
         country: c.env.GHL_DEFAULT_COUNTRY || 'CA',
         timezone: c.env.GHL_DEFAULT_TIMEZONE || 'America/Vancouver',
+        snapshotId: c.env.GHL_SNAPSHOT_ID,
+      },
+      c.env.GHL_AGENCY_API_KEY,
+      c.env.GHL_COMPANY_ID,
+      c.env.GHL_SNAPSHOT_ID
+    );
+
+    const adminUser = await createSubaccountAdminUser(
+      {
+        locationId: subaccount.id,
+        email,
+        name,
       },
       c.env.GHL_AGENCY_API_KEY,
       c.env.GHL_COMPANY_ID
     );
+    const tempPassEnc = await encryptAtRest(adminUser.password, c.env.GHL_TOKEN_ENCRYPTION_KEY);
 
     const userId = `usr_g_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
     const newUser: typeof schema.users.$inferInsert = {
@@ -376,6 +420,21 @@ authRouter.post('/google', async (c) => {
     };
 
     await db.insert(schema.users).values(newUser);
+
+    // Store Sub-Account credentials in ghl_oauth_connections
+    await db.insert(schema.ghlOauthConnections).values({
+      userId,
+      creatorId: userId,
+      locationId: subaccount.id,
+      companyId: c.env.GHL_COMPANY_ID || null,
+      userType: 'Location',
+      connectedByEmail: email,
+      subaccountUserId: adminUser.userId || null,
+      subaccountLoginEmail: adminUser.email,
+      subaccountTempPasswordEnc: tempPassEnc,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     // Initial 500 credit grant
     await db.insert(schema.creditTransactions).values({

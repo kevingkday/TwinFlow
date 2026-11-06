@@ -11,6 +11,7 @@ import {
 } from '../services/llmEnricher';
 import { findApolloContact } from '../services/apollo';
 import { upsertContact, createNote, createOpportunity, listAgencySubaccounts } from '../services/ghl';
+import { resolveUserGhlCredentials } from '../services/ghlOAuth';
 import { getSessionUser } from './auth';
 import { publicDemoSignals } from '../data/demoSignals';
 import { isLowYieldArticle, isNonBuyerRole, isSportsArticle, usableCompanyDomain } from '../services/signalQuality';
@@ -808,14 +809,14 @@ signalsRouter.post('/:id/action', async (c) => {
     const currentUser = sessionUser;
 
     if (action === 'approve') {
-      // 1. Verify user has configured their private CRM integration token
-      const userCrmKey = currentUser.ghlApiKey;
-      if (!userCrmKey || userCrmKey.length <= 10 || userCrmKey.includes('your_')) {
+      // 1. Verify user has active HighLevel connection (OAuth or Private Integration Token)
+      const creds = await resolveUserGhlCredentials(db, currentUser, c.env);
+      if (creds.authMethod === 'mock' || !creds.token || creds.token.length <= 10 || creds.token.includes('your_')) {
         return c.json(
           {
             success: false,
             crmNotConnected: true,
-            error: 'CRM Private Integration Token required. Please configure your private token in CRM Settings before approving leads.',
+            error: 'GoHighLevel CRM connection required. Please connect your HighLevel account or configure your private token in CRM Settings before approving leads.',
             user: {
               id: currentUser.id,
               creditBalance: currentUser.creditBalance,
@@ -856,9 +857,9 @@ signalsRouter.post('/:id/action', async (c) => {
       const email = primaryContact?.email || null;
       const companyName = existingSignal.companyName;
 
-      // 4. Push to CRM (User's subaccount + Private Integration Token)
-      const subaccountId = currentUser.ghlSubaccountId || c.env?.GHL_LOCATION_ID || 'y3KLRBUZzf2t45o7rzp9';
-      const userGhlKey = userCrmKey;
+      // 4. Push to CRM (User's subaccount + OAuth or Private Integration Token)
+      const subaccountId = creds.locationId || currentUser.ghlSubaccountId || c.env?.GHL_LOCATION_ID || 'y3KLRBUZzf2t45o7rzp9';
+      const userGhlKey = creds.token;
 
       const ghlContact = await upsertContact(
         subaccountId,

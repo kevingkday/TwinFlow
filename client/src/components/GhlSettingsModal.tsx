@@ -12,6 +12,11 @@ import {
   Sparkles,
   Check,
   RefreshCw,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Unlink,
+  Lock,
 } from 'lucide-react';
 import type { UserProfile, GhlSubaccountOption } from '../types/lead';
 import { authFetch } from '../utils/api';
@@ -32,7 +37,16 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
   const [subaccountId, setSubaccountId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showTempPassword, setShowTempPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isProvisioning, setIsProvisioning] = useState(false);
+  const [showManualSection, setShowManualSection] = useState(false);
+
+  const [copiedEmail, setCopiedEmail] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
+  const [copiedScope, setCopiedScope] = useState(false);
+
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
@@ -40,7 +54,6 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
 
   const [agencySubaccounts, setAgencySubaccounts] = useState<GhlSubaccountOption[]>([]);
   const [isLoadingSubaccounts, setIsLoadingSubaccounts] = useState(false);
-  const [copiedScope, setCopiedScope] = useState(false);
 
   // Sync state when modal opens or profile changes
   useEffect(() => {
@@ -71,15 +84,99 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleCopyEmail = (emailText: string) => {
+    navigator.clipboard.writeText(emailText);
+    setCopiedEmail(true);
+    setTimeout(() => setCopiedEmail(false), 2000);
+  };
+
+  const handleCopyPassword = (passText: string) => {
+    navigator.clipboard.writeText(passText);
+    setCopiedPassword(true);
+    setTimeout(() => setCopiedPassword(false), 2000);
+  };
+
   const handleCopyScopes = () => {
     navigator.clipboard.writeText(
-      'contacts.readonly contacts.write opportunities.readonly opportunities.write locations.readonly locations.write custom-values.readonly custom-values.write tags.readonly tags.write'
+      'chat-widget.readonly chat-widget.write contacts.readonly contacts.write conversations.readonly conversations.write conversations/message.readonly conversations/message.write locations.readonly'
     );
     setCopiedScope(true);
     setTimeout(() => setCopiedScope(false), 2000);
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleConnectOAuth = () => {
+    window.location.href = '/api/oauth/ghl/start';
+  };
+
+  const handleDisconnect = async () => {
+    if (!confirm('Are you sure you want to disconnect your GoHighLevel integration?')) return;
+    setIsDisconnecting(true);
+    setStatusMessage(null);
+    try {
+      const res = await authFetch('/api/oauth/ghl/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clearPit: false }),
+      });
+      const data = (await res.json()) as { success: boolean; message?: string; error?: string };
+      if (res.ok && data.success) {
+        setStatusMessage({ type: 'info', text: data.message || 'HighLevel disconnected.' });
+        if (userProfile) {
+          onProfileUpdated({
+            ...userProfile,
+            isGhlConnected: false,
+            ghlAuthMethod: 'none',
+          });
+        }
+      } else {
+        setStatusMessage({ type: 'error', text: data.error || 'Failed to disconnect.' });
+      }
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: String(err) });
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  const handleProvisionSubaccount = async () => {
+    setIsProvisioning(true);
+    setStatusMessage(null);
+    try {
+      const res = await authFetch('/api/oauth/ghl/provision-subaccount', {
+        method: 'POST',
+      });
+      const data = (await res.json()) as {
+        success: boolean;
+        locationId?: string;
+        subaccountLoginEmail?: string;
+        subaccountTempPassword?: string;
+        message?: string;
+        error?: string;
+      };
+      if (res.ok && data.success) {
+        setStatusMessage({
+          type: 'success',
+          text: data.message || 'Sub-Account & login credentials provisioned successfully!',
+        });
+        if (userProfile) {
+          onProfileUpdated({
+            ...userProfile,
+            ghlSubaccountId: data.locationId || userProfile.ghlSubaccountId,
+            subaccountLoginEmail: data.subaccountLoginEmail || userProfile.subaccountLoginEmail,
+            subaccountTempPassword: data.subaccountTempPassword || userProfile.subaccountTempPassword,
+          });
+        }
+      } else {
+        setStatusMessage({ type: 'error', text: data.error || 'Failed to provision subaccount credentials.' });
+      }
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: String(err) });
+    } finally {
+      setIsProvisioning(false);
+    }
+  };
+
+  const handleManualSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     setStatusMessage(null);
@@ -129,7 +226,10 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
     }
   };
 
-  const isConnected = userProfile?.isGhlConnected;
+  const isConnected = Boolean(userProfile?.isGhlConnected);
+  const isOAuthConnected = isConnected && userProfile?.ghlAuthMethod === 'oauth';
+  const loginEmail = userProfile?.subaccountLoginEmail || userProfile?.email || '';
+  const tempPassword = userProfile?.subaccountTempPassword || '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
@@ -152,8 +252,10 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
             <Building2 className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-xl font-bold font-display text-slate-900">CRM Integration Setup</h2>
-            <p className="text-xs text-slate-500">Connect your private integration token to auto-push approved leads and email drafts</p>
+            <h2 className="text-xl font-bold font-display text-slate-900">HighLevel CRM Integration</h2>
+            <p className="text-xs text-slate-500">
+              Authorize TwinFlow with 1 click or use your auto-provisioned Sub-Account
+            </p>
           </div>
         </div>
 
@@ -173,14 +275,18 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
             )}
             <div>
               <p className="text-xs font-semibold">
-                {isConnected ? 'CRM Workspace Connected' : 'CRM Private Key Required to Push Leads'}
+                {isOAuthConnected
+                  ? 'HighLevel OAuth 2.0 Connected'
+                  : isConnected
+                  ? 'CRM Private Token Connected'
+                  : 'HighLevel Connection Required to Push Leads'}
               </p>
               <p className="text-[11px] text-slate-600">
                 {isConnected
-                  ? `Active Workspace: ${userProfile?.ghlSubaccountId || 'Default'} ${
+                  ? `Active Location: ${userProfile?.ghlSubaccountId || 'Default'} ${
                       userProfile?.ghlApiKeyMasked ? `• Key: ${userProfile.ghlApiKeyMasked}` : ''
                     }`
-                  : 'Add your Sub-Account Private Integration Token below to enable pushing contacts.'}
+                  : 'Connect your HighLevel account to auto-push approved leads and executive pitch drafts.'}
               </p>
             </div>
           </div>
@@ -191,186 +297,323 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
                 : 'bg-amber-100 text-amber-800 border border-amber-300'
             }`}
           >
-            {isConnected ? 'CONNECTED' : 'ACTION REQUIRED'}
+            {isOAuthConnected ? 'OAUTH ACTIVE' : isConnected ? 'TOKEN ACTIVE' : 'ACTION REQUIRED'}
           </span>
         </div>
 
-        {/* Setup Instructions Box */}
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 mb-5">
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-blue-600" />
-              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                How to get your Sub-Account Token
-              </span>
+        {/* Primary 1-Click OAuth Action Card */}
+        <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-50/70 via-indigo-50/40 to-slate-50 border border-blue-200/80 mb-5 shadow-xs">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-blue-600" />
+                <span>1-Click HighLevel Authorization</span>
+              </h3>
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                Connect via HighLevel's Marketplace OAuth flow. Authorizes contact syncing, conversations, and location access securely without manual keys.
+              </p>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mt-4">
             <button
               type="button"
-              onClick={handleCopyScopes}
-              className="flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 transition-colors cursor-pointer"
-              title="Copy required permission scopes"
+              onClick={handleConnectOAuth}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs tracking-wide shadow-xs transition-all cursor-pointer"
             >
-              {copiedScope ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedScope ? 'Scopes Copied!' : 'Copy Scopes'}</span>
+              <ExternalLink className="w-4 h-4" />
+              <span>{isOAuthConnected ? 'Reconnect / Switch Location' : 'Connect HighLevel (OAuth)'}</span>
             </button>
-          </div>
-          <ol className="text-xs text-slate-600 space-y-1.5 list-decimal list-inside leading-relaxed">
-            <li>
-              Log into your CRM and navigate to your assigned sub-account / workspace.
-            </li>
-            <li>
-              Go to <span className="font-semibold text-slate-900">Settings</span> →{' '}
-              <span className="font-semibold text-slate-900">Developers</span> (or <span className="font-semibold text-slate-900">Private Integrations</span>).
-            </li>
-            <li>
-              Click <span className="text-blue-600 font-semibold">Create Private Integration Token</span> (e.g. "TwinFlow Sync").
-            </li>
-            <li>
-              Grant scopes: <code className="text-slate-800 font-mono text-[11px] bg-slate-200 px-1 py-0.5 rounded">contacts (read/write)</code>,{' '}
-              <code className="text-slate-800 font-mono text-[11px] bg-slate-200 px-1 py-0.5 rounded">opportunities (read/write)</code>, and{' '}
-              <code className="text-slate-800 font-mono text-[11px] bg-slate-200 px-1 py-0.5 rounded">custom-values (read/write)</code>.
-              <span className="block mt-1 text-[11px] text-slate-500">
-                <strong>Tip for Business Profile Settings:</strong> To allow TwinFlow to update the core Business Profile page (/settings/company) directly via API, generate your token at the <strong>Agency level</strong> (Agency Settings → Private Integrations) with <code className="text-blue-700 font-mono">locations.write</code> enabled.
-              </span>
-            </li>
-            <li>Copy your Sub-Account Location ID and the generated token (<code className="text-blue-600 font-mono">pit-...</code>) and paste them below.</li>
-          </ol>
-        </div>
 
-        {/* Configuration Form */}
-        <form onSubmit={handleSave} className="space-y-4">
-          {/* Subaccount Location ID */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="ghl-location-id" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-slate-500" />
-                <span>Sub-Account Location ID</span>
-              </label>
-              {isLoadingSubaccounts ? (
-                <span className="text-[11px] text-slate-500 animate-pulse">Loading agency accounts...</span>
-              ) : agencySubaccounts.length > 0 ? (
-                <span className="text-[11px] text-slate-500">Quick-pick from your Agency:</span>
-              ) : null}
-            </div>
-
-            {/* Quick Pick buttons from user's live agency subaccounts */}
-            {agencySubaccounts.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {agencySubaccounts.slice(0, 5).map((loc) => (
-                  <button
-                    key={loc.id}
-                    type="button"
-                    onClick={() => setSubaccountId(loc.id)}
-                    className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all ${
-                      subaccountId === loc.id
-                        ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-xs'
-                        : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {loc.name}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <input
-              id="ghl-location-id"
-              type="text"
-              value={subaccountId}
-              onChange={(e) => setSubaccountId(e.target.value)}
-              placeholder="e.g. y3KLRBUZzf2t45o7rzp9"
-              required
-              className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-xs transition-all"
-            />
-            <p className="text-[11px] text-slate-500 mt-1">
-              Found in your CRM under <span className="text-slate-700 font-medium">Settings → Business Profile → General Info</span>.
-            </p>
-          </div>
-
-          {/* Subaccount Private Integration Token */}
-          <div>
-            <label htmlFor="ghl-api-key" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5 mb-1.5">
-              <KeyRound className="w-3.5 h-3.5 text-slate-500" />
-              <span>Sub-Account Private Integration Token</span>
-              {userProfile?.hasCustomGhlKey && (
-                <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-medium">
-                  Active
-                </span>
-              )}
-            </label>
-            <div className="relative">
-              <input
-                id="ghl-api-key"
-                type={showApiKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={
-                  userProfile?.ghlApiKeyMasked
-                    ? `Saved: ${userProfile.ghlApiKeyMasked} (enter new to update)`
-                    : 'pit-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
-                }
-                className="w-full pl-3.5 pr-10 py-2.5 rounded-xl bg-white border border-slate-300 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-xs transition-all"
-              />
+            {isOAuthConnected && (
               <button
                 type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                title={showApiKey ? 'Hide Token' : 'Show Token'}
+                onClick={handleDisconnect}
+                disabled={isDisconnecting}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white hover:bg-rose-50 border border-slate-300 hover:border-rose-300 text-slate-700 hover:text-rose-700 font-semibold text-xs transition-all cursor-pointer disabled:opacity-50"
               >
-                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {isDisconnecting ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Unlink className="w-3.5 h-3.5" />
+                )}
+                <span>Disconnect</span>
               </button>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-1">
-              Must be created inside this specific Sub-Account with contact permissions.
-            </p>
+            )}
           </div>
+        </div>
 
-          {/* Feedback Status */}
-          {statusMessage && (
-            <div
-              className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
-                statusMessage.type === 'success'
-                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
-                  : statusMessage.type === 'error'
-                  ? 'bg-rose-50 border border-rose-200 text-rose-800'
-                  : 'bg-blue-50 border border-blue-200 text-blue-800'
-              }`}
-            >
-              {statusMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
-              {statusMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
-              {statusMessage.type === 'info' && <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />}
-              <span>{statusMessage.text}</span>
+        {/* Auto-Provisioned Sub-Account Login Credentials */}
+        {(loginEmail || tempPassword) && (
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 mb-5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-slate-700" />
+                <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Sub-Account Login Credentials
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full font-medium">
+                Auto-Provisioned
+              </span>
             </div>
-          )}
+            <p className="text-xs text-slate-600 mb-3 leading-relaxed">
+              Use these credentials if HighLevel prompts you to sign in when authorizing your sub-account:
+            </p>
 
-          {/* Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Login Email */}
+              <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                  <span>Login Email</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyEmail(loginEmail)}
+                    className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
+                  >
+                    {copiedEmail ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedEmail ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+                <div className="text-xs font-mono font-medium text-slate-900 truncate" title={loginEmail}>
+                  {loginEmail}
+                </div>
+              </div>
+
+              {/* Temp Password */}
+              <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                  <span>Initial Password</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowTempPassword(!showTempPassword)}
+                      className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title={showTempPassword ? 'Hide' : 'Show'}
+                    >
+                      {showTempPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    </button>
+                    {tempPassword && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyPassword(tempPassword)}
+                        className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
+                      >
+                        {copiedPassword ? (
+                          <Check className="w-3 h-3 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                        <span>{copiedPassword ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="text-xs font-mono font-medium text-slate-900 truncate">
+                  {tempPassword
+                    ? showTempPassword
+                      ? tempPassword
+                      : '••••••••••••••••'
+                    : 'Configured in HighLevel'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!tempPassword && !loginEmail && (
+          <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200 mb-5">
+            <div>
+              <p className="text-xs font-semibold text-slate-800">Need a dedicated Sub-Account & login?</p>
+              <p className="text-[11px] text-slate-500">
+                Auto-generate a HighLevel workspace and admin credentials in 1 click.
+              </p>
+            </div>
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition-colors"
+              onClick={handleProvisionSubaccount}
+              disabled={isProvisioning}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold text-xs transition-all cursor-pointer disabled:opacity-50"
             >
-              Close
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving || !subaccountId.trim()}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs tracking-wide shadow-xs transition-all disabled:opacity-50"
-            >
-              {isSaving ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Verifying & Saving...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5 text-blue-200" />
-                  <span>Save & Test Connection</span>
-                </>
-              )}
+              {isProvisioning && <RefreshCw className="w-3 h-3 animate-spin" />}
+              <span>{isProvisioning ? 'Provisioning...' : 'Provision Sub-Account'}</span>
             </button>
           </div>
-        </form>
+        )}
+
+        {/* Feedback Status */}
+        {statusMessage && (
+          <div
+            className={`p-3 rounded-xl text-xs flex items-center gap-2 mb-5 ${
+              statusMessage.type === 'success'
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                : statusMessage.type === 'error'
+                ? 'bg-rose-50 border border-rose-200 text-rose-800'
+                : 'bg-blue-50 border border-blue-200 text-blue-800'
+            }`}
+          >
+            {statusMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
+            {statusMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
+            {statusMessage.type === 'info' && <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />}
+            <span>{statusMessage.text}</span>
+          </div>
+        )}
+
+        {/* Collapsible Manual Private Integration Token Fallback */}
+        <div className="border border-slate-200 rounded-xl overflow-hidden mb-5">
+          <button
+            type="button"
+            onClick={() => setShowManualSection(!showManualSection)}
+            className="w-full flex items-center justify-between p-3.5 bg-slate-50 hover:bg-slate-100/80 transition-colors cursor-pointer text-left"
+          >
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-slate-600" />
+              <span className="text-xs font-semibold text-slate-800">
+                Advanced: Manual Private Integration Token (Fallback)
+              </span>
+            </div>
+            {showManualSection ? (
+              <ChevronUp className="w-4 h-4 text-slate-500" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-500" />
+            )}
+          </button>
+
+          {showManualSection && (
+            <div className="p-4 bg-white border-t border-slate-200 space-y-4">
+              {/* Setup Instructions Box */}
+              <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800">Manual Token Instructions</span>
+                  <button
+                    type="button"
+                    onClick={handleCopyScopes}
+                    className="flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 transition-colors cursor-pointer"
+                  >
+                    {copiedScope ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedScope ? 'Scopes Copied!' : 'Copy Scopes'}</span>
+                  </button>
+                </div>
+                <p>
+                  In your Sub-Account, go to <strong>Settings → Private Integrations</strong> and create a token with contacts and conversation scopes.
+                </p>
+              </div>
+
+              {/* Manual Form */}
+              <form onSubmit={handleManualSave} className="space-y-4">
+                {/* Subaccount Location ID */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="ghl-location-id" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Sub-Account Location ID</span>
+                    </label>
+                    {isLoadingSubaccounts ? (
+                      <span className="text-[11px] text-slate-500 animate-pulse">Loading accounts...</span>
+                    ) : agencySubaccounts.length > 0 ? (
+                      <span className="text-[11px] text-slate-500">Pick from Agency:</span>
+                    ) : null}
+                  </div>
+
+                  {agencySubaccounts.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {agencySubaccounts.slice(0, 5).map((loc) => (
+                        <button
+                          key={loc.id}
+                          type="button"
+                          onClick={() => setSubaccountId(loc.id)}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all ${
+                            subaccountId === loc.id
+                              ? 'bg-blue-600 text-white border-blue-600 font-semibold shadow-xs'
+                              : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                          }`}
+                        >
+                          {loc.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <input
+                    id="ghl-location-id"
+                    type="text"
+                    value={subaccountId}
+                    onChange={(e) => setSubaccountId(e.target.value)}
+                    placeholder="e.g. y3KLRBUZzf2t45o7rzp9"
+                    required
+                    className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-xs transition-all"
+                  />
+                </div>
+
+                {/* Subaccount Private Integration Token */}
+                <div>
+                  <label htmlFor="ghl-api-key" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5 mb-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Private Integration Token</span>
+                    {userProfile?.hasCustomGhlKey && (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-medium">
+                        Active PIT
+                      </span>
+                    )}
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="ghl-api-key"
+                      type={showApiKey ? 'text' : 'password'}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder={
+                        userProfile?.ghlApiKeyMasked
+                          ? `Saved: ${userProfile.ghlApiKeyMasked} (enter new to update)`
+                          : 'pit-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+                      }
+                      className="w-full pl-3.5 pr-10 py-2 rounded-xl bg-white border border-slate-300 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-xs transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                      title={showApiKey ? 'Hide Token' : 'Show Token'}
+                    >
+                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    disabled={isSaving || !subaccountId.trim()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs tracking-wide shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSaving ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-blue-200" />
+                        <span>Save & Test Token</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

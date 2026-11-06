@@ -3,6 +3,7 @@ import type { Bindings } from '../db';
 import { getDb, schema } from '../db';
 import { getSessionUser } from './auth';
 import { getSocialAccounts, publishSocialPost } from '../services/ghl';
+import { resolveUserGhlCredentials } from '../services/ghlOAuth';
 
 export const socialRouter = new Hono<{ Bindings: Bindings }>();
 
@@ -13,8 +14,10 @@ socialRouter.get('/accounts', async (c) => {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
   }
 
-  const subaccountId = user.ghlSubaccountId || c.env.GHL_LOCATION_ID || 'default_subaccount';
-  const apiKey = user.ghlApiKey || c.env.GHL_API_KEY || '';
+  const db = getDb(c.env.DB);
+  const creds = await resolveUserGhlCredentials(db, user, c.env);
+  const subaccountId = creds.locationId || user.ghlSubaccountId || c.env.GHL_LOCATION_ID || 'default_subaccount';
+  const apiKey = creds.token || user.ghlApiKey || c.env.GHL_API_KEY || '';
 
   const result = await getSocialAccounts(subaccountId, apiKey);
 
@@ -23,7 +26,7 @@ socialRouter.get('/accounts', async (c) => {
     accounts: result.accounts,
     mock: result.mock,
     subaccountId,
-    isCrmConnected: Boolean(user.ghlApiKey && user.ghlApiKey.length > 10),
+    isCrmConnected: creds.authMethod === 'oauth' || creds.authMethod === 'pit',
   });
 });
 
@@ -61,8 +64,10 @@ socialRouter.post('/publish', async (c) => {
     return c.json({ success: false, error: 'Please select at least one social media channel to publish to.' }, 400);
   }
 
-  const subaccountId = user.ghlSubaccountId || c.env.GHL_LOCATION_ID || 'default_subaccount';
-  const apiKey = user.ghlApiKey || c.env.GHL_API_KEY || '';
+  const db = getDb(c.env.DB);
+  const creds = await resolveUserGhlCredentials(db, user, c.env);
+  const subaccountId = creds.locationId || user.ghlSubaccountId || c.env.GHL_LOCATION_ID || 'default_subaccount';
+  const apiKey = creds.token || user.ghlApiKey || c.env.GHL_API_KEY || '';
 
   // 1. Post to GoHighLevel Social Planner API
   const ghlResult = await publishSocialPost(

@@ -1,18 +1,29 @@
 import { Hono } from 'hono';
-import type { Bindings } from '../db';
+import type { Bindings, Database } from '../db';
 import { getDb, schema } from '../db';
 import { eq } from 'drizzle-orm';
 import { verifyGhlCredentials, syncGhlBusinessProfileAndValues } from '../services/ghl';
 import { getSessionUser } from './auth';
 import { planNewsQueryWithAI } from '../services/aiQueryPlanner';
+import { resolveUserGhlCredentials } from '../services/ghlOAuth';
 
 export const userRouter = new Hono<{ Bindings: Bindings }>();
 
-export function formatUserProfile(user: typeof schema.users.$inferSelect, env?: Bindings) {
+export function formatUserProfile(
+  user: typeof schema.users.$inferSelect,
+  env?: Bindings,
+  oauthDetails?: {
+    isOauthConnected?: boolean;
+    authMethod?: 'oauth' | 'pit' | 'none';
+    subaccountLoginEmail?: string | null;
+    subaccountTempPassword?: string | null;
+  }
+) {
   const hasCustomGhlKey = Boolean(
     user.ghlApiKey && user.ghlApiKey.length > 10 && !user.ghlApiKey.includes('your_')
   );
-  const isGhlConnected = hasCustomGhlKey;
+  const isGhlConnected = Boolean(oauthDetails?.isOauthConnected || hasCustomGhlKey);
+  const authMethod = oauthDetails?.authMethod || (hasCustomGhlKey ? 'pit' : 'none');
   const isAdmin = user.role === 'admin' || user.email.toLowerCase() === 'kevingkday@gmail.com';
 
   const parseJsonArray = (val: string | null | undefined): string[] => {
@@ -36,6 +47,9 @@ export function formatUserProfile(user: typeof schema.users.$inferSelect, env?: 
     ghlSubaccountId: user.ghlSubaccountId || env?.GHL_LOCATION_ID || 'y3KLRBUZzf2t45o7rzp9',
     isGhlConnected,
     hasCustomGhlKey,
+    ghlAuthMethod: authMethod,
+    subaccountLoginEmail: oauthDetails?.subaccountLoginEmail || null,
+    subaccountTempPassword: oauthDetails?.subaccountTempPassword || null,
     ghlApiKeyMasked: user.ghlApiKey
       ? `pit-••••••••${user.ghlApiKey.slice(-4)}`
       : null,
@@ -67,6 +81,36 @@ export function formatUserProfile(user: typeof schema.users.$inferSelect, env?: 
   };
 }
 
+export async function getUserProfileData(db: Database, user: typeof schema.users.$inferSelect, env?: Bindings) {
+  let isOauthConnected = false;
+  let authMethod: 'oauth' | 'pit' | 'none' = 'none';
+  let subaccountLoginEmail: string | null = null;
+  let subaccountTempPassword: string | null = null;
+
+  if (env) {
+    try {
+      const creds = await resolveUserGhlCredentials(db, user, env);
+      if (creds.authMethod === 'oauth') {
+        isOauthConnected = true;
+        authMethod = 'oauth';
+      } else if (creds.authMethod === 'pit' && user.ghlApiKey && user.ghlApiKey.length > 10) {
+        authMethod = 'pit';
+      }
+      subaccountLoginEmail = creds.subaccountLoginEmail || null;
+      subaccountTempPassword = creds.subaccountTempPassword || null;
+    } catch (err) {
+      console.warn('[User Profile] Error resolving GHL credentials:', err);
+    }
+  }
+
+  return formatUserProfile(user, env, {
+    isOauthConnected,
+    authMethod,
+    subaccountLoginEmail,
+    subaccountTempPassword,
+  });
+}
+
 // GET /api/user/profile - Return current operator profile & GHL connection status
 userRouter.get('/profile', async (c) => {
   if (!c.env?.DB) {
@@ -80,7 +124,7 @@ userRouter.get('/profile', async (c) => {
 
   return c.json({
     success: true,
-    user: formatUserProfile(user, c.env),
+    user: await getUserProfileData(db, user, c.env),
   });
 });
 
@@ -230,8 +274,9 @@ userRouter.patch('/profile', async (c) => {
 
   // Two-way synchronization with CRM (Business Profile & Custom Values)
   let crmSyncResult = null;
-  const subaccountId = user.ghlSubaccountId || c.env.GHL_LOCATION_ID;
-  const apiKey = user.ghlApiKey || c.env.GHL_API_KEY;
+  const creds = await resolveUserGhlCredentials(db, user, c.env);
+  const subaccountId = creds.locationId || user.ghlSubaccountId || c.env.GHL_LOCATION_ID;
+  const apiKey = creds.token || user.ghlApiKey || c.env.GHL_API_KEY;
 
   if (body.syncToCrm && subaccountId) {
     try {
@@ -274,7 +319,7 @@ userRouter.patch('/profile', async (c) => {
 
   return c.json({
     success: true,
-    user: formatUserProfile(updatedUser, c.env),
+    user: await getUserProfileData(db, updatedUser, c.env),
     queryPlan,
     crmSyncResult,
     message: crmSyncResult
@@ -299,8 +344,10 @@ userRouter.post('/sync-crm', async (c) => {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
   }
 
-  const subaccountId = user.ghlSubaccountId || c.env.GHL_LOCATION_ID;
-  const apiKey = user.ghlApiKey || c.env.GHL_API_KEY;
+  const db = getDb(c.env.DB);
+  const creds = await resolveUserGhlCredentials(db, user, c.env);
+  const subaccountId = creds.locationId || user.ghlSubaccountId || c.env.GHL_LOCATION_ID;
+  const apiKey = creds.token || user.ghlApiKey || c.env.GHL_API_KEY;
 
   if (!subaccountId) {
     return c.json({ success: false, error: 'Please connect a CRM subaccount in settings first.' }, 400);
@@ -341,7 +388,7 @@ userRouter.post('/sync-crm', async (c) => {
   return c.json({
     success: true,
     result,
-    user: formatUserProfile(user, c.env),
+    user: await getUserProfileData(db, user, c.env),
   });
 });
 
@@ -403,7 +450,7 @@ userRouter.post('/ghl-config', async (c) => {
   return c.json({
     success: true,
     verification: verificationResult,
-    user: formatUserProfile(updatedUser, c.env),
+    user: await getUserProfileData(db, updatedUser, c.env),
     message: verificationResult.valid
       ? 'CRM Sub-Account settings saved and verified successfully!'
       : `Saved, but verification warning: ${verificationResult.message}`,

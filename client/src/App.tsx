@@ -153,9 +153,10 @@ export const App: React.FC = () => {
 
   const [currentView, setCurrentView] = useState<'landing' | 'deck' | 'contacts' | 'profile'>(() => {
     if (typeof window !== 'undefined') {
-      if (window.location.hash === '#deck') return 'deck';
-      if (window.location.hash === '#contacts') return 'contacts';
-      if (window.location.hash === '#profile') return 'profile';
+      const hash = window.location.hash.split('?')[0];
+      if (hash === '#deck') return 'deck';
+      if (hash === '#contacts') return 'contacts';
+      if (hash === '#profile') return 'profile';
     }
     return 'landing';
   });
@@ -183,13 +184,14 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     const handleHash = () => {
-      if (window.location.hash === '#deck') {
+      const hash = window.location.hash.split('?')[0];
+      if (hash === '#deck') {
         setCurrentView('deck');
-      } else if (window.location.hash === '#contacts') {
+      } else if (hash === '#contacts') {
         setCurrentView('contacts');
-      } else if (window.location.hash === '#profile') {
+      } else if (hash === '#profile') {
         setCurrentView('profile');
-      } else if (!window.location.hash || window.location.hash === '#home') {
+      } else if (!hash || hash === '#home') {
         setCurrentView('landing');
       }
     };
@@ -234,6 +236,31 @@ export const App: React.FC = () => {
       // Local fallback
     }
   }, [sessionToken]);
+
+  // Handle HighLevel OAuth redirect callback query params (?ghl_oauth=connected or ?ghl_oauth=error)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const hashPart = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '';
+    const hashParams = new URLSearchParams(hashPart);
+    const ghlStatus = url.searchParams.get('ghl_oauth') || hashParams.get('ghl_oauth');
+    const ghlMsg = url.searchParams.get('message') || hashParams.get('message');
+
+    if (ghlStatus === 'connected') {
+      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+      fetchUserProfile();
+      setGhlSettingsOpen(true);
+      setCurrentView('profile');
+      const cleanUrl = window.location.origin + window.location.pathname + '#profile';
+      window.history.replaceState({}, document.title, cleanUrl);
+    } else if (ghlStatus === 'error') {
+      alert(`HighLevel OAuth Error: ${ghlMsg || 'Failed to complete authorization'}`);
+      setGhlSettingsOpen(true);
+      setCurrentView('profile');
+      const cleanUrl = window.location.origin + window.location.pathname + '#profile';
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+  }, [fetchUserProfile]);
 
   // Fetch user campaigns from GET /api/campaigns
   const fetchCampaigns = useCallback(async (customToken?: string) => {

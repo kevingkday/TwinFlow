@@ -188,6 +188,9 @@ export interface UserProfile {
   ghlSubaccountId?: string | null;
   isGhlConnected: boolean;
   hasCustomGhlKey: boolean;
+  ghlAuthMethod?: 'oauth' | 'pit' | 'none';
+  subaccountLoginEmail?: string | null;
+  subaccountTempPassword?: string | null;
   ghlApiKeyMasked?: string | null;
   creditBalance: number;
   streakCount: number;

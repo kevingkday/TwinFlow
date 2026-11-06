@@ -13,6 +13,7 @@ import { campaignsRouter } from './routes/campaigns';
 import { socialRouter } from './routes/social';
 import { contactsRouter } from './routes/contacts';
 import { stripeRouter } from './routes/stripe';
+import { ghlOAuthRouter } from './routes/ghlOAuth';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -34,6 +35,9 @@ app.route('/api/health', healthRouter);
 
 // Authentication endpoints (/api/auth/signup, /api/auth/login, /api/auth/google, /api/auth/me, /api/auth/logout)
 app.route('/api/auth', authRouter);
+
+// GoHighLevel OAuth 2.0 & Auto-Provisioning endpoints (/api/oauth/ghl/start, /callback, /status, /disconnect)
+app.route('/api/oauth/ghl', ghlOAuthRouter);
 
 // Campaigns management endpoints (/api/campaigns)
 app.route('/api/campaigns', campaignsRouter);

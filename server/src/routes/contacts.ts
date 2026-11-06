@@ -4,6 +4,7 @@ import { getDb, schema } from '../db';
 import { eq, desc, and } from 'drizzle-orm';
 import { getSessionUser } from './auth';
 import { upsertContact, createNote } from '../services/ghl';
+import { resolveUserGhlCredentials } from '../services/ghlOAuth';
 
 export const contactsRouter = new Hono<{ Bindings: Bindings }>();
 
@@ -232,13 +233,13 @@ contactsRouter.post('/:id/sync-crm', async (c) => {
     const currentUser = await getSessionUser(c);
     if (!currentUser) return authenticationRequired(c);
 
-    const userCrmKey = currentUser.ghlApiKey;
-    if (!userCrmKey || userCrmKey.length <= 10 || userCrmKey.includes('your_')) {
+    const creds = await resolveUserGhlCredentials(db, currentUser, c.env);
+    if (creds.authMethod === 'mock' || !creds.token || creds.token.length <= 10 || creds.token.includes('your_')) {
       return c.json(
         {
           success: false,
           crmNotConnected: true,
-          error: 'CRM Private Integration Token required. Please configure your token in CRM Settings.',
+          error: 'GoHighLevel CRM connection required. Please connect your HighLevel account or configure your token in CRM Settings.',
         },
         400
       );
@@ -263,7 +264,7 @@ contactsRouter.post('/:id/sync-crm', async (c) => {
     const email = contact.email || null;
     const companyName = sig?.companyName || 'Target Organization';
 
-    const subaccountId = currentUser.ghlSubaccountId || c.env?.GHL_LOCATION_ID || 'y3KLRBUZzf2t45o7rzp9';
+    const subaccountId = creds.locationId || currentUser.ghlSubaccountId || c.env?.GHL_LOCATION_ID || 'y3KLRBUZzf2t45o7rzp9';
 
     const ghlContact = await upsertContact(
       subaccountId,
@@ -276,7 +277,7 @@ contactsRouter.post('/:id/sync-crm', async (c) => {
         signalTitle: sig?.title || '',
         tags: ['twinflow-signal', sig?.signalType || 'General'].filter(Boolean),
       },
-      userCrmKey
+      creds.token
     );
 
     if (!ghlContact.success) {
@@ -318,7 +319,7 @@ Subject: ${finalSubject}
 
 ${finalBody}`;
 
-    await createNote(subaccountId, ghlContact.id, noteContent, userCrmKey);
+    await createNote(subaccountId, ghlContact.id, noteContent, creds.token);
 
     // Update contacts table with ghl_contact_id
     const now = new Date().toISOString();
