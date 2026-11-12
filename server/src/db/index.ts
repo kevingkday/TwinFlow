@@ -8,6 +8,11 @@ export type Bindings = {
   SERP_API_KEY?: string;
   FIRECRAWL_API_KEY?: string;
   OPENAI_API_KEY?: string;
+  /** TypeSafe AI Jev (System One) — signal triage decisions. */
+  TYPESAFE_AI_API_KEY?: string;
+  TYPESAFE_API_KEY?: string;
+  TYPESAFE_MODEL?: string;
+  TYPESAFE_BASE_URL?: string;
   APOLLO_API_KEY?: string;
   GHL_API_KEY?: string;
   GHL_LOCATION_ID?: string;

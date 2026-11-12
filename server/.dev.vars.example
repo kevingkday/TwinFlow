@@ -7,6 +7,11 @@ FIRECRAWL_API_KEY=
 OPENAI_API_KEY=
 APOLLO_API_KEY=
 
+# TypeSafe AI Jev (System One) — headline/snippet triage decisions.
+# Without a key, triage uses the keyword + location fallback.
+TYPESAFE_AI_API_KEY=
+TYPESAFE_MODEL=jev-latest
+
 # GoHighLevel (GHL) API v2 Configuration
 # 1. Agency Credentials (used to list and manage sub-accounts)
 GHL_AGENCY_API_KEY=

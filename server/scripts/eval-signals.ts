@@ -2,6 +2,12 @@
  * Repeatable news-signal eval.
  *
  * Uses planNewsQueryWithAI (the same planner as onboarding and campaigns).
+ * The "after" set is Wide-Net Search + Fast Batch Triage: one location-locked
+ * SerpAPI pull (num=40) when SERP_API_KEY is set, otherwise public Google
+ * News RSS, then TypeSafe Jev (System One) headline/snippet triage when
+ * TYPESAFE_API_KEY is set (keyword + location fallback otherwise). Only triage
+ * winners are crawled, judged, and matched. Per-persona triage telemetry is logged.
+ *
  * Search uses SerpAPI when SERP_API_KEY is set (tbs=qdr:w2, no sample
  * headlines). Otherwise it reads public Google News RSS. Firecrawl runs on
  * every after-set article when FIRECRAWL_API_KEY is set. Relevance is a
@@ -17,11 +23,18 @@
  * uses the current planner, drops listicles, and counts a person only when
  * the article prints a full name.
  */
-import { planNewsQueryWithAI, type QueryPlannerInput } from '../src/services/aiQueryPlanner';
-import { fetchSerpNews, isSampleArticle, type SerpArticle } from '../src/services/serpNews';
+import { buildWideNetQueries, planNewsQueryWithAI, type QueryPlannerInput } from '../src/services/aiQueryPlanner';
+import {
+  fetchSerpNews,
+  fetchWideNetCandidates,
+  isSampleArticle,
+  WIDE_NET_POOL_SIZE,
+  type SerpArticle,
+  type SerpCandidate,
+} from '../src/services/serpNews';
 import { crawlArticle } from '../src/services/firecrawl';
 import { findApolloContact } from '../src/services/apollo';
-import { enrichSignalWithLLM } from '../src/services/llmEnricher';
+import { enrichSignalWithLLM, triageCandidates } from '../src/services/llmEnricher';
 import { judgeArticleRelevance } from '../src/services/relevanceJudge';
 import { validateSignalEvidence } from '../src/services/buyerProfile';
 import {
@@ -367,24 +380,51 @@ async function main() {
       limit,
       false
     );
-    const afterSearch = process.env.SERP_API_KEY
-      ? {
-          source: 'serpapi',
-          articles: await fetchSerpNews(
-            afterPlan.primaryQuery,
-            process.env.SERP_API_KEY,
-            limit,
-            afterPlan.geographicFocus.gl,
-            afterPlan.fallbackQueries,
-            { allowSampleFallback: false, searchTiers: afterPlan.searchTiers, queryLadder: afterPlan.queryLadder }
-          ),
-        }
-      : await searchQueries(
-          (afterPlan.searchTiers || []).flatMap((tier) => tier.queries).concat(afterPlan.primaryQuery, ...afterPlan.fallbackQueries),
-          afterPlan.geographicFocus.gl,
-          limit,
-          true
-        );
+    // Wide-net pool (location-locked) -> batch headline/snippet triage -> score winners only.
+    const lock = afterPlan.locationLock;
+    const pool = process.env.SERP_API_KEY
+      ? await fetchWideNetCandidates({
+          apiKey: process.env.SERP_API_KEY,
+          gl: afterPlan.geographicFocus.gl,
+          ladder: afterPlan.queryLadder,
+          locationLock: lock,
+          poolSize: WIDE_NET_POOL_SIZE,
+          allowSampleFallback: false,
+        }).then((result) => ({ source: 'serpapi', queries: result.queries, candidates: result.candidates }))
+      : await (async () => {
+          const queries = buildWideNetQueries(afterPlan.queryLadder);
+          const found = await searchQueries(queries, afterPlan.geographicFocus.gl, WIDE_NET_POOL_SIZE, true);
+          return {
+            source: found.source,
+            queries,
+            candidates: found.articles.map((article, index): SerpCandidate => ({ ...article, index })),
+          };
+        })();
+    const triage = await triageCandidates(
+      pool.candidates,
+      {
+        offering: [persona.valueProp, persona.userMission].filter(Boolean).join(' — '),
+        targetIndustries: persona.targetIndustries,
+        targetTriggers: persona.targetTriggers,
+        userIntent: persona.userIntent,
+        serviceArea: afterPlan.queryLadder.serviceArea,
+        location: persona.location,
+        locationLock: lock,
+      },
+      limit,
+      {
+        apiKey: process.env.TYPESAFE_AI_API_KEY || process.env.TYPESAFE_API_KEY,
+        model: process.env.TYPESAFE_MODEL,
+        baseUrl: process.env.TYPESAFE_BASE_URL,
+      }
+    );
+    const byIndex = new Map(pool.candidates.map((candidate) => [candidate.index, candidate]));
+    const afterSearch = {
+      source: pool.source,
+      articles: triage.selectedIndices
+        .map((index) => byIndex.get(index))
+        .filter((article): article is SerpCandidate => Boolean(article)),
+    };
 
     const beforeRows = beforeSearch.articles.map((article) => scoreArticle(persona, article, 'before'));
     for (const row of beforeRows) {
@@ -419,9 +459,20 @@ async function main() {
 
     const before = summarize(beforeRows);
     const after = summarize(afterRows);
+    const triageTelemetry = {
+      fetchedCount: pool.candidates.length,
+      triagedWinnerCount: afterSearch.articles.length,
+      ingestedCount: afterRows.filter((row) => row.relevant && row.namesPerson).length,
+      triageModel: triage.modelUsed,
+      locationLock: lock.enforced ? lock.clause : null,
+    };
+    console.log(`[Eval] ${persona.id} triage ${JSON.stringify(triageTelemetry)}`);
     lines.push(`### ${persona.label}`);
     lines.push(`Before query: ${beforePlan.primaryQuery}`);
-    lines.push(`After query: ${afterPlan.primaryQuery} (${afterPlan.modelUsed})`);
+    lines.push(`After queries (${afterPlan.modelUsed}): ${pool.queries.join(' | ')}`);
+    lines.push(
+      `Triage: fetched=${triageTelemetry.fetchedCount} winners=${triageTelemetry.triagedWinnerCount} ingestable=${triageTelemetry.ingestedCount} (${triage.modelUsed})`
+    );
     lines.push(`| | n | precision | recent | named person | reachable | actionable | relevant+recent+named |`);
     lines.push(`| --- | --- | --- | --- | --- | --- | --- | --- |`);
     for (const [label, stats] of [['before', before], ['after', after]] as const) {

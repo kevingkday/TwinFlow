@@ -27,6 +27,19 @@ export interface QueryPlannerInput {
   allowNationalSearch?: boolean;
 }
 
+/**
+ * Mandatory geography for a local/regional seller. When `enforced` is true,
+ * every SerpAPI query carries `clause`, and widening a query only changes the
+ * event keywords, never the place.
+ */
+export interface LocationLock {
+  enforced: boolean;
+  city: string;
+  region: string;
+  /** `"Vancouver"`, `"Ontario"`, or `("Vancouver" OR "British Columbia")`. Empty when not enforced. */
+  clause: string;
+}
+
 /** Starting terms for a 2–3 word Google News ladder. Fetch adds or drops one term after seeing counts. */
 export interface QueryLadder {
   serviceArea: 'local' | 'national';
@@ -35,6 +48,184 @@ export interface QueryLadder {
   city: string;
   region: string;
   site?: string;
+  /** Derived from city/region when absent. */
+  locationLock?: LocationLock;
+}
+
+/** Buyer trigger verbs used to widen a query. Widen these, never the geography. */
+export const WIDE_NET_EVENT_KEYWORDS = ['appoints', 'raises', 'expansion', 'acquires', 'breaks ground', 'contract'];
+
+const REGION_ABBREVIATIONS: Record<string, string> = {
+  bc: 'British Columbia',
+  'b.c.': 'British Columbia',
+  ab: 'Alberta',
+  sk: 'Saskatchewan',
+  mb: 'Manitoba',
+  on: 'Ontario',
+  qc: 'Quebec',
+  ns: 'Nova Scotia',
+  nb: 'New Brunswick',
+  nl: 'Newfoundland and Labrador',
+  pe: 'Prince Edward Island',
+  tx: 'Texas',
+  fl: 'Florida',
+  ny: 'New York',
+  wa: 'Washington',
+  or: 'Oregon',
+  az: 'Arizona',
+  co: 'Colorado',
+  il: 'Illinois',
+  ga: 'Georgia',
+  nc: 'North Carolina',
+  ma: 'Massachusetts',
+};
+
+const KNOWN_REGIONS =
+  /^(british columbia|alberta|saskatchewan|manitoba|ontario|quebec|nova scotia|new brunswick|newfoundland and labrador|prince edward island|texas|california|florida|new york|washington|oregon|arizona|colorado|illinois|georgia|north carolina|massachusetts)$/i;
+
+const COUNTRY_NAMES = /^(canada|usa|u\.s\.a?\.?|us|united states(?: of america)?|uk|united kingdom|great britain|england|australia)$/i;
+
+/** Extra spellings that prove a story is inside a region (used by triage fallbacks). */
+const REGION_ALIASES: Record<string, string[]> = {
+  'british columbia': ['british columbia', 'b.c.'],
+  'newfoundland and labrador': ['newfoundland', 'labrador'],
+  'prince edward island': ['prince edward island', 'p.e.i.'],
+};
+
+function expandRegion(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const abbreviation = REGION_ABBREVIATIONS[trimmed.toLowerCase()];
+  if (abbreviation) return abbreviation;
+  return trimmed;
+}
+
+/** Parse "City, Region, Country" (or partial forms) into a city and region. */
+export function parseCityRegion(location: string): { city: string; region: string } {
+  const parts = (location || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part && !COUNTRY_NAMES.test(part) && !/nationwide/i.test(part));
+  if (parts.length === 0) return { city: '', region: '' };
+  if (parts.length === 1) {
+    const only = expandRegion(parts[0]);
+    return KNOWN_REGIONS.test(only) ? { city: '', region: only } : { city: parts[0], region: '' };
+  }
+  const first = expandRegion(parts[0]);
+  if (KNOWN_REGIONS.test(first)) return { city: '', region: first };
+  return { city: parts[0], region: expandRegion(parts[1]) };
+}
+
+function quoteTerm(term: string): string {
+  return `"${term.replace(/"/g, '').trim()}"`;
+}
+
+/**
+ * Build the mandatory location clause for a local/regional seller. National
+ * sellers (SaaS, agencies) get an unenforced lock so geography is not injected.
+ */
+export function buildLocationLock(
+  location: string | { city?: string; region?: string },
+  serviceArea: 'local' | 'national' = 'local'
+): LocationLock {
+  const place = typeof location === 'string' ? parseCityRegion(location) : { city: location.city || '', region: location.region || '' };
+  const city = place.city.trim();
+  const region = place.region.trim();
+  if (serviceArea === 'national' || (!city && !region)) {
+    return { enforced: false, city, region, clause: '' };
+  }
+  const terms = [city, region].filter(Boolean);
+  const clause = terms.length > 1 ? `(${terms.map(quoteTerm).join(' OR ')})` : quoteTerm(terms[0]);
+  return { enforced: true, city, region, clause };
+}
+
+export function resolveLocationLock(ladder: QueryLadder): LocationLock {
+  return ladder.locationLock || buildLocationLock({ city: ladder.city, region: ladder.region }, ladder.serviceArea);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Guarantee the location clause is present in a SerpAPI query. Bare or quoted
+ * mentions of the city/region are folded into the single clause so the place
+ * is never duplicated and never dropped.
+ */
+export function applyLocationLock(query: string, lock?: LocationLock | null): string {
+  const base = (query || '').trim();
+  if (!lock?.enforced || !lock.clause) return base;
+  if (base.includes(lock.clause)) return base;
+  let stripped = base;
+  for (const term of [lock.city, lock.region].filter(Boolean)) {
+    stripped = stripped.replace(new RegExp(`"?\\b${escapeRegExp(term)}\\b"?`, 'gi'), ' ');
+  }
+  stripped = stripped
+    .replace(/\(\s*(?:OR\s*)*\)/g, ' ')
+    .replace(/\(\s*OR\s+/g, '(')
+    .replace(/\s+OR\s*\)/g, ')')
+    .replace(/""/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `${lock.clause} ${stripped}`.trim();
+}
+
+/** True when the text names the locked city or region (or a common alias). */
+export function mentionsLockedPlace(text: string, lock: LocationLock): { city: boolean; region: boolean } {
+  const haystack = ` ${(text || '').toLowerCase()} `;
+  const has = (term: string) => new RegExp(`(^|[^a-z])${escapeRegExp(term.toLowerCase())}($|[^a-z])`).test(haystack);
+  const city = Boolean(lock.city) && has(lock.city);
+  const regionKey = lock.region.toLowerCase();
+  const aliases = REGION_ALIASES[regionKey] || (regionKey ? [regionKey] : []);
+  const region = aliases.some((alias) => has(alias));
+  return { city, region };
+}
+
+function eventGroup(extraTrigger?: string): string {
+  const words = [extraTrigger, ...WIDE_NET_EVENT_KEYWORDS]
+    .map((word) => (word || '').trim().toLowerCase())
+    .filter(Boolean)
+    .filter((word, index, list) => list.indexOf(word) === index);
+  return `(${words.map((word) => (/\s/.test(word) ? quoteTerm(word) : word)).join(' OR ')})`;
+}
+
+/**
+ * Wide-net SerpAPI queries for one ladder, most specific first. Each query
+ * keeps the location clause (when enforced) and widens only the event
+ * keywords. Sports exclusions are appended once per query.
+ */
+export function buildWideNetQueries(ladder: QueryLadder): string[] {
+  const lock = resolveLocationLock(ladder);
+  const sector = ladder.sector && ladder.sector !== 'company' ? ladder.sector : '';
+  const events = eventGroup(ladder.trigger);
+  const raw = [
+    sector ? `${sector} ${events}` : '',
+    events,
+    ladder.site ? `site:${ladder.site} ${lock.enforced ? sector : `${sector} ${events}`}` : '',
+  ];
+  const seen = new Set<string>();
+  const queries: string[] = [];
+  for (const q of raw) {
+    if (!q.trim()) continue;
+    const locked = withSportsExclusion(applyLocationLock(q, lock));
+    if (seen.has(locked)) continue;
+    seen.add(locked);
+    queries.push(locked);
+  }
+  return queries;
+}
+
+/** Google country code for SerpAPI `gl`, inferred from free-form location text. */
+export function inferGoogleCountry(location: string): string {
+  const locLower = (location || '').toLowerCase();
+  if (
+    /canada|british columbia|alberta|ontario|quebec|saskatchewan|manitoba|nova scotia|vancouver|toronto|montreal|calgary|edmonton|ottawa|mississauga/.test(locLower) ||
+    /,\s*(bc|on|ab|qc|sk|mb)\b/.test(locLower)
+  ) {
+    return 'ca';
+  }
+  if (/\buk\b|united kingdom|london|manchester/.test(locLower)) return 'gb';
+  return 'us';
 }
 
 export interface SearchTier {
@@ -47,6 +238,8 @@ export interface QueryPlanResult {
   fallbackQueries: string[];
   searchTiers: SearchTier[];
   queryLadder: QueryLadder;
+  /** Mandatory geography for every SerpAPI query (unenforced for national sellers). */
+  locationLock: LocationLock;
   geographicFocus: {
     locationClean: string;
     gl: string; // Google country code e.g. 'us', 'ca', 'gb'
@@ -70,32 +263,7 @@ export async function planNewsQueryWithAI(
   const valueProp = (input.valueProp || '').trim();
 
   // Determine default country code from location
-  const locLower = location.toLowerCase();
-  let defaultGl = 'us';
-  if (
-    locLower.includes('canada') ||
-    locLower.includes('british columbia') ||
-    locLower.includes('alberta') ||
-    locLower.includes('ontario') ||
-    locLower.includes(', bc') ||
-    locLower.includes(', on') ||
-    locLower.includes(', ab') ||
-    locLower.includes('vancouver') ||
-    locLower.includes('toronto') ||
-    locLower.includes('montreal') ||
-    locLower.includes('calgary') ||
-    locLower.includes('edmonton') ||
-    locLower.includes('ottawa')
-  ) {
-    defaultGl = 'ca';
-  } else if (
-    locLower.includes('uk') ||
-    locLower.includes('united kingdom') ||
-    locLower.includes('london') ||
-    locLower.includes('manchester')
-  ) {
-    defaultGl = 'gb';
-  }
+  const defaultGl = inferGoogleCountry(location);
 
   // If live OpenAI key is available, use GPT-4o for nuanced semantic query planning
   if (cleanKey && cleanKey.startsWith('sk-') && !cleanKey.includes('your_')) {
@@ -111,10 +279,10 @@ CRITICAL RULES FOR GOOGLE NEWS SEARCH QUERIES:
    - A commercial real estate broker searches tenants and occupiers ("Dallas office lease", "Dallas headquarters").
    - A contractor searches project owners ("Calgary construction breaks ground").
    - A SaaS marketing agency searches software companies ("Toronto software raises", "Toronto software hires").
-2. SHORT QUERIES, THEN WIDEN GEOGRAPHY:
+2. SHORT QUERIES, WIDEN EVENTS — NEVER THE GEOGRAPHY OF A LOCAL SELLER:
    - No OR groups. No when: operators. No mandatory quoted exact phrases.
    - Each query is place + buyer sector + one trigger word (funding, hires, expansion, lease, breaks ground, captive).
-   - primaryQuery uses the city. fallbackQueries use the same phrases with the province/state, then the country, so thin cities can widen.
+   - For a local/regional seller, every query (primary and fallbacks) must keep the city or province/state. Widen the event keywords (appoints, raises, expansion, acquires, breaks ground, contract), not the place. Only a national seller may omit the place.
    - One fallback may be a real site: restriction for a trade outlet that covers the BUYER sector: site:betakit.com, site:bisnow.com, site:constructconnect.com, or site:captiveinsurancetimes.com. Do not use the outlet name as a keyword.
    - Do not add sports minus-terms yourself. They are appended once later.
 
@@ -235,6 +403,10 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
     targetTriggers: triggers,
     valueProp,
     defaultGl,
+    serviceArea: input.serviceArea,
+    buyerIndustries: input.buyerIndustries,
+    buyerRoles: input.buyerRoles,
+    buyerCompanySize: input.buyerCompanySize,
   });
 }
 
@@ -295,6 +467,9 @@ export function generateAlgorithmicQueryPlan(params: {
   else if (/captive/i.test(userMission)) site = 'captiveinsurancetimes.com';
   else site = 'newswire.ca';
 
+  const parsedPlace = parseCityRegion(location);
+  if (!region && parsedPlace.region) region = parsedPlace.region;
+  const locationLock = buildLocationLock({ city, region }, buyer.serviceArea);
   const place = buyer.serviceArea === 'national' ? '' : city || region;
   const startTerms = [place, sector, trigger].filter(Boolean).slice(0, 3);
   const primary = withSportsExclusion(startTerms.join(' '));
@@ -305,6 +480,7 @@ export function generateAlgorithmicQueryPlan(params: {
     city,
     region,
     site,
+    locationLock,
   };
   const searchTiers: SearchTier[] = [
     {
@@ -319,6 +495,7 @@ export function generateAlgorithmicQueryPlan(params: {
     fallbackQueries: [],
     searchTiers,
     queryLadder,
+    locationLock,
     geographicFocus: {
       locationClean: location || 'Nationwide',
       gl: defaultGl,

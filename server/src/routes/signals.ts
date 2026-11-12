@@ -1,15 +1,18 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../db';
 import { getDb, schema } from '../db';
-import { eq, desc, and, sql } from 'drizzle-orm';
-import { fetchSerpNews } from '../services/serpNews';
+import { eq, desc, and, sql, inArray } from 'drizzle-orm';
+import { fetchSerpNews, fetchWideNetCandidates, WIDE_NET_POOL_SIZE } from '../services/serpNews';
 import { crawlArticle } from '../services/firecrawl';
 import {
   enrichSignalWithLLM,
   generateHeuristicCompetitors,
   generateHeuristicPeerRoles,
+  triageCandidates,
+  adaptPitchForContact,
 } from '../services/llmEnricher';
-import { findApolloContact } from '../services/apollo';
+import { generateAlgorithmicQueryPlan, inferGoogleCountry, type LocationLock } from '../services/aiQueryPlanner';
+import { findApolloContact, resolveSignalContacts } from '../services/apollo';
 import { upsertContact, createNote, createOpportunity, listAgencySubaccounts } from '../services/ghl';
 import { resolveUserGhlCredentials } from '../services/ghlOAuth';
 import { getSessionUser } from './auth';
@@ -26,6 +29,23 @@ function authenticationRequired(c: { json: (body: unknown, status?: number) => R
 
 function ownsSignal(signal: { userId: string | null } | null | undefined, userId: string): boolean {
   return Boolean(signal?.userId) && signal!.userId === userId;
+}
+
+/** Placeholder company names from the heuristic enricher, not a real operating company. */
+const GENERIC_COMPANY = /^(enterprise tech|unknown|n\/a|company|the company|)$/i;
+
+/** Enricher industry tags that describe the event, not the industry (useless as Apollo keyword tags). */
+const SIGNAL_TYPE_TAG =
+  /\b(milestone|funding|growth|expansion|appointment|leadership|acquisition|merger|contract|investment|opening|launch|b2b|high growth)\b/i;
+
+const GL_COUNTRY: Record<string, string> = { ca: 'Canada', us: 'United States', gb: 'United Kingdom', au: 'Australia' };
+
+/** Apollo `organization_locations` for the service area (province/state preferred, it contains the city). */
+function apolloLocations(lock: LocationLock, gl: string): string[] | undefined {
+  if (!lock.enforced) return undefined;
+  const country = GL_COUNTRY[gl] || '';
+  const place = lock.region || lock.city;
+  return place ? [[place, country].filter(Boolean).join(', ')] : undefined;
 }
 
 // Helper to ensure related branches exist for any signal in D1
@@ -373,9 +393,12 @@ signalsRouter.post('/reset', async (c) => {
 /**
  * POST /api/signals/ingest
  * Accepts { query?: string, limit?: number } (default limit 3).
- * Orchestrates: SerpAPI -> Firecrawl -> OpenAI -> Apollo.
+ * Wide-Net Search + Fast Batch Triage:
+ *   SerpAPI (num=40, location-locked) -> D1 URL dedupe -> gpt-4o-mini batch
+ *   headline/snippet triage -> Firecrawl -> OpenAI enrichment -> Apollo.
+ * Only triage winners (at most `limit`) reach Firecrawl, enrichment, and Apollo.
  * Inserts completed records into D1 signals, contacts, and outreach_drafts tables.
- * Deduplicates by article URL or company domain to avoid duplicate cards.
+ * Deduplicates by article URL or company name to avoid duplicate cards.
  */
 signalsRouter.post('/ingest', async (c) => {
   if (!c.env?.DB) {
@@ -392,92 +415,204 @@ signalsRouter.post('/ingest', async (c) => {
     body = {};
   }
 
-  const query = body.query?.trim() || 'Series A OR expansion OR hired CEO';
+  const customQuery = body.query?.trim() || '';
   const limit = Math.max(1, Math.min(body.limit || 3, 10));
 
   try {
     const db = getDb(c.env.DB);
 
-    // 1. SerpAPI News Query (with sample fallback if live key is not provisioned)
-    const articles = await fetchSerpNews(query, c.env.SERP_API_KEY, limit, 'us', undefined, {
+    // 0. Resolve targeting from the active campaign (falls back to the user profile).
+    const activeCampaign = user.activeCampaignId
+      ? await db.query.campaigns.findFirst({
+          where: and(eq(schema.campaigns.id, user.activeCampaignId), eq(schema.campaigns.userId, user.id)),
+        })
+      : null;
+    const target = activeCampaign || user;
+    const asList = (value?: string | null): string[] => {
+      if (!value) return [];
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+      } catch {
+        return [];
+      }
+    };
+    const location =
+      target.targetLocation?.trim() ||
+      [target.city, target.state].map((part) => (part || '').trim()).filter(Boolean).join(', ');
+    const serviceArea: 'local' | 'national' = target.serviceArea === 'national' ? 'national' : 'local';
+    const targetIndustries = asList(target.targetIndustries);
+    const targetTriggers = asList(target.targetTriggers);
+    const buyerIndustries = asList(target.buyerIndustries);
+    const buyerRoles = asList(target.buyerRoles);
+    const buyerCompanySize = (['smb', 'midmarket', 'enterprise', 'any'] as const).find(
+      (size) => size === target.buyerCompanySize
+    );
+    const userIntent = target.userIntent || user.userIntent || 'sales_client_acquisition';
+    const userMission = target.userMission || user.userMission || '';
+    const valueProp = target.valueProp || user.valueProp || '';
+
+    const plan = generateAlgorithmicQueryPlan({
+      location,
+      userIntent,
+      userMission,
+      targetIndustries,
+      targetTriggers,
+      valueProp,
+      defaultGl: inferGoogleCountry(location),
+      serviceArea,
+      buyerIndustries,
+      buyerRoles,
+      buyerCompanySize,
+    });
+    const locationLock = plan.locationLock;
+    const queryLabel = customQuery || plan.primaryQuery;
+
+    // 1. Wide-net SerpAPI pull (~30-40 candidates, location lock on every query).
+    const wideNet = await fetchWideNetCandidates({
+      apiKey: c.env.SERP_API_KEY,
+      gl: plan.geographicFocus.gl,
+      ladder: plan.queryLadder,
+      locationLock,
+      keywords: customQuery || undefined,
+      poolSize: WIDE_NET_POOL_SIZE,
       allowSampleFallback: !c.env.SERP_API_KEY,
     });
+    const pool = wideNet.candidates.filter(
+      (article) => !isLowYieldArticle(article.title, article.publisher, article.url) && !isSportsArticle(article.title, article.publisher)
+    );
+
+    // Deduplicate the pool against URLs this user already has in D1 (one query).
+    const poolUrls = [...new Set(pool.map((article) => article.url))];
+    const existingRows = poolUrls.length
+      ? await db
+          .select({ sourceUrl: schema.signals.sourceUrl })
+          .from(schema.signals)
+          .where(and(eq(schema.signals.userId, user.id), inArray(schema.signals.sourceUrl, poolUrls)))
+      : [];
+    const existingUrls = new Set(existingRows.map((row) => row.sourceUrl));
+    const fresh = pool.filter((article) => !existingUrls.has(article.url));
+
+    // 2. Fast batch headline/snippet triage BEFORE any Firecrawl spend.
+    const triage = await triageCandidates(
+      fresh.map(({ index, title, snippet, publisher, url, publishedAt }) => ({ index, title, snippet, publisher, url, publishedAt })),
+      {
+        offering: [valueProp, userMission].filter(Boolean).join(' — ') || undefined,
+        targetIndustries,
+        buyerIndustries: buyerIndustries.length ? buyerIndustries : [plan.queryLadder.sector],
+        targetTriggers,
+        userIntent,
+        serviceArea,
+        location,
+        locationLock,
+      },
+      limit,
+      {
+        apiKey: c.env.TYPESAFE_AI_API_KEY || c.env.TYPESAFE_API_KEY,
+        model: c.env.TYPESAFE_MODEL,
+        baseUrl: c.env.TYPESAFE_BASE_URL,
+      }
+    );
+    const freshByIndex = new Map(fresh.map((article) => [article.index, article]));
+    const winners = triage.selectedIndices
+      .map((index) => freshByIndex.get(index))
+      .filter((article): article is (typeof fresh)[number] => Boolean(article));
+
+    const telemetry = {
+      fetchedCount: wideNet.candidates.length,
+      rawCount: wideNet.rawCount,
+      serpQueries: wideNet.queries,
+      searchSource: wideNet.source,
+      alreadyIngestedCount: pool.length - fresh.length,
+      triageInputCount: fresh.length,
+      triagedWinnerCount: winners.length,
+      triageModel: triage.modelUsed,
+      locationLock: locationLock.enforced ? locationLock.clause : null,
+      rejectedByJudge: 0,
+      rejectedDuplicateCompany: 0,
+      /** How each ingested signal got its contact: article | company | lookalike | related | none. */
+      contactSources: {} as Record<string, number>,
+      signalsWithoutContact: 0,
+      ingestedCount: 0,
+    };
 
     const ingestedSignals = [];
     const now = new Date().toISOString();
 
-    for (const article of articles) {
-      if (isLowYieldArticle(article.title, article.publisher, article.url) || isSportsArticle(article.title, article.publisher)) continue;
-      // Deduplicate by URL
-      const existingByUrl = await db.query.signals.findFirst({
-        where: and(eq(schema.signals.sourceUrl, article.url), eq(schema.signals.userId, user.id)),
-      });
-
-      if (existingByUrl) {
-        continue;
-      }
-
-      // 2. Firecrawl Scrape / Crawl
+    // 3. Only triage winners reach Firecrawl, full enrichment, and Apollo.
+    for (const article of winners) {
+      // 3a. Firecrawl Scrape / Crawl
       const crawled = await crawlArticle(article.url, c.env.FIRECRAWL_API_KEY, article.snippet);
 
-      // 3. OpenAI (gpt-4o-mini) Enrichment
+      // 3b. OpenAI (gpt-4o-mini) Enrichment
       const enriched = await enrichSignalWithLLM(
         article.title,
         crawled.markdown,
         article.publisher,
         c.env.OPENAI_API_KEY,
-        user.valueProp || user.userMission || undefined,
-        user.userIntent || undefined
+        valueProp || userMission || undefined,
+        userIntent || undefined
       );
 
-      const asList = (value?: string | null) => {
-        if (!value) return [];
-        try {
-          const parsed = JSON.parse(value);
-          return Array.isArray(parsed) ? parsed : [];
-        } catch {
-          return [];
-        }
-      };
       const judgment = await judgeArticleRelevance(
         {
-          location: user.targetLocation || undefined,
-          userIntent: user.userIntent || undefined,
-          userMission: user.userMission || undefined,
-          targetIndustries: asList(user.targetIndustries),
-          targetTriggers: asList(user.targetTriggers),
-          valueProp: user.valueProp || undefined,
-          companyDescription: user.companyDescription || undefined,
+          location: location || undefined,
+          userIntent: userIntent || undefined,
+          userMission: userMission || undefined,
+          targetIndustries,
+          targetTriggers,
+          valueProp: valueProp || undefined,
+          companyDescription: target.companyDescription || user.companyDescription || undefined,
+          serviceArea,
         },
         { title: article.title, publisher: article.publisher, text: `${article.snippet}\n${crawled.markdown}` },
         c.env.OPENAI_API_KEY
       );
-      if (!judgment.relevant) continue;
-      if (!enriched.decisionMaker?.name || isNonBuyerRole(enriched.decisionMaker.role || '')) continue;
-
-      // Deduplicate by company name if already queued
-      const existingByCompany = await db.query.signals.findFirst({
-        where: and(eq(schema.signals.companyName, enriched.companyName), eq(schema.signals.userId, user.id)),
-      });
-      if (existingByCompany && existingByCompany.status === 'queued') {
+      if (!judgment.relevant) {
+        telemetry.rejectedByJudge += 1;
         continue;
       }
+      const articlePerson =
+        enriched.decisionMaker?.name && !isNonBuyerRole(enriched.decisionMaker.role || '')
+          ? { name: enriched.decisionMaker.name, role: enriched.decisionMaker.role || '' }
+          : null;
+      const hasRealCompany = Boolean(enriched.companyName) && !GENERIC_COMPANY.test(enriched.companyName);
 
-      // 4. Apollo Contact Matching
+      // Deduplicate by company name if already queued
+      if (hasRealCompany) {
+        const existingByCompany = await db.query.signals.findFirst({
+          where: and(eq(schema.signals.companyName, enriched.companyName), eq(schema.signals.userId, user.id)),
+        });
+        if (existingByCompany && existingByCompany.status === 'queued') {
+          telemetry.rejectedDuplicateCompany += 1;
+          continue;
+        }
+      }
+
+      // 3c. Apollo contact waterfall: article person -> article company -> lookalikes -> related companies.
       const companyDomain = usableCompanyDomain(enriched.companyDomain);
-      const apolloMatch = companyDomain
-        ? await findApolloContact(
-            enriched.decisionMaker.name,
-            enriched.decisionMaker.role,
-            companyDomain,
-            c.env.APOLLO_API_KEY
-          )
-        : { matched: false, status: 'fallback' as const };
+      const resolution = await resolveSignalContacts(
+        {
+          articlePerson,
+          companyName: hasRealCompany ? enriched.companyName : '',
+          companyDomain,
+          buyerTitles: buyerRoles.length ? buyerRoles : undefined,
+          industries: [
+            ...buyerIndustries,
+            ...targetIndustries,
+            ...enriched.industryTags.filter((tag) => !SIGNAL_TYPE_TAG.test(tag)),
+          ],
+          locations: apolloLocations(locationLock, plan.geographicFocus.gl),
+        },
+        c.env.APOLLO_API_KEY
+      );
+      telemetry.contactSources[resolution.source] = (telemetry.contactSources[resolution.source] || 0) + 1;
+      if (resolution.source === 'none') telemetry.signalsWithoutContact += 1;
+      console.log(`[Ingest] contacts "${article.title}" -> ${resolution.source} (${resolution.trail.join(' > ')})`);
 
       // Generate distinct deterministic/unique IDs
       const uniqueSuffix = Math.random().toString(36).substring(2, 8);
       const signalId = `sig_${Date.now()}_${uniqueSuffix}`;
-      const contactId = `ct_${Date.now()}_${uniqueSuffix}`;
       const draftId = `dr_${Date.now()}_${uniqueSuffix}`;
 
       // Insert into D1 signals
@@ -528,55 +663,73 @@ signalsRouter.post('/ingest', async (c) => {
         });
       }
 
-      // Insert into D1 contacts
-      await db.insert(schema.contacts).values({
-        id: contactId,
-        signalId,
-        name: enriched.decisionMaker.name,
-        title: enriched.decisionMaker.role,
-        email: apolloMatch.email || null,
-        linkedinUrl: apolloMatch.linkedinUrl || null,
-        avatarUrl: apolloMatch.avatarUrl || null,
-        createdAt: now,
-        updatedAt: now,
-      });
+      // Insert into D1 contacts (primary first) and a draft addressed to the primary contact.
+      const primary = resolution.contacts[0];
+      let primaryContactId: string | null = null;
+      for (const [position, contact] of resolution.contacts.entries()) {
+        const contactId = `ct_${Date.now()}_${uniqueSuffix}_${position}`;
+        if (position === 0) primaryContactId = contactId;
+        await db.insert(schema.contacts).values({
+          id: contactId,
+          signalId,
+          name: contact.name,
+          title: contact.title || 'Decision Maker',
+          email: contact.email || null,
+          linkedinUrl: contact.linkedinUrl || null,
+          avatarUrl: contact.avatarUrl || null,
+          company: contact.company || enriched.companyName,
+          companyDomain: contact.companyDomain || null,
+          source: contact.source,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
 
-      // Insert into D1 outreach_drafts
-      await db.insert(schema.outreachDrafts).values({
-        id: draftId,
-        signalId,
-        contactId,
-        subject: enriched.pitchSubject,
-        body: enriched.pitchBody,
-        status: 'draft',
-        createdAt: now,
-        updatedAt: now,
-      });
+      const draft = primary
+        ? adaptPitchForContact(enriched, primary, {
+            publisher: article.publisher,
+            offering: valueProp || userMission || '',
+          })
+        : null;
+      if (primaryContactId && draft) {
+        await db.insert(schema.outreachDrafts).values({
+          id: draftId,
+          signalId,
+          contactId: primaryContactId,
+          subject: draft.subject,
+          body: draft.body,
+          status: 'draft',
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
 
       ingestedSignals.push({
         id: signalId,
         title: article.title,
         companyName: enriched.companyName,
         signalType: enriched.signalType,
-        contact: {
-          name: enriched.decisionMaker.name,
-          title: enriched.decisionMaker.role,
-          email: apolloMatch.email,
-        },
-        draft: {
-          subject: enriched.pitchSubject,
-        },
+        contactSource: resolution.source,
+        contact: primary
+          ? { name: primary.name, title: primary.title, company: primary.company, email: primary.email }
+          : null,
+        draft: draft ? { subject: draft.subject } : null,
+        triageReason: triage.reasoning[article.index] || null,
       });
     }
+
+    telemetry.ingestedCount = ingestedSignals.length;
+    console.log(`[Ingest] telemetry user=${user.id} ${JSON.stringify(telemetry)}`);
 
     return c.json({
       success: true,
       ingestedCount: ingestedSignals.length,
       signals: ingestedSignals,
+      telemetry,
       message:
         ingestedSignals.length > 0
-          ? `Ingested and enriched ${ingestedSignals.length} new signals from "${query}".`
-          : `No new unread articles matched "${query}" right now. Try resetting the demo batch or broadening search criteria.`,
+          ? `Ingested and enriched ${ingestedSignals.length} new signals from "${queryLabel}".`
+          : `No new unread articles matched "${queryLabel}"${locationLock.enforced ? ` in ${[locationLock.city, locationLock.region].filter(Boolean).join(' / ')}` : ''} right now. Try resetting the demo batch or broadening search criteria.`,
     });
   } catch (error) {
     console.error('Error during signal ingestion pipeline:', error);

@@ -176,6 +176,14 @@ export const contacts = sqliteTable('contacts', {
   linkedinUrl: text('linkedin_url'),
   avatarUrl: text('avatar_url'),
   ghlContactId: text('ghl_contact_id'),
+  /** Employer of this contact. May differ from the signal company for related/lookalike contacts. */
+  company: text('company'),
+  companyDomain: text('company_domain'),
+  /**
+   * How the contact was found: named in the article, looked up at the article company,
+   * at an Apollo lookalike of that company, or at a related company matching the buyer profile.
+   */
+  source: text('source', { enum: ['article', 'company', 'lookalike', 'related'] }).notNull().default('article'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
