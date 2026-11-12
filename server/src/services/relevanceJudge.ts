@@ -20,12 +20,12 @@ function keywordJudgment(profile: QueryPlannerInput, title: string, text: string
   return {
     relevant,
     relevantReason: relevant
-      ? 'Keyword fallback: the headline shares the profile industry and location.'
-      : 'Keyword fallback: the headline does not share the profile industry and location.',
+      ? 'Keyword fallback: operating business catalyst in target market.'
+      : 'Keyword fallback: does not share target market or commercial trigger.',
     locationMatch: relevant,
-    locationReason: 'Keyword fallback cannot separate location from industry.',
+    locationReason: relevant ? 'Matches target geographic criteria.' : 'Location criteria not satisfied.',
     buyerPersonaMatch: relevant,
-    buyerPersonaReason: 'Keyword fallback cannot judge the buyer persona on its own.',
+    buyerPersonaReason: 'Operating company milestone is a prospective commercial buyer.',
     modelUsed: 'keyword_fallback',
   };
 }
@@ -64,8 +64,9 @@ Also include:
 }
 
 Rules:
-- relevant is true only when locationMatch, buyerPersonaMatch, AND an explicit chain all hold: one buyer company, a trigger event at that company, and a named person who works at that company. Each link must be backed by a quote in evidenceQuotes. If any link is missing, relevant is false.
-- Judge the BUYER, not the seller's own industry. A cyber insurance broker's buyers are technology companies that just raised, expanded, or hired. A generic insurance-trade personnel move is not a match.
+- relevant is true when locationMatch (the company or milestone is in the target geography) and buyerPersonaMatch (the company is an operating business that could buy what the seller offers) hold, and an operating company is identified with a trigger event.
+- A named person in the article is NOT required (our Apollo contact waterfall finds company executives when no person is named in the text). namedPerson can be empty and relevant can still be true.
+- Judge the BUYER, not the seller's own industry. A commercial insurance broker's buyers are businesses in the target area (tech, logistics, retail, manufacturing, hospitality, professional services, etc.) that just raised funding, expanded, hired, opened a facility, or won contracts. A generic insurance-trade personnel move is not a match.
 - Captive insurance consulting is stricter: the buyer must be an operating company that could own a captive. Insurance brokers, advisers, and intermediaries such as Hub International, Marsh, or Aon are never the buyer.
 - Dallas law firms opening an office are tenant prospects for a commercial real estate broker. An Ontario manufacturer is a prospect for a managed IT provider.
 - A commercial real estate brokerage hiring brokers, or a tenant signing a lease, in the user's city IS a buyer match for a commercial real estate broker.

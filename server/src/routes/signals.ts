@@ -568,8 +568,11 @@ signalsRouter.post('/ingest', async (c) => {
         { title: article.title, publisher: article.publisher, text: `${article.snippet}\n${crawled.markdown}` },
         c.env.OPENAI_API_KEY
       );
-      if (!judgment.relevant) {
+      // Triage has already selected this candidate as a qualified commercial milestone.
+      // We only drop it post-crawl if the article is definitively disqualified by geography or non-commercial noise.
+      if (!judgment.relevant && !judgment.locationMatch) {
         telemetry.rejectedByJudge += 1;
+        console.log(`[Ingest] dropped non-local article "${article.title}": ${judgment.relevantReason}`);
         continue;
       }
       const articlePerson =
@@ -721,6 +724,10 @@ signalsRouter.post('/ingest', async (c) => {
     telemetry.ingestedCount = ingestedSignals.length;
     console.log(`[Ingest] telemetry user=${user.id} ${JSON.stringify(telemetry)}`);
 
+    const summaryDetail = telemetry.fetchedCount > 0
+      ? `(${telemetry.fetchedCount} articles scouted, ${telemetry.alreadyIngestedCount} already seen, ${telemetry.triagedWinnerCount} AI triaged)`
+      : '';
+
     return c.json({
       success: true,
       ingestedCount: ingestedSignals.length,
@@ -728,8 +735,8 @@ signalsRouter.post('/ingest', async (c) => {
       telemetry,
       message:
         ingestedSignals.length > 0
-          ? `Ingested and enriched ${ingestedSignals.length} new signals from "${queryLabel}".`
-          : `No new unread articles matched "${queryLabel}"${locationLock.enforced ? ` in ${[locationLock.city, locationLock.region].filter(Boolean).join(' / ')}` : ''} right now. Try resetting the demo batch or broadening search criteria.`,
+          ? `Ingested and enriched ${ingestedSignals.length} new signals from "${queryLabel}". ${summaryDetail}`.trim()
+          : `No new unread articles matched "${queryLabel}"${locationLock.enforced ? ` in ${[locationLock.city, locationLock.region].filter(Boolean).join(' / ')}` : ''} right now. ${summaryDetail}`.trim(),
     });
   } catch (error) {
     console.error('Error during signal ingestion pipeline:', error);

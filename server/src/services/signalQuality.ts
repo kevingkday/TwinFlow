@@ -213,7 +213,6 @@ export function isRelevantToProfile(
   if (/\b(charged with|sentenced|arrested|obituary|dies at)\b/i.test(`${title} ${body}`)) return false;
   const { geo, topic } = profileTerms(input);
   const haystack = `${title} ${body}`.toLowerCase();
-  const topicHit = topic.some((term) => haystack.includes(term));
   const localGeo = geo.filter((term) => !['canada', 'canadian', 'united', 'states', 'usa'].includes(term));
   const geoOk = localGeo.length === 0 || localGeo.some((term) => haystack.includes(term));
   if (input.userIntent === 'subcontractor_partners' && geoOk) {
@@ -221,6 +220,16 @@ export function isRelevantToProfile(
       return true;
     }
   }
+  // For client acquisition (e.g. commercial insurance, professional services, agency):
+  // ANY operating business milestone (hiring, expansion, funding, acquisition, contract)
+  // in the target geography is a qualified prospective buyer.
+  if ((!input.userIntent || input.userIntent === 'sales_client_acquisition') && geoOk) {
+    const type = classifyArticleType(title, body);
+    if (type !== 'other' && type !== 'listicle_roundup') {
+      return true;
+    }
+  }
+  const topicHit = topic.length === 0 || topic.some((term) => haystack.includes(term));
   if (!topicHit || !geoOk) return false;
   if (geo.length === 0) return true;
   return true;

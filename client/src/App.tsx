@@ -386,7 +386,7 @@ export const App: React.FC = () => {
       if (data.success) {
         if (data.ingestedCount > 0) {
           setScoutToast({
-            message: `AI Scout successfully enriched ${data.ingestedCount} new signals!`,
+            message: data.message || `AI Scout successfully enriched ${data.ingestedCount} new signals!`,
             type: 'success',
           });
           if (soundEnabled) playSound('streak');
