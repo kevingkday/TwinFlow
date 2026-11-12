@@ -103,11 +103,11 @@ export function deriveBuyerProfile(input: QueryPlannerInput): BuyerProfile {
   }
 
   return {
-    buyerIndustries: input.targetIndustries?.length ? input.targetIndustries : ['operating companies'],
+    buyerIndustries: input.targetIndustries?.length ? input.targetIndustries : ['business'],
     buyerRoles: input.targetRoles?.length ? input.targetRoles : ['CEO', 'owner'],
     buyerCompanySize: 'any',
     serviceArea,
-      allowNationalSearch,
+    allowNationalSearch,
   };
 }
 

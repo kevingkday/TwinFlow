@@ -458,8 +458,11 @@ export function generateAlgorithmicQueryPlan(params: {
     buyerCompanySize: params.buyerCompanySize,
     serviceArea: params.serviceArea,
   });
-  const sector = (buyer.buyerIndustries[0] || 'company').split(' ').slice(0, 2).join(' ');
-  const trigger = (targetTriggers[0] || 'expansion').split(/\s+/)[0] || 'expansion';
+  const rawSector = buyer.buyerIndustries[0] || 'business';
+  const sector = rawSector.toLowerCase().includes('operating') || rawSector.toLowerCase().includes('company')
+    ? 'business'
+    : rawSector.split(' ').slice(0, 2).join(' ');
+  const trigger = targetTriggers[0] ? targetTriggers[0].split(/\s+/)[0] : '';
   let site: string | undefined;
   if (/technology|software/.test(sector)) site = 'betakit.com';
   else if (/law|occupier|professional/.test(sector)) site = 'bisnow.com';
@@ -471,7 +474,10 @@ export function generateAlgorithmicQueryPlan(params: {
   if (!region && parsedPlace.region) region = parsedPlace.region;
   const locationLock = buildLocationLock({ city, region }, buyer.serviceArea);
   const place = buyer.serviceArea === 'national' ? '' : city || region;
-  const startTerms = [place, sector, trigger].filter(Boolean).slice(0, 3);
+  // If sector is general 'business' or empty, don't restrict to a single trigger word; keep it wide for Google News.
+  const startTerms = sector && sector !== 'business'
+    ? [place, sector, trigger].filter(Boolean).slice(0, 3)
+    : [place, 'business'].filter(Boolean);
   const primary = withSportsExclusion(startTerms.join(' '));
   const queryLadder: QueryLadder = {
     serviceArea: buyer.serviceArea,
