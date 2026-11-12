@@ -11,6 +11,7 @@ import type {
   SignalCategory,
   UserProfile,
   DecisionMaker,
+  PipelineTrace,
 } from './types/lead';
 import type { Campaign, CampaignsResponse } from './types/campaign';
 import { Header } from './components/Header';
@@ -30,6 +31,7 @@ import { LandingPage } from './components/LandingPage';
 import { ProfilePage } from './components/ProfilePage';
 import { ContactsPage } from './components/ContactsPage';
 import { MakeNewsModal } from './components/MakeNewsModal';
+import { PipelineInspectorModal } from './components/PipelineInspectorModal';
 import { playSound } from './utils/audio';
 import { authFetch } from './utils/api';
 import { Radio, Check, AlertCircle } from 'lucide-react';
@@ -140,6 +142,9 @@ export const App: React.FC = () => {
   const [isScouting, setIsScouting] = useState(false);
   const [scoutToast, setScoutToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [makeNewsModalOpen, setMakeNewsModalOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [pipelineTrace, setPipelineTrace] = useState<PipelineTrace | null>(null);
+  const [isLoadingTrace, setIsLoadingTrace] = useState(false);
 
   const [stats, setStats] = useState<SwipeStats>({
     approvedCount: 0,
@@ -357,12 +362,35 @@ export const App: React.FC = () => {
     });
   };
 
+  const fetchPipelineTrace = async () => {
+    try {
+      setIsLoadingTrace(true);
+      const res = await authFetch('/api/signals/pipeline-trace');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.trace) {
+          setPipelineTrace(data.trace);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching pipeline trace:', err);
+    } finally {
+      setIsLoadingTrace(false);
+    }
+  };
+
+  const handleOpenInspector = () => {
+    setInspectorOpen(true);
+    fetchPipelineTrace();
+  };
+
   // Trigger real ingestion pipeline (AI Search & Enrichment)
-  const handleScoutNews = async () => {
+  const handleScoutNews = async (batchLimit?: number) => {
     if (isScouting) return;
     setIsScouting(true);
+    const limit = batchLimit && Number.isFinite(batchLimit) ? Math.max(1, Math.min(batchLimit, 10)) : 3;
     setScoutToast({
-      message: 'Scouting market signals via AI Search & Enrichment...',
+      message: `Scouting market signals via AI Search & Enrichment (${limit} leads)...`,
       type: 'info',
     });
 
@@ -376,7 +404,7 @@ export const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: activeQuery,
-          limit: 3,
+          limit,
         }),
       });
 
@@ -384,6 +412,15 @@ export const App: React.FC = () => {
       const data = await res.json();
 
       if (data.success) {
+        if (data.telemetry?.auditLog) {
+          setPipelineTrace({
+            timestamp: new Date().toISOString(),
+            query: activeQuery,
+            location: userProfile?.targetLocation || 'Target Market',
+            telemetry: data.telemetry,
+            auditLog: data.telemetry.auditLog,
+          });
+        }
         if (data.ingestedCount > 0) {
           setScoutToast({
             message: data.message || `AI Scout successfully enriched ${data.ingestedCount} new signals!`,
@@ -395,7 +432,7 @@ export const App: React.FC = () => {
           setScoutToast({
             message:
               data.message ||
-              'Scout complete: No new unread articles matching this query. Try resetting the demo batch or tweaking keywords.',
+              'Scout complete: No new unread articles matching this query.',
             type: 'info',
           });
         }
@@ -414,7 +451,7 @@ export const App: React.FC = () => {
       });
     } finally {
       setIsScouting(false);
-      setTimeout(() => setScoutToast(null), 5000);
+      setTimeout(() => setScoutToast(null), 6000);
     }
   };
 
@@ -983,6 +1020,12 @@ export const App: React.FC = () => {
               <AlertCircle className="w-4 h-4 text-rose-600" />
             )}
             <span>{scoutToast.message}</span>
+            <button
+              onClick={handleOpenInspector}
+              className="ml-1 text-blue-600 hover:text-blue-800 underline font-bold shrink-0 cursor-pointer"
+            >
+              Inspect
+            </button>
           </div>
         </div>
       )}
@@ -999,6 +1042,7 @@ export const App: React.FC = () => {
         onOpenMakeNews={() => setMakeNewsModalOpen(true)}
         isGhlConnected={userProfile?.isGhlConnected}
         onScoutNews={handleScoutNews}
+        onOpenInspector={handleOpenInspector}
         isScouting={isScouting}
         serverOnline={serverOnline}
         user={userProfile}
@@ -1247,6 +1291,16 @@ export const App: React.FC = () => {
         isOpen={adminModalOpen}
         onClose={() => setAdminModalOpen(false)}
         currentUserEmail={userProfile?.email}
+      />
+
+      {/* AI Radar Pipeline Inspector Modal */}
+      <PipelineInspectorModal
+        isOpen={inspectorOpen}
+        onClose={() => setInspectorOpen(false)}
+        trace={pipelineTrace}
+        isLoading={isLoadingTrace}
+        onScoutWithLimit={handleScoutNews}
+        isScouting={isScouting}
       />
     </div>
   </ErrorBoundary>

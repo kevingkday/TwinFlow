@@ -267,3 +267,43 @@ export interface SocialAiDraft {
   facebookPost?: string;
 }
 
+export interface PipelineAuditItem {
+  index: number;
+  title: string;
+  publisher: string;
+  url: string;
+  publishedAt?: string;
+  status: 'ingested' | 'filtered';
+  reason: string;
+  companyName?: string;
+  contact?: {
+    name: string;
+    title: string;
+    email?: string | null;
+    company?: string;
+    source: string;
+    trail: string[];
+  } | null;
+}
+
+export interface PipelineTrace {
+  timestamp: string;
+  query: string;
+  location: string;
+  telemetry: {
+    fetchedCount: number;
+    rawCount: number;
+    alreadyIngestedCount: number;
+    triageInputCount: number;
+    triagedWinnerCount: number;
+    triageModel: string;
+    locationLock?: string | null;
+    ingestedCount: number;
+    rejectedByJudge?: number;
+    rejectedDuplicateCompany?: number;
+    contactSources?: Record<string, number>;
+  };
+  auditLog: PipelineAuditItem[];
+}
+
+

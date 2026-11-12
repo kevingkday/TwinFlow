@@ -128,7 +128,7 @@ function triageLock(profile: TriageBuyerProfile): LocationLock {
 }
 
 /** Deterministic hard rejects shared by the LLM guard and the keyword fallback. */
-function hardRejectReason(candidate: TriageCandidate): string | null {
+export function hardRejectReason(candidate: TriageCandidate): string | null {
   const text = `${candidate.title} ${candidate.snippet}`;
   if (isSportsArticle(candidate.title, candidate.publisher)) return 'Sports story.';
   if (isLowYieldArticle(candidate.title, candidate.publisher, candidate.url || '')) {

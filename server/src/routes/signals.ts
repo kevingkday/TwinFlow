@@ -10,6 +10,7 @@ import {
   generateHeuristicPeerRoles,
   triageCandidates,
   adaptPitchForContact,
+  hardRejectReason,
 } from '../services/llmEnricher';
 import { generateAlgorithmicQueryPlan, inferGoogleCountry, type LocationLock } from '../services/aiQueryPlanner';
 import { findApolloContact, resolveSignalContacts } from '../services/apollo';
@@ -22,6 +23,36 @@ import { judgeArticleRelevance } from '../services/relevanceJudge';
 import { APPROVAL_CREDIT_COST, BRANCH_SCOUT_CREDIT_COST, DEV_REPLENISH_CREDITS } from '../services/credits';
 
 export const signalsRouter = new Hono<{ Bindings: Bindings }>();
+
+export interface AuditLogEntry {
+  index: number;
+  title: string;
+  publisher: string;
+  url: string;
+  publishedAt?: string;
+  status: 'ingested' | 'filtered';
+  reason: string;
+  companyName?: string;
+  contact?: {
+    name: string;
+    title: string;
+    email?: string | null;
+    company?: string;
+    source: string;
+    trail: string[];
+  } | null;
+}
+
+const LAST_PIPELINE_TRACE: Record<
+  string,
+  {
+    timestamp: string;
+    query: string;
+    location: string;
+    telemetry: any;
+    auditLog: AuditLogEntry[];
+  }
+> = {};
 
 function authenticationRequired(c: { json: (body: unknown, status?: number) => Response }) {
   return c.json({ success: false, error: 'Authentication required' }, 401);
@@ -537,6 +568,7 @@ signalsRouter.post('/ingest', async (c) => {
     };
 
     const ingestedSignals = [];
+    const auditLog: AuditLogEntry[] = [];
     const now = new Date().toISOString();
 
     // 3. Only triage winners reach Firecrawl, full enrichment, and Apollo.
@@ -572,6 +604,15 @@ signalsRouter.post('/ingest', async (c) => {
       // We only drop it post-crawl if the article is definitively disqualified by geography or non-commercial noise.
       if (!judgment.relevant && !judgment.locationMatch) {
         telemetry.rejectedByJudge += 1;
+        auditLog.push({
+          index: article.index,
+          title: article.title,
+          publisher: article.publisher,
+          url: article.url,
+          publishedAt: article.publishedAt,
+          status: 'filtered',
+          reason: `Disqualified by geography: ${judgment.locationReason || judgment.relevantReason}`,
+        });
         console.log(`[Ingest] dropped non-local article "${article.title}": ${judgment.relevantReason}`);
         continue;
       }
@@ -588,6 +629,16 @@ signalsRouter.post('/ingest', async (c) => {
         });
         if (existingByCompany && existingByCompany.status === 'queued') {
           telemetry.rejectedDuplicateCompany += 1;
+          auditLog.push({
+            index: article.index,
+            title: article.title,
+            publisher: article.publisher,
+            url: article.url,
+            publishedAt: article.publishedAt,
+            status: 'filtered',
+            reason: `Company "${enriched.companyName}" is already active in your Lead Deck queue.`,
+            companyName: enriched.companyName,
+          });
           continue;
         }
       }
@@ -707,6 +758,27 @@ signalsRouter.post('/ingest', async (c) => {
         });
       }
 
+      auditLog.push({
+        index: article.index,
+        title: article.title,
+        publisher: article.publisher,
+        url: article.url,
+        publishedAt: article.publishedAt,
+        status: 'ingested',
+        reason: triage.reasoning[article.index] || 'Qualified commercial trigger in target geography',
+        companyName: enriched.companyName,
+        contact: primary
+          ? {
+              name: primary.name,
+              title: primary.title,
+              email: primary.email,
+              company: primary.company || enriched.companyName,
+              source: resolution.source,
+              trail: resolution.trail,
+            }
+          : null,
+      });
+
       ingestedSignals.push({
         id: signalId,
         title: article.title,
@@ -721,8 +793,51 @@ signalsRouter.post('/ingest', async (c) => {
       });
     }
 
+    // Capture non-winning candidate decisions for complete audit transparency
+    const processedIndices = new Set(auditLog.map((item) => item.index));
+    for (const article of fresh) {
+      if (!processedIndices.has(article.index)) {
+        auditLog.push({
+          index: article.index,
+          title: article.title,
+          publisher: article.publisher,
+          url: article.url,
+          publishedAt: article.publishedAt,
+          status: 'filtered',
+          reason: triage.reasoning[article.index] || hardRejectReason(article) || 'Ranked below batch triage cutoff (general commercial news)',
+        });
+      }
+    }
+
+    for (const article of pool) {
+      if (existingUrls.has(article.url)) {
+        auditLog.push({
+          index: article.index,
+          title: article.title,
+          publisher: article.publisher,
+          url: article.url,
+          publishedAt: article.publishedAt,
+          status: 'filtered',
+          reason: 'Already ingested into your deck in a previous scout session.',
+        });
+      }
+    }
+
     telemetry.ingestedCount = ingestedSignals.length;
+    const fullTelemetry = {
+      ...telemetry,
+      auditLog,
+    };
     console.log(`[Ingest] telemetry user=${user.id} ${JSON.stringify(telemetry)}`);
+
+    // Cache pipeline trace in memory for fast UI inspection
+    LAST_PIPELINE_TRACE[user.id] = {
+      timestamp: now,
+      query: queryLabel,
+      location: locationLock.enforced ? [locationLock.city, locationLock.region].filter(Boolean).join(' / ') : 'National',
+      telemetry: fullTelemetry,
+      auditLog,
+    };
 
     const summaryDetail = telemetry.fetchedCount > 0
       ? `(${telemetry.fetchedCount} articles scouted, ${telemetry.alreadyIngestedCount} already seen, ${telemetry.triagedWinnerCount} AI triaged)`
@@ -732,7 +847,7 @@ signalsRouter.post('/ingest', async (c) => {
       success: true,
       ingestedCount: ingestedSignals.length,
       signals: ingestedSignals,
-      telemetry,
+      telemetry: fullTelemetry,
       message:
         ingestedSignals.length > 0
           ? `Ingested and enriched ${ingestedSignals.length} new signals from "${queryLabel}". ${summaryDetail}`.trim()
@@ -748,6 +863,17 @@ signalsRouter.post('/ingest', async (c) => {
       500
     );
   }
+});
+
+/**
+ * GET /api/signals/pipeline-trace
+ * Returns the most recent AI radar search & ingestion trace with article-level audit log.
+ */
+signalsRouter.get('/pipeline-trace', async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return authenticationRequired(c);
+  const trace = LAST_PIPELINE_TRACE[user.id] || null;
+  return c.json({ success: true, trace });
 });
 
 /**
