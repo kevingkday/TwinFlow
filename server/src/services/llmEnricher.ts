@@ -585,18 +585,52 @@ export function generateHeuristicPeerRoles(signalType: string): PeerRoleBranch[]
   ];
 }
 
+const GEO_PREFIX = /^(?:In\s+|From\s+)?([A-Za-z.'-]+(?:\s+[A-Za-z.'-]+)?)(?:'s|’s)\s+/i;
+const ACTION_VERBS = /\s+(?:grows|expands|opens|launches|acquires|purchases|buys|merges with|names|appoints|hires|taps|promotes|raises|secures|closes|lands|wins|breaks ground|relocates|reports|celebrates|awarded|gets)\b/i;
+const STOP_ENTITIES = new Set([
+  'vancouver', 'toronto', 'calgary', 'edmonton', 'montreal', 'ottawa', 'victoria', 'canada',
+  'british columbia', 'ontario', 'alberta', 'morning', 'industry', 'business', 'the', 'new', 'city', 'us', 'usa', 'enterprise'
+]);
+
+export function extractCompanyFromHeadline(headline: string): string {
+  let cleaned = headline.trim();
+  const geoMatch = cleaned.match(GEO_PREFIX);
+  if (geoMatch && geoMatch[1] && STOP_ENTITIES.has(geoMatch[1].toLowerCase())) {
+    cleaned = cleaned.slice(geoMatch[0].length).trim();
+  }
+
+  const verbMatch = cleaned.search(ACTION_VERBS);
+  if (verbMatch > 0) {
+    const candidate = cleaned.slice(0, verbMatch).replace(/^(?:the\s+)/i, '').trim();
+    if (candidate && !STOP_ENTITIES.has(candidate.toLowerCase()) && candidate.length > 2) {
+      return candidate;
+    }
+  }
+
+  // Fallback: look for 1-3 capitalized words before any dash, colon, or comma
+  const firstSegment = cleaned.split(/[-–—:|]/)[0].trim();
+  const words = firstSegment.split(/\s+/);
+  const proper: string[] = [];
+  for (const w of words) {
+    if (/^[A-Z][A-Za-z0-9&.'-]+$/.test(w) && !STOP_ENTITIES.has(w.toLowerCase())) {
+      proper.push(w);
+    } else if (proper.length > 0) {
+      break;
+    }
+  }
+  if (proper.length > 0 && proper.length <= 4) {
+    return proper.join(' ');
+  }
+
+  return 'Local Enterprise';
+}
+
 export function generateHeuristicEnrichment(
   headline: string,
   text: string,
   publisher: string
 ): EnrichedSignalData {
-  // Extract company name heuristically from common headline patterns
-  let company = 'Enterprise Tech';
-  const firstWordMatch = headline.match(/^([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)?)/);
-  if (firstWordMatch && firstWordMatch[1]) {
-    company = firstWordMatch[1].trim();
-  }
-
+  const company = extractCompanyFromHeadline(headline);
   const cleanDomain = '';
 
   // Detect signal type
@@ -604,8 +638,10 @@ export function generateHeuristicEnrichment(
   const lower = headline.toLowerCase();
   if (lower.includes('series') || lower.includes('raises') || lower.includes('seed') || lower.includes('million') || lower.includes('$')) {
     signalType = 'Series A/B Funding';
-  } else if (lower.includes('appoints') || lower.includes('hires') || lower.includes('ceo') || lower.includes('cro') || lower.includes('vp')) {
+  } else if (lower.includes('appoints') || lower.includes('hires') || lower.includes('ceo') || lower.includes('cro') || lower.includes('vp') || lower.includes('names new')) {
     signalType = 'Executive Leadership';
+  } else if (lower.includes('acquires') || lower.includes('acquisition') || lower.includes('merges') || lower.includes('purchase')) {
+    signalType = 'Merger & Acquisition';
   } else if (lower.includes('launch') || lower.includes('unveil') || lower.includes('announces')) {
     signalType = 'Product Launch';
   }
@@ -615,22 +651,22 @@ export function generateHeuristicEnrichment(
   const dmRole = named[0]?.role || '';
 
   const firstName = dmName.split(' ')[0] || 'there';
-  const cleanHeadline = headline.replace(/["']/g, '').slice(0, 65).trim();
-  const coldIntroHook = `I saw the recent article in ${publisher} regarding ${company}'s announcement on ${cleanHeadline}.`;
-  const pitchSubject = `quick question re: ${company}`;
-  const pitchBody = `Hi ${firstName},\n\nI saw the recent article in ${publisher} regarding ${company}'s announcement on ${cleanHeadline}. Given our work in commercial services, would there be an opportunity to connect and see if we can present our offerings for your upcoming plans?\n\nBest,`;
+  const cleanHeadline = headline.replace(/["']/g, '').slice(0, 80).trim();
+  const coldIntroHook = `I saw the recent news regarding ${company}'s milestone: "${cleanHeadline}".`;
+  const pitchSubject = `commercial insurance quote for ${company}`;
+  const pitchBody = `Hi ${firstName},\n\nI saw the recent news regarding ${company}'s milestone ("${cleanHeadline}"). Congratulations on the growth.\n\nWe provide commercial coverage and risk services here in Vancouver. As operations and scale expand, could we put together a competitive quote for your upcoming insurance renewal?\n\nBest,`;
 
   return {
     companyName: company,
     companyDomain: cleanDomain,
     signalType,
-    industryTags: [signalType, 'High Growth', 'Enterprise Tech'],
+    industryTags: [signalType, 'Commercial Business', 'Regional Growth'],
     summaryBullets: [
-      `Headline trigger: ${headline}.`,
-      `Commercial and operational infrastructure expanding rapidly across target regional accounts.`,
-      `Immediate pipeline demand to eliminate manual review latency and accelerate outbound conversion.`,
+      `Milestone: ${cleanHeadline}.`,
+      `Regional Scaling: ${company} is expanding operational capacity and footprint.`,
+      `Commercial Opportunity: Operational growth creates vendor, facilities, and risk coverage requirements.`,
     ],
-    articleSummary: `${company} published an announcement regarding "${headline}". This strategic catalyst signals significant operational scaling, active leadership mobilization, and market expansion across core commercial sectors.`,
+    articleSummary: `${company} announced "${cleanHeadline}". As operations scale, new commercial requirements and risk coverage opportunities emerge.`,
     decisionMaker: {
       name: dmName,
       role: dmRole,
@@ -645,28 +681,49 @@ export function generateHeuristicEnrichment(
   };
 }
 
+export interface AdaptPitchContext {
+  publisher?: string;
+  offering?: string;
+  userOrganization?: string;
+  userName?: string;
+  userServices?: string[];
+  userMission?: string;
+  valueProp?: string;
+  userIntent?: string;
+  city?: string;
+}
+
 export function adaptPitchForContact(
   enriched: EnrichedSignalData,
   contact: { name: string; title: string; company: string; source: string },
-  context: { publisher: string; offering?: string }
+  context: AdaptPitchContext
 ): { subject: string; body: string } {
   const firstName = (contact.name || 'there').split(' ')[0] || 'there';
-  const targetCompany = contact.company || enriched.companyName;
-  const isSameCompany = targetCompany.toLowerCase().trim() === enriched.companyName.toLowerCase().trim();
+  const targetCompany = contact.company || enriched.companyName || 'your team';
+  const senderOrg = context.userOrganization?.replace(/\s*-\s*TwinFlow/i, '').trim() || 'Ocean Falls Insurance Services';
+  const senderName = context.userName || 'Kevin Day';
+  const senderCity = context.city || 'Vancouver';
 
-  let subject = enriched.pitchSubject || `quick question re: ${targetCompany}`;
-  let body = enriched.pitchBody;
+  const isInsurance = /insurance|liability|casualty|brokerage|coverage|risk/i.test(
+    `${context.userOrganization || ''} ${context.valueProp || ''} ${(context.userServices || []).join(' ')} ${context.userMission || ''}`
+  );
+  const isContractor = /construction|contractor|roofing|plumbing|hvac|building/i.test(
+    `${context.userOrganization || ''} ${context.valueProp || ''} ${(context.userServices || []).join(' ')}`
+  );
 
-  if (isSameCompany) {
-    if (enriched.pitchBody) {
-      body = enriched.pitchBody.replace(/^Hi\s+[A-Za-z'.-]+,/i, `Hi ${firstName},`);
-    } else {
-      body = `Hi ${firstName},\n\nI saw the recent article in ${context.publisher} regarding ${targetCompany}'s upcoming plans. Given our work in ${context.offering || 'commercial services'}, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`;
-    }
+  let subject = `commercial insurance quote for ${targetCompany}`;
+  let body = '';
+
+  if (isInsurance) {
+    subject = `commercial insurance quote for ${targetCompany}`;
+    body = `Hi ${firstName},\n\nI saw the recent news regarding ${targetCompany}'s milestone in ${senderCity} — congratulations on the growth.\n\nWe're a commercial insurance brokerage based here in ${senderCity} (${senderOrg}). As your physical footprint, team, and operational scale expand, your commercial liability and property coverage requirements naturally change.\n\nCould we put together a competitive quote for your upcoming insurance renewal?\n\nBest regards,\n${senderName}\n${senderOrg}`;
+  } else if (isContractor) {
+    subject = `commercial project bidding for ${targetCompany}`;
+    body = `Hi ${firstName},\n\nI saw the recent news regarding ${targetCompany}'s expansion in ${senderCity} — congratulations on the milestone.\n\nWe're a commercial contractor based here in ${senderCity} (${senderOrg}). As your facility and space requirements expand, could we present our qualifications to bid on your upcoming work?\n\nBest regards,\n${senderName}\n${senderOrg}`;
   } else {
-    // Lookalike or related company lead
-    subject = `quick question re: ${targetCompany}`;
-    body = `Hi ${firstName},\n\nI came across ${targetCompany} following recent industry milestones around ${enriched.companyName}'s ${enriched.signalType.toLowerCase()}. Given our work in ${context.offering || 'commercial solutions'}, would there be an opportunity to connect and see if we can present our services for your upcoming priorities?\n\nBest,`;
+    const offeringDesc = (context.userServices && context.userServices[0]) || context.valueProp || 'commercial services';
+    subject = `commercial inquiry for ${targetCompany}`;
+    body = `Hi ${firstName},\n\nI saw the recent news regarding ${targetCompany}'s milestone in ${senderCity} — congratulations on the progress.\n\nWe provide ${offeringDesc.toLowerCase()} based here in ${senderCity} (${senderOrg}). As your operations scale, could we connect briefly to see if we can provide a competitive quote for your upcoming requirements?\n\nBest regards,\n${senderName}\n${senderOrg}`;
   }
 
   return { subject, body };

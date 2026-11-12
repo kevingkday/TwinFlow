@@ -742,7 +742,13 @@ signalsRouter.post('/ingest', async (c) => {
       const draft = primary
         ? adaptPitchForContact(enriched, primary, {
             publisher: article.publisher,
-            offering: valueProp || userMission || '',
+            userOrganization: user.organization || user.legalBusinessName || undefined,
+            userName: user.name || undefined,
+            userServices: asList(user.servicesOffered),
+            valueProp: valueProp || undefined,
+            userMission: userMission || undefined,
+            userIntent,
+            city: locationLock.city || user.city || undefined,
           })
         : null;
       if (primaryContactId && draft) {

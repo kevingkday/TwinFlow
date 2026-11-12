@@ -383,10 +383,18 @@ export async function resolveSignalContacts(input: ContactResolutionInput, apiKe
     return { contacts: [], source: 'none', trail };
   }
 
+  const STOP_CITIES = new Set([
+    'vancouver', 'toronto', 'calgary', 'edmonton', 'montreal', 'ottawa', 'victoria', 'canada',
+    'british columbia', 'ontario', 'alberta', 'morning', 'industry', 'business', 'the', 'new', 'city', 'enterprise'
+  ]);
+  const isRealCompany = company && !STOP_CITIES.has(company.toLowerCase()) && company.length >= 2;
+
   // 2. Article company, no named person.
-  if (company || domain) {
+  if (isRealCompany || domain) {
     const hits = await searchApolloPeople(
-      domain ? { organizationDomains: [domain], personTitles: titles } : { organizationName: company, personTitles: titles },
+      domain
+        ? { organizationDomains: [domain], personTitles: titles }
+        : { organizationName: company, organizationLocations: input.locations, personTitles: titles },
       key
     );
     trail.push(`company:${hits.length}`);
