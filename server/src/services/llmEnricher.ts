@@ -193,7 +193,7 @@ export function keywordTriageCandidates(
 export const JEV_TRIAGE_CHUNK_SIZE = 8;
 
 /** Jev probability thresholds. `local` is the hard geographic gate. */
-export const JEV_TRIAGE_THRESHOLDS = { trigger: 0.5, fit: 0.5, local: 0.6, noise: 0.5 };
+export const JEV_TRIAGE_THRESHOLDS = { trigger: 0.35, fit: 0.35, local: 0.4, noise: 0.6 };
 
 const TRIGGER_EVENT_TEXT =
   'a leadership appointment, funding raise, acquisition, expansion or new facility, groundbreaking, contract award, or lease / headquarters move';
@@ -212,7 +212,11 @@ function jevQuestionsFor(index: number, profile: TriageBuyerProfile, lock: Locat
     },
     [`a${index}_fit`]: {
       type: 'noul',
-      instructions: `Would the company in ${ref} plausibly buy what state.seller offers, given the seller's buyer industries?`,
+      instructions: `Is the company in ${ref} a commercial operating company or enterprise that could buy commercial services (e.g. insurance, legal, accounting, IT, consulting) or enter B2B partnerships?`,
+      criteria: {
+        true: 'A commercial operating company, business, agency, manufacturer, contractor, or enterprise.',
+        false: 'A government department, school board, sports league, or consumer charity.',
+      },
     },
     [`a${index}_noise`]: {
       type: 'noul',
@@ -222,9 +226,9 @@ function jevQuestionsFor(index: number, profile: TriageBuyerProfile, lock: Locat
   if (lock.enforced) {
     questions[`a${index}_local`] = {
       type: 'noul',
-      instructions: `Is the company or the event in ${ref} located in ${area}?`,
+      instructions: `Is the company, office, hiring, expansion, or event in ${ref} connected to or located in ${area}?`,
       criteria: {
-        true: `The headline or snippet places the company or event in ${area}.`,
+        true: `The headline, snippet, or publisher connects the company, branch, office, or story to ${area}.`,
         false: `The company or event is located elsewhere, or the location is not indicated.`,
       },
     };
@@ -260,7 +264,9 @@ export async function triageCandidates(
   const eligible = candidates.filter((candidate) => !hardRejectReason(candidate));
   const seller = {
     offering: buyerProfile.offering || 'B2B commercial services',
-    buyerIndustries: [...(buyerProfile.buyerIndustries || []), ...(buyerProfile.targetIndustries || [])].filter(Boolean),
+    buyerIndustries: buyerProfile.buyerIndustries?.length
+      ? buyerProfile.buyerIndustries
+      : ['commercial operating companies', 'enterprises', 'growing businesses'],
     preferredTriggers: buyerProfile.targetTriggers || [],
     intent: buyerProfile.userIntent || 'sales_client_acquisition',
     serviceArea: lock.enforced ? `LOCAL: ${[lock.city, lock.region].filter(Boolean).join(', ')} only` : 'National',
@@ -325,12 +331,16 @@ export async function triageCandidates(
   const reasoning: Record<number, string> = Object.fromEntries(winners.map((w) => [w.index, w.reason]));
   const selectedIndices = winners.map((w) => w.index);
 
-  // Partial outage: fill remaining slots from the keyword fallback over the failed chunks only.
-  if (failedCandidates.length > 0 && selectedIndices.length < cap) {
-    const backup = keywordTriageCandidates(failedCandidates, buyerProfile, cap - selectedIndices.length);
+  // If Jev scored fewer than cap winners (e.g. strict probability thresholds or partial outage),
+  // fill remaining slots from the keyword/catalyst triage so the user ALWAYS gets qualified signals.
+  if (selectedIndices.length < cap) {
+    const backupCandidates = failedCandidates.length > 0 ? failedCandidates : eligible;
+    const backup = keywordTriageCandidates(backupCandidates, buyerProfile, cap - selectedIndices.length);
     for (const index of backup.selectedIndices) {
-      selectedIndices.push(index);
-      reasoning[index] = backup.reasoning[index];
+      if (!selectedIndices.includes(index)) {
+        selectedIndices.push(index);
+        reasoning[index] = backup.reasoning[index];
+      }
     }
   }
 
