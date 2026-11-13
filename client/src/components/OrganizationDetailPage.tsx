@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   Building2,
@@ -13,11 +13,13 @@ import {
   Users,
   Zap,
   ChevronRight,
+  Sparkles,
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
-import type { PipelineContact } from '../types/contact';
+import type { PipelineContact, SimilarContactCandidate, SimilarOrganizationGroup } from '../types/contact';
 import type { UserProfile } from '../types/lead';
+import { authFetch } from '../utils/api';
 import { openEmailClient } from '../utils/email';
 import { isExternalArticleUrl } from '../utils/publishedAt';
 
@@ -27,10 +29,17 @@ interface OrganizationDetailPageProps {
   user: UserProfile | null;
   copiedId: string | null;
   syncingContactId: string | null;
+  unlockingApolloId: string | null;
   onBack: () => void;
   onCopy: (text: string, id: string, label?: string) => void;
   onSyncContact: (contact: PipelineContact) => void;
   onSelectContactDossier: (contact: PipelineContact) => void;
+  onUnlockSimilar: (
+    candidate: SimilarContactCandidate,
+    context: { sourceCompanyName?: string; parentSignalId?: string; campaignId?: string | null },
+    openAfterUnlock?: 'dossier' | 'organization'
+  ) => Promise<void>;
+  onOpenOrganization: (orgName: string) => void;
 }
 
 export const OrganizationDetailPage: React.FC<OrganizationDetailPageProps> = ({
@@ -39,11 +48,41 @@ export const OrganizationDetailPage: React.FC<OrganizationDetailPageProps> = ({
   user,
   copiedId,
   syncingContactId,
+  unlockingApolloId,
   onBack,
   onCopy,
   onSyncContact,
   onSelectContactDossier,
+  onUnlockSimilar,
+  onOpenOrganization,
 }) => {
+  const [similarOrgs, setSimilarOrgs] = useState<SimilarOrganizationGroup[]>([]);
+  const [similarMode, setSimilarMode] = useState<string>('');
+  const [loadingSimilar, setLoadingSimilar] = useState<boolean>(false);
+
+  const loadSimilarOrganizations = React.useCallback(async () => {
+    setLoadingSimilar(true);
+    try {
+      const res = await authFetch(
+        `/api/contacts/organization/similar?companyName=${encodeURIComponent(organizationName)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSimilarOrgs(data.similarOrganizations || []);
+          setSimilarMode(data.mode || '');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load similar organizations:', err);
+    } finally {
+      setLoadingSimilar(false);
+    }
+  }, [organizationName]);
+
+  useEffect(() => {
+    loadSimilarOrganizations();
+  }, [loadSimilarOrganizations]);
   // Deduplicate market signals for this organization
   const signals = React.useMemo(() => {
     const map = new Map<
@@ -390,6 +429,129 @@ export const OrganizationDetailPage: React.FC<OrganizationDetailPageProps> = ({
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Similar Organizations & Contacts (Opportunity Chaining) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">
+                Similar Organizations & Contacts
+              </h3>
+              <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-semibold">
+                {similarMode === 'lookalike_org' ? 'Apollo Lookalikes' : 'Industry Peers'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Keep your momentum going — unlock a decision-maker at a similar organization to earn +25 XP and chain into your next account.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadSimilarOrganizations}
+            disabled={loadingSimilar}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingSimilar ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        {loadingSimilar ? (
+          <div className="py-8 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+            <span>Scanning Apollo for organizations similar to {organizationName}...</span>
+          </div>
+        ) : similarOrgs.length === 0 ? (
+          <div className="py-6 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-slate-200/70">
+            No similar organizations found right now. Try refreshing or scouting new signals from the Lead Deck.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {similarOrgs.map((org) => (
+              <div
+                key={org.organizationName}
+                className="rounded-xl border border-slate-200 p-4 bg-slate-50/50 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200/80 flex items-center justify-center text-indigo-700 font-bold text-xs flex-shrink-0">
+                      {org.organizationName.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="font-bold text-slate-900 text-sm truncate">
+                      {org.organizationName}
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-medium text-slate-500 flex-shrink-0">
+                    {org.contacts.length} {org.contacts.length === 1 ? 'contact' : 'contacts'}
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {org.contacts.map((cand) => {
+                    const isUnlocking = unlockingApolloId === cand.apolloPersonId;
+                    return (
+                      <div
+                        key={cand.apolloPersonId}
+                        className="rounded-lg bg-white border border-slate-200/90 p-2.5 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-900 text-xs truncate">
+                              {cand.firstName}
+                            </span>
+                            {cand.hasEmail && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex-shrink-0">
+                                Email
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate">{cand.title}</div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={Boolean(unlockingApolloId)}
+                          onClick={() =>
+                            onUnlockSimilar(
+                              cand,
+                              {
+                                sourceCompanyName: organizationName,
+                                parentSignalId: contacts[0]?.signalId,
+                                campaignId: contacts[0]?.campaignId,
+                              },
+                              'organization'
+                            )
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold transition-all cursor-pointer disabled:opacity-50 flex-shrink-0"
+                          title="Unlock full contact & add to pipeline (-5 credits, +25 XP)"
+                        >
+                          {isUnlocking ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Zap className="w-3 h-3" />
+                          )}
+                          <span>{isUnlocking ? 'Unlocking...' : 'Unlock (-5 cr · +25 XP)'}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onOpenOrganization(org.organizationName)}
+                  className="w-full text-center text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 pt-1 cursor-pointer hidden"
+                >
+                  Open Organization →
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

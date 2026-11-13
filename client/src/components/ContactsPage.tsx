@@ -19,9 +19,11 @@ import {
   LayoutGrid,
   X,
   Building,
+  Sparkles,
+  Flame,
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
-import type { PipelineContact, PipelineStats } from '../types/contact';
+import type { PipelineContact, PipelineStats, SimilarContactCandidate } from '../types/contact';
 import type { Campaign } from '../types/campaign';
 import type { UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
@@ -62,7 +64,26 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
   const [selectedContactForModal, setSelectedContactForModal] = useState<PipelineContact | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [syncingContactId, setSyncingContactId] = useState<string | null>(null);
+  const [unlockingApolloId, setUnlockingApolloId] = useState<string | null>(null);
+  const [similarContacts, setSimilarContacts] = useState<SimilarContactCandidate[]>([]);
+  const [similarContactsMode, setSimilarContactsMode] = useState<string>('');
+  const [loadingSimilarContacts, setLoadingSimilarContacts] = useState<boolean>(false);
+  const [gamification, setGamification] = useState({
+    xp: user?.totalPoints ?? 0,
+    streak: user?.streakCount ?? 0,
+    credits: user?.creditBalance ?? 0,
+  });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      setGamification({
+        xp: user.totalPoints ?? 0,
+        streak: user.streakCount ?? 0,
+        credits: user.creditBalance ?? 0,
+      });
+    }
+  }, [user]);
 
   // Show temporary toast message
   const showToast = useCallback((msg: string) => {
@@ -142,6 +163,94 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
       showToast(`Sync error: ${err.message || 'Network error'}`);
     } finally {
       setSyncingContactId(null);
+    }
+  };
+
+  // Load similar contacts when a Contact Dossier modal opens
+  const fetchSimilarContacts = useCallback(async (contactId: string) => {
+    if (!contactId || contactId.startsWith('ct_virtual_')) {
+      setSimilarContacts([]);
+      return;
+    }
+    setLoadingSimilarContacts(true);
+    try {
+      const res = await authFetch(`/api/contacts/${contactId}/similar`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSimilarContacts(data.candidates || []);
+          setSimilarContactsMode(data.mode || '');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch similar contacts:', err);
+    } finally {
+      setLoadingSimilarContacts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedContactForModal) {
+      setSimilarContacts([]);
+      fetchSimilarContacts(selectedContactForModal.id);
+    }
+  }, [selectedContactForModal, fetchSimilarContacts]);
+
+  // Unlock a similar contact from Apollo & chain into it
+  const handleUnlockSimilar = async (
+    candidate: SimilarContactCandidate,
+    context: {
+      sourceCompanyName?: string;
+      sourceContactName?: string;
+      parentSignalId?: string;
+      campaignId?: string | null;
+    },
+    openAfterUnlock?: 'dossier' | 'organization'
+  ) => {
+    setUnlockingApolloId(candidate.apolloPersonId);
+    try {
+      const res = await authFetch('/api/contacts/unlock-similar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apolloPersonId: candidate.apolloPersonId,
+          sourceCompanyName: context.sourceCompanyName,
+          sourceContactName: context.sourceContactName,
+          parentSignalId: context.parentSignalId,
+          campaignId: context.campaignId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.contact) {
+        const newContact: PipelineContact = data.contact;
+        setContacts((prev) => [newContact, ...prev]);
+        setStats((prev) => ({
+          ...prev,
+          totalCount: prev.totalCount + 1,
+          organizationsCount: prev.organizationsCount + (
+            contacts.some((c) => c.companyName.toLowerCase() === newContact.companyName.toLowerCase()) ? 0 : 1
+          ),
+          withEmailCount: prev.withEmailCount + (newContact.email ? 1 : 0),
+        }));
+        setGamification({
+          xp: data.totalPoints ?? gamification.xp + 25,
+          streak: data.streakCount ?? gamification.streak + 1,
+          credits: data.creditsRemaining ?? Math.max(0, gamification.credits - 5),
+        });
+        showToast(`🔥 +${data.pointsAwarded || 25} XP · Streak x${data.streakCount || gamification.streak + 1}! Unlocked ${newContact.name}`);
+
+        if (openAfterUnlock === 'dossier') {
+          setSelectedContactForModal(newContact);
+        } else if (openAfterUnlock === 'organization') {
+          setSelectedOrganizationName(newContact.companyName);
+        }
+      } else {
+        showToast(data.error || 'Could not unlock similar contact.');
+      }
+    } catch (err: any) {
+      showToast(`Unlock error: ${err.message || 'Network error'}`);
+    } finally {
+      setUnlockingApolloId(null);
     }
   };
 
@@ -282,8 +391,24 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
               </p>
             </div>
 
-            {/* Quick Actions */}
+            {/* Quick Actions + Gamification Chain HUD */}
             <div className="flex items-center gap-2.5 sm:self-end flex-wrap">
+              {user && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-xs">
+                  <span className="inline-flex items-center gap-1 text-amber-300" title="Total XP earned">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span className="font-mono">{gamification.xp} XP</span>
+                  </span>
+                  <span className="text-slate-600">•</span>
+                  <span className="inline-flex items-center gap-1 text-orange-300" title="Opportunity chain streak">
+                    <Flame className="w-3.5 h-3.5" />
+                    <span className="font-mono">x{gamification.streak}</span>
+                  </span>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-slate-200 font-mono">{gamification.credits} cr</span>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleExportCsv}
@@ -390,6 +515,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
           user={user}
           copiedId={copiedId}
           syncingContactId={syncingContactId}
+          unlockingApolloId={unlockingApolloId}
           onBack={() => {
             setSelectedOrganizationName(null);
             setEntityView('organizations');
@@ -397,6 +523,8 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
           onCopy={handleCopy}
           onSyncContact={handleSyncContact}
           onSelectContactDossier={(contact) => setSelectedContactForModal(contact)}
+          onUnlockSimilar={handleUnlockSimilar}
+          onOpenOrganization={(org) => setSelectedOrganizationName(org)}
         />
       ) : (
         <>
@@ -1223,6 +1351,88 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                   <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed pt-2.5 font-sans bg-slate-50/50 p-3 rounded-lg border border-slate-100">
                     {selectedContactForModal.outreachDraft.body}
                   </div>
+                </div>
+              )}
+
+              {/* Similar Contacts (Apollo Lookalikes - Opportunity Chaining) */}
+              {!selectedContactForModal.id.startsWith('ct_virtual_') && (
+                <div className="rounded-xl border border-indigo-200/80 p-4 bg-indigo-50/30 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                        Similar Contacts
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[10px] font-semibold">
+                        {similarContactsMode === 'lookalike_person' ? 'Apollo Lookalikes' : 'Role & Industry Peers'}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500">Unlock next opportunity (+25 XP)</span>
+                  </div>
+
+                  {loadingSimilarContacts ? (
+                    <div className="py-4 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                      <span>Finding people similar to {selectedContactForModal.name}...</span>
+                    </div>
+                  ) : similarContacts.length === 0 ? (
+                    <div className="py-3 text-center text-xs text-slate-500">
+                      No similar contacts returned for this profile.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {similarContacts.map((cand) => {
+                        const isUnlocking = unlockingApolloId === cand.apolloPersonId;
+                        return (
+                          <div
+                            key={cand.apolloPersonId}
+                            className="rounded-xl bg-white border border-slate-200 p-3 flex items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-slate-900 text-xs">{cand.firstName}</span>
+                                <span className="text-slate-400 text-xs">•</span>
+                                <span className="text-xs font-semibold text-indigo-700 truncate">
+                                  {cand.organizationName}
+                                </span>
+                                {cand.hasEmail && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
+                                    Email
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-500 truncate mt-0.5">{cand.title}</div>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={Boolean(unlockingApolloId)}
+                              onClick={() =>
+                                handleUnlockSimilar(
+                                  cand,
+                                  {
+                                    sourceCompanyName: selectedContactForModal.companyName,
+                                    sourceContactName: selectedContactForModal.name,
+                                    parentSignalId: selectedContactForModal.signalId,
+                                    campaignId: selectedContactForModal.campaignId,
+                                  },
+                                  'dossier'
+                                )
+                              }
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold transition-all cursor-pointer disabled:opacity-50 flex-shrink-0"
+                            >
+                              {isUnlocking ? (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Zap className="w-3 h-3" />
+                              )}
+                              <span>{isUnlocking ? 'Unlocking...' : 'Unlock & Open (-5 cr)'}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

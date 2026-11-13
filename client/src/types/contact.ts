@@ -42,3 +42,16 @@ export interface PipelineContactsResponse {
   error?: string;
 }
 
+export interface SimilarContactCandidate {
+  apolloPersonId: string;
+  firstName: string;
+  title: string;
+  organizationName: string;
+  hasEmail: boolean;
+}
+
+export interface SimilarOrganizationGroup {
+  organizationName: string;
+  contacts: SimilarContactCandidate[];
+}
+

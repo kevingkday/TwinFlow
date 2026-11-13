@@ -435,3 +435,80 @@ export async function resolveSignalContacts(input: ContactResolutionInput, apiKe
 
   return { contacts: [], source: 'none', trail };
 }
+
+const FREE_EMAIL_DOMAINS = new Set([
+  'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com',
+  'live.com', 'aol.com', 'protonmail.com', 'proton.me', 'me.com', 'msn.com',
+]);
+
+/** Extract corporate domain from an email address, ignoring free webmail providers. */
+export function extractBusinessDomain(email?: string | null): string | undefined {
+  if (!email || !email.includes('@')) return undefined;
+  const domain = email.split('@')[1]?.trim().toLowerCase();
+  if (!domain || FREE_EMAIL_DOMAINS.has(domain)) return undefined;
+  return domain;
+}
+
+export interface ApolloSeedResult {
+  apolloPersonId?: string;
+  apolloOrganizationId?: string;
+  domain?: string;
+  industry?: string;
+}
+
+/**
+ * Resolve an Apollo person ID and organization ID seed for lookalike discovery.
+ */
+export async function findApolloPersonSeed(
+  input: {
+    email?: string | null;
+    name?: string | null;
+    companyName?: string | null;
+    domain?: string | null;
+  },
+  apiKey?: string
+): Promise<ApolloSeedResult | null> {
+  const key = liveApolloKey(apiKey);
+  if (!key) return null;
+
+  const body: Record<string, unknown> = {};
+  if (input.email) {
+    body.email = input.email.trim();
+  } else {
+    const cleanFullName = (input.name || '').replace(/^(dr|mr|mrs|ms|prof|hon)\.?\s+/i, '').trim();
+    const parts = cleanFullName.split(/\s+/).filter(Boolean);
+    if (parts.length > 0) body.first_name = parts[0];
+    if (parts.length > 1) body.last_name = parts.slice(1).join(' ');
+    if (input.companyName) body.organization_name = input.companyName.trim();
+    if (input.domain) body.domain = input.domain.trim();
+  }
+
+  if (Object.keys(body).length === 0) return null;
+
+  try {
+    const response = await fetch(`${APOLLO_BASE}/people/match`, {
+      method: 'POST',
+      headers: apolloHeaders(key),
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) return null;
+    const json = (await response.json()) as {
+      person?: {
+        id?: string;
+        organization_id?: string;
+        organization?: { id?: string; primary_domain?: string; industry?: string };
+      };
+    };
+    const p = json.person;
+    if (!p?.id && !p?.organization_id && !p?.organization?.id) return null;
+    return {
+      apolloPersonId: p.id,
+      apolloOrganizationId: p.organization_id || p.organization?.id,
+      domain: p.organization?.primary_domain,
+      industry: p.organization?.industry,
+    };
+  } catch (err) {
+    console.warn('[Apollo] person seed lookup failed:', err);
+    return null;
+  }
+}
