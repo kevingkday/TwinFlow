@@ -25,6 +25,7 @@ import type { PipelineContact, PipelineStats } from '../types/contact';
 import type { Campaign } from '../types/campaign';
 import type { UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
+import { OrganizationDetailPage } from './OrganizationDetailPage';
 import { authFetch } from '../utils/api';
 import { openEmailClient } from '../utils/email';
 import { isExternalArticleUrl } from '../utils/publishedAt';
@@ -55,6 +56,8 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>(activeCampaignId || 'all');
   const [activeTab, setActiveTab] = useState<'all' | 'synced' | 'with_email' | 'with_linkedin'>('all');
+  const [entityView, setEntityView] = useState<'contacts' | 'organizations'>('contacts');
+  const [selectedOrganizationName, setSelectedOrganizationName] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [selectedContactForModal, setSelectedContactForModal] = useState<PipelineContact | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -184,6 +187,13 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
     }));
   }, [filteredContacts]);
 
+  const selectedOrganizationContacts = useMemo(() => {
+    if (!selectedOrganizationName) return [];
+    return contacts.filter(
+      (c) => (c.companyName || 'Other Accounts') === selectedOrganizationName
+    );
+  }, [contacts, selectedOrganizationName]);
+
   // CSV Export
   const handleExportCsv = () => {
     if (filteredContacts.length === 0) {
@@ -299,7 +309,18 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
 
           {/* Metric Summary Stat Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-6">
-            <div className="bg-slate-50/80 rounded-xl p-3.5 border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => {
+                setEntityView('contacts');
+                setSelectedOrganizationName(null);
+              }}
+              className={`text-left rounded-xl p-3.5 border transition-all cursor-pointer ${
+                entityView === 'contacts' && !selectedOrganizationName
+                  ? 'bg-blue-50/50 border-blue-300 ring-2 ring-blue-500/10'
+                  : 'bg-slate-50/80 border-slate-200/80 hover:border-slate-300'
+              }`}
+            >
               <div className="flex items-center justify-between text-slate-500 text-xs font-medium">
                 <span>Total Contacts</span>
                 <Users className="w-4 h-4 text-blue-600" />
@@ -308,9 +329,20 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                 {stats.totalCount}
               </div>
               <div className="text-[11px] text-slate-500 mt-0.5">Approved decision-makers</div>
-            </div>
+            </button>
 
-            <div className="bg-slate-50/80 rounded-xl p-3.5 border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => {
+                setEntityView('organizations');
+                setSelectedOrganizationName(null);
+              }}
+              className={`text-left rounded-xl p-3.5 border transition-all cursor-pointer ${
+                entityView === 'organizations' || selectedOrganizationName
+                  ? 'bg-indigo-50/50 border-indigo-300 ring-2 ring-indigo-500/10'
+                  : 'bg-slate-50/80 border-slate-200/80 hover:border-slate-300'
+              }`}
+            >
               <div className="flex items-center justify-between text-slate-500 text-xs font-medium">
                 <span>Organizations</span>
                 <Building2 className="w-4 h-4 text-indigo-600" />
@@ -318,8 +350,8 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
               <div className="text-xl sm:text-2xl font-bold text-slate-900 font-mono mt-1">
                 {stats.organizationsCount}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Discovered commercial accounts</div>
-            </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Click to view accounts</div>
+            </button>
 
             <div className="bg-slate-50/80 rounded-xl p-3.5 border border-slate-200/80">
               <div className="flex items-center justify-between text-slate-500 text-xs font-medium">
@@ -350,9 +382,27 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
         </div>
       </div>
 
+      {/* Organization Detail Page OR Contacts/Organizations Directory */}
+      {selectedOrganizationName ? (
+        <OrganizationDetailPage
+          organizationName={selectedOrganizationName}
+          contacts={selectedOrganizationContacts}
+          user={user}
+          copiedId={copiedId}
+          syncingContactId={syncingContactId}
+          onBack={() => {
+            setSelectedOrganizationName(null);
+            setEntityView('organizations');
+          }}
+          onCopy={handleCopy}
+          onSyncContact={handleSyncContact}
+          onSelectContactDossier={(contact) => setSelectedContactForModal(contact)}
+        />
+      ) : (
+        <>
       {/* Filter & Toolbar Area */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
-        <div className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           {/* Search Input & Campaign Selector */}
           <div className="flex items-center gap-2.5 flex-1 flex-wrap sm:flex-nowrap">
             <div className="relative flex-1 min-w-[200px]">
@@ -393,7 +443,35 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
           </div>
 
           {/* Quick Filter Tabs & Layout View Switcher */}
-          <div className="flex items-center justify-between md:justify-end gap-3 flex-wrap">
+          <div className="flex items-center justify-between lg:justify-end gap-2.5 flex-wrap">
+            {/* Entity View Toggle: Contacts vs Organizations */}
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setEntityView('contacts')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                  entityView === 'contacts'
+                    ? 'bg-white text-blue-700 font-semibold shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Contacts</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEntityView('organizations')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                  entityView === 'organizations'
+                    ? 'bg-white text-indigo-700 font-semibold shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Organizations</span>
+              </button>
+            </div>
+
             <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs font-medium">
               <button
                 type="button"
@@ -430,33 +508,35 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
               </button>
             </div>
 
-            {/* View Mode Toggle: Table vs Cards */}
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs">
-              <button
-                type="button"
-                onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                  viewMode === 'table'
-                    ? 'bg-white text-blue-600 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-                title="Table List View"
-              >
-                <LayoutList className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('cards')}
-                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                  viewMode === 'cards'
-                    ? 'bg-white text-blue-600 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-                title="Organization Cards View"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-            </div>
+            {/* View Mode Toggle: Table vs Cards (Contacts mode only) */}
+            {entityView === 'contacts' && (
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                    viewMode === 'table'
+                      ? 'bg-white text-blue-600 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Table List View"
+                >
+                  <LayoutList className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('cards')}
+                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                    viewMode === 'cards'
+                      ? 'bg-white text-blue-600 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Organization Cards View"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -503,19 +583,112 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
               )}
             </div>
           </div>
+        ) : entityView === 'organizations' ? (
+          /* Organizations Directory View */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {groupedByOrganization.map((group) => {
+              const syncedCount = group.contacts.filter((c) => Boolean(c.ghlContactId)).length;
+              const emailCount = group.contacts.filter((c) => Boolean(c.email)).length;
+              return (
+                <div
+                  key={group.organization}
+                  onClick={() => setSelectedOrganizationName(group.organization)}
+                  className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:shadow-md hover:border-indigo-300 transition-all flex flex-col justify-between cursor-pointer group"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-center text-indigo-700 flex-shrink-0 font-bold text-sm">
+                          {group.organization.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-slate-900 text-base truncate group-hover:text-indigo-700 transition-colors">
+                            {group.organization}
+                          </h3>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60 mt-0.5">
+                            {group.signalType || 'Market Signal'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {isExternalArticleUrl(group.sourceUrl) && (
+                        <a
+                          href={group.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors flex-shrink-0"
+                          title="Read news source"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      )}
+                    </div>
+
+                    {group.primarySignal && (
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 mb-3 text-xs text-slate-600 line-clamp-2">
+                        <span className="font-semibold text-slate-700">Trigger:</span> {group.primarySignal}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+                      <div className="rounded-lg bg-slate-50 border border-slate-200/70 py-2 px-1">
+                        <div className="text-sm font-bold text-slate-900 font-mono">{group.contacts.length}</div>
+                        <div className="text-[10px] text-slate-500">Contacts</div>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 border border-slate-200/70 py-2 px-1">
+                        <div className="text-sm font-bold text-slate-900 font-mono">
+                          {syncedCount}/{group.contacts.length}
+                        </div>
+                        <div className="text-[10px] text-slate-500">CRM Synced</div>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 border border-slate-200/70 py-2 px-1">
+                        <div className="text-sm font-bold text-slate-900 font-mono">{emailCount}</div>
+                        <div className="text-[10px] text-slate-500">Emails</div>
+                      </div>
+                    </div>
+
+                    {group.industryTags.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                        {group.industryTags.slice(0, 3).map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-medium"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                    <span className="truncate">
+                      {group.contacts.map((c) => c.name).slice(0, 2).join(', ')}
+                      {group.contacts.length > 2 ? ` +${group.contacts.length - 2}` : ''}
+                    </span>
+                    <span className="font-semibold text-indigo-600 group-hover:text-indigo-800 flex items-center gap-0.5 flex-shrink-0">
+                      <span>View Organization</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : viewMode === 'table' ? (
           /* Table View */
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto lg:overflow-x-visible">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                    <th className="py-3.5 px-4">Organization & Catalyst</th>
-                    <th className="py-3.5 px-4">Decision Maker</th>
-                    <th className="py-3.5 px-4">Contact Details</th>
-                    <th className="py-3.5 px-4">Outreach Pitch</th>
-                    <th className="py-3.5 px-4">CRM Status</th>
-                    <th className="py-3.5 px-4 text-right">Actions</th>
+                    <th className="py-3.5 px-3">Organization & Catalyst</th>
+                    <th className="py-3.5 px-3">Decision Maker</th>
+                    <th className="py-3.5 px-3">Contact Details</th>
+                    <th className="py-3.5 px-3">Outreach Pitch</th>
+                    <th className="py-3.5 px-3">CRM Status</th>
+                    <th className="py-3.5 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -526,21 +699,31 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                       onClick={() => setSelectedContactForModal(c)}
                     >
                       {/* Organization & Catalyst */}
-                      <td className="py-4 px-4 max-w-[260px]">
+                      <td className="py-4 px-3 max-w-[230px]">
                         <div className="flex items-start gap-2.5">
                           <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 flex-shrink-0 mt-0.5">
                             <Building className="w-4 h-4 text-slate-600" />
                           </div>
                           <div className="min-w-0">
                             <div className="font-bold text-slate-900 text-sm truncate flex items-center gap-1.5">
-                              <span>{c.companyName}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedOrganizationName(c.companyName || 'Other Accounts');
+                                }}
+                                className="truncate hover:text-indigo-600 hover:underline text-left cursor-pointer"
+                                title="View organization details"
+                              >
+                                {c.companyName}
+                              </button>
                               {isExternalArticleUrl(c.sourceUrl) && (
                                 <a
                                   href={c.sourceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="text-slate-400 hover:text-blue-600 transition-colors"
+                                  className="text-slate-400 hover:text-blue-600 transition-colors flex-shrink-0"
                                   title="View source article"
                                 >
                                   <ArrowUpRight className="w-3.5 h-3.5" />
@@ -552,7 +735,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                                 {c.signalType}
                               </span>
                               {c.campaignName && (
-                                <span className="inline-flex items-center text-[10px] text-slate-400 truncate max-w-[120px]">
+                                <span className="inline-flex items-center text-[10px] text-slate-400 truncate max-w-[110px]">
                                   • {c.campaignName}
                                 </span>
                               )}
@@ -565,13 +748,13 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                       </td>
 
                       {/* Decision Maker */}
-                      <td className="py-4 px-4 min-w-[200px]">
-                        <div className="flex items-center gap-3">
+                      <td className="py-4 px-3 max-w-[200px]">
+                        <div className="flex items-center gap-2.5 min-w-0">
                           <ExecutiveAvatar name={c.name} avatarUrl={c.avatarUrl} size="md" />
                           <div className="min-w-0">
                             <div className="font-semibold text-slate-900 flex items-center gap-1.5">
                               <span className="truncate">{c.name}</span>
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex-shrink-0">
                                 Verified
                               </span>
                             </div>
@@ -581,17 +764,17 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                       </td>
 
                       {/* Contact Info: Email & LinkedIn */}
-                      <td className="py-4 px-4 min-w-[190px]">
+                      <td className="py-4 px-3 max-w-[185px]">
                         <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
                           {c.email ? (
                             <button
                               type="button"
                               onClick={() => handleCopy(c.email!, `email-${c.id}`, 'Email')}
-                              className="flex items-center gap-1.5 text-slate-600 hover:text-blue-600 transition-colors text-[11px] group/copy"
+                              className="flex items-center gap-1.5 text-slate-600 hover:text-blue-600 transition-colors text-[11px] group/copy max-w-full"
                               title="Click to copy email address"
                             >
-                              <Mail className="w-3.5 h-3.5 text-slate-400 group-hover/copy:text-blue-600" />
-                              <span className="font-mono text-slate-800 group-hover/copy:underline truncate max-w-[150px]">
+                              <Mail className="w-3.5 h-3.5 text-slate-400 group-hover/copy:text-blue-600 flex-shrink-0" />
+                              <span className="font-mono text-slate-800 group-hover/copy:underline truncate">
                                 {c.email}
                               </span>
                               {copiedId === `email-${c.id}` ? (
@@ -602,8 +785,8 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                             </button>
                           ) : (
                             <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
-                              <Mail className="w-3.5 h-3.5" />
-                              <span>Direct email pending</span>
+                              <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                              <span className="truncate">Direct email pending</span>
                             </div>
                           )}
 
@@ -615,16 +798,16 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                               className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 transition-colors text-[11px] font-medium"
                               title="Open LinkedIn Profile"
                             >
-                              <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 fill-current" />
-                              <span>LinkedIn Profile</span>
-                              <ExternalLink className="w-2.5 h-2.5 text-blue-500" />
+                              <LinkedInIcon className="w-3.5 h-3.5 text-blue-600 fill-current flex-shrink-0" />
+                              <span className="truncate">LinkedIn Profile</span>
+                              <ExternalLink className="w-2.5 h-2.5 text-blue-500 flex-shrink-0" />
                             </a>
                           )}
                         </div>
                       </td>
 
                       {/* Outreach Pitch Subject Preview */}
-                      <td className="py-4 px-4 max-w-[220px]">
+                      <td className="py-4 px-3 max-w-[210px]">
                         {c.outreachDraft ? (
                           <div className="space-y-1">
                             <div className="font-medium text-slate-800 truncate text-[11px]">
@@ -640,7 +823,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                       </td>
 
                       {/* CRM Status */}
-                      <td className="py-4 px-4 whitespace-nowrap">
+                      <td className="py-4 px-3 whitespace-nowrap">
                         {c.ghlContactId ? (
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-medium">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -655,38 +838,40 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                       </td>
 
                       {/* Actions */}
-                      <td className="py-4 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
-                          {c.outreachDraft && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openEmailClient('gmail', c.email, c.outreachDraft?.subject, c.outreachDraft?.body)
-                              }
-                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
-                              title="Launch Gmail compose with this pitch pre-filled"
-                            >
-                              <Mail className="w-3 h-3 text-red-600" />
-                              <span>Gmail</span>
-                              <ExternalLink className="w-2.5 h-2.5 opacity-70" />
-                            </button>
-                          )}
+                      <td className="py-3 px-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {c.outreachDraft && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openEmailClient('gmail', c.email, c.outreachDraft?.subject, c.outreachDraft?.body)
+                                }
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
+                                title="Launch Gmail compose with this pitch pre-filled"
+                              >
+                                <Mail className="w-3 h-3 text-red-600" />
+                                <span>Gmail</span>
+                                <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                              </button>
+                            )}
 
-                          {!c.ghlContactId && (
-                            <button
-                              type="button"
-                              onClick={() => handleSyncContact(c)}
-                              disabled={syncingContactId === c.id}
-                              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition-all cursor-pointer disabled:opacity-50"
-                              title="Sync to CRM"
-                            >
-                              {syncingContactId === c.id ? (
-                                <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
-                              ) : (
-                                'Sync CRM'
-                              )}
-                            </button>
-                          )}
+                            {!c.ghlContactId && (
+                              <button
+                                type="button"
+                                onClick={() => handleSyncContact(c)}
+                                disabled={syncingContactId === c.id}
+                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition-all cursor-pointer disabled:opacity-50"
+                                title="Sync to CRM"
+                              >
+                                {syncingContactId === c.id ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
+                                ) : (
+                                  'Sync CRM'
+                                )}
+                              </button>
+                            )}
+                          </div>
 
                           <button
                             type="button"
@@ -720,7 +905,13 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                         {group.organization.slice(0, 2).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <h3 className="font-bold text-slate-900 text-base truncate">{group.organization}</h3>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOrganizationName(group.organization)}
+                          className="font-bold text-slate-900 text-base truncate hover:text-indigo-600 hover:underline text-left block max-w-full cursor-pointer"
+                        >
+                          {group.organization}
+                        </button>
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60 mt-0.5">
                           {group.signalType || 'Market Signal'}
                         </span>
@@ -788,10 +979,10 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                   </span>
                   <button
                     type="button"
-                    onClick={() => setSelectedContactForModal(group.contacts[0])}
-                    className="font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                    onClick={() => setSelectedOrganizationName(group.organization)}
+                    className="font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
                   >
-                    View Dossier →
+                    View Organization →
                   </button>
                 </div>
               </div>
@@ -799,6 +990,8 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Contact Dossier & Pitch Detail Modal */}
       {selectedContactForModal && (
@@ -843,9 +1036,19 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                 <div className="min-w-0 flex-1">
                   <h2 className="text-xl font-bold text-slate-900">{selectedContactForModal.name}</h2>
                   <div className="text-sm text-slate-600 font-medium">{selectedContactForModal.title}</div>
-                  <div className="text-sm font-semibold text-blue-600 mt-0.5">
-                    {selectedContactForModal.companyName}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const org = selectedContactForModal.companyName || 'Other Accounts';
+                      setSelectedContactForModal(null);
+                      setSelectedOrganizationName(org);
+                    }}
+                    className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 hover:underline mt-0.5 inline-flex items-center gap-1 cursor-pointer"
+                    title="View organization detail page"
+                  >
+                    <span>{selectedContactForModal.companyName}</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
 
                   {/* Quick Contact Buttons */}
                   <div className="flex items-center gap-2.5 mt-3 flex-wrap">
