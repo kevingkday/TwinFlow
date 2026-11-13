@@ -99,7 +99,7 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
 
   const handleCopyScopes = () => {
     navigator.clipboard.writeText(
-      'chat-widget.readonly chat-widget.write contacts.readonly contacts.write conversations.readonly conversations.write conversations/message.readonly conversations/message.write locations.readonly'
+      'contacts.readonly contacts.write conversations.readonly conversations.write conversations/message.readonly conversations/message.write locations.readonly'
     );
     setCopiedScope(true);
     setTimeout(() => setCopiedScope(false), 2000);

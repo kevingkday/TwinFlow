@@ -19,8 +19,6 @@ export const GHL_DEFAULT_COMPANY_ID = 'ycxGZPk2GALkmii5NPkO';
 
 // Required Marketplace App permission scopes
 export const GHL_OAUTH_SCOPES = [
-  'chat-widget.readonly',
-  'chat-widget.write',
   'contacts.readonly',
   'contacts.write',
   'conversations.readonly',
