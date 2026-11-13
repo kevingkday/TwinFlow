@@ -39,6 +39,7 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
   const [showApiKey, setShowApiKey] = useState(false);
   const [showTempPassword, setShowTempPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isConnectingOAuth, setIsConnectingOAuth] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [showManualSection, setShowManualSection] = useState(false);
@@ -104,8 +105,28 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
     setTimeout(() => setCopiedScope(false), 2000);
   };
 
-  const handleConnectOAuth = () => {
-    window.location.href = '/api/oauth/ghl/start';
+  const handleConnectOAuth = async () => {
+    setIsConnectingOAuth(true);
+    setStatusMessage(null);
+    try {
+      const res = await authFetch('/api/oauth/ghl/start?format=json');
+      const data = (await res.json()) as { success: boolean; authUrl?: string; error?: string };
+      if (res.ok && data.success && data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        setStatusMessage({
+          type: 'error',
+          text: data.error || 'Could not initiate HighLevel OAuth flow. Please try signing in again.',
+        });
+        setIsConnectingOAuth(false);
+      }
+    } catch (err) {
+      setStatusMessage({
+        type: 'error',
+        text: `Network error: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      setIsConnectingOAuth(false);
+    }
   };
 
   const handleDisconnect = async () => {
@@ -319,10 +340,21 @@ export const GhlSettingsModal: React.FC<GhlSettingsModalProps> = ({
             <button
               type="button"
               onClick={handleConnectOAuth}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs tracking-wide shadow-xs transition-all cursor-pointer"
+              disabled={isConnectingOAuth}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs tracking-wide shadow-xs transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait"
             >
-              <ExternalLink className="w-4 h-4" />
-              <span>{isOAuthConnected ? 'Reconnect / Switch Location' : 'Connect HighLevel (OAuth)'}</span>
+              {isConnectingOAuth ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <ExternalLink className="w-4 h-4" />
+              )}
+              <span>
+                {isConnectingOAuth
+                  ? 'Connecting to HighLevel...'
+                  : isOAuthConnected
+                  ? 'Reconnect / Switch Location'
+                  : 'Connect HighLevel (OAuth)'}
+              </span>
             </button>
 
             {isOAuthConnected && (

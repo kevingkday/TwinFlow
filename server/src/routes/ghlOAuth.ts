@@ -37,10 +37,22 @@ ghlOAuthRouter.get('/start', async (c) => {
   }
   const db = getDb(c.env.DB);
   const user = await getSessionUser(c);
+  const wantsJson = c.req.query('format') === 'json';
 
   if (!user) {
+    if (wantsJson) {
+      return c.json({ success: false, error: 'Session expired. Please sign out and sign back in.' }, 401);
+    }
     // If not authenticated, redirect to login page
     return c.redirect('/#login?error=auth_required');
+  }
+
+  const clientId = (c.env.GHL_CLIENT_ID || '').trim();
+  if (!clientId) {
+    if (wantsJson) {
+      return c.json({ success: false, error: 'GHL_CLIENT_ID is not configured on the server.' }, 500);
+    }
+    return c.redirect('/#profile?ghl_oauth=error&message=Missing+GHL_CLIENT_ID');
   }
 
   // Generate cryptographically random 24-byte hex state token
@@ -64,7 +76,6 @@ ghlOAuthRouter.get('/start', async (c) => {
 
   const origin = new URL(c.req.url).origin;
   const redirectUri = `${(c.env.APP_URL || origin).replace(/\/$/, '')}/api/oauth/ghl/callback`;
-  const clientId = c.env.GHL_CLIENT_ID || '';
 
   const authUrl = `${GHL_MARKETPLACE_OAUTH_URL}?response_type=code&redirect_uri=${encodeURIComponent(
     redirectUri
@@ -72,6 +83,9 @@ ghlOAuthRouter.get('/start', async (c) => {
     GHL_OAUTH_SCOPES.join(' ')
   )}&state=${encodeURIComponent(state)}`;
 
+  if (wantsJson) {
+    return c.json({ success: true, authUrl });
+  }
   return c.redirect(authUrl, 302);
 });
 
