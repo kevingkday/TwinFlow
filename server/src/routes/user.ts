@@ -17,6 +17,8 @@ export function formatUserProfile(
     authMethod?: 'oauth' | 'pit' | 'none';
     subaccountLoginEmail?: string | null;
     subaccountTempPassword?: string | null;
+    isGmailConnected?: boolean;
+    gmailEmail?: string | null;
   }
 ) {
   const hasCustomGhlKey = Boolean(
@@ -48,6 +50,8 @@ export function formatUserProfile(
     isGhlConnected,
     hasCustomGhlKey,
     ghlAuthMethod: authMethod,
+    isGmailConnected: Boolean(oauthDetails?.isGmailConnected),
+    gmailEmail: oauthDetails?.gmailEmail || null,
     subaccountLoginEmail: oauthDetails?.subaccountLoginEmail || null,
     subaccountTempPassword: oauthDetails?.subaccountTempPassword || null,
     ghlApiKeyMasked: user.ghlApiKey
@@ -103,11 +107,28 @@ export async function getUserProfileData(db: Database, user: typeof schema.users
     }
   }
 
+  let isGmailConnected = false;
+  let gmailEmail: string | null = null;
+
+  try {
+    const gmailConn = await db.query.gmailOauthConnections.findFirst({
+      where: eq(schema.gmailOauthConnections.userId, user.id),
+    });
+    if (gmailConn) {
+      isGmailConnected = true;
+      gmailEmail = gmailConn.gmailEmail;
+    }
+  } catch (err) {
+    console.warn('[User Profile] Error checking Gmail connection:', err);
+  }
+
   return formatUserProfile(user, env, {
     isOauthConnected,
     authMethod,
     subaccountLoginEmail,
     subaccountTempPassword,
+    isGmailConnected,
+    gmailEmail,
   });
 }
 

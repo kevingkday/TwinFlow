@@ -189,6 +189,8 @@ export interface UserProfile {
   isGhlConnected: boolean;
   hasCustomGhlKey: boolean;
   ghlAuthMethod?: 'oauth' | 'pit' | 'none';
+  isGmailConnected?: boolean;
+  gmailEmail?: string | null;
   subaccountLoginEmail?: string | null;
   subaccountTempPassword?: string | null;
   ghlApiKeyMasked?: string | null;

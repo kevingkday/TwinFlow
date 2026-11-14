@@ -6,7 +6,7 @@ import { SwipeCard } from './SwipeCard';
 
 interface DeckViewProps {
   leads: LeadCardData[];
-  user?: { email?: string; name?: string } | null;
+  user?: { email?: string; name?: string; isGmailConnected?: boolean; gmailEmail?: string | null } | null;
   hasCampaigns?: boolean;
   onCreateCampaign?: () => void;
   onSwipe: (action: SwipeAction) => void;
@@ -134,8 +134,9 @@ export const DeckView: React.FC<DeckViewProps> = ({
           key={currentLead.id}
           lead={currentLead}
           isFront={true}
-          senderEmail={user?.email}
+          senderEmail={(user?.isGmailConnected && user?.gmailEmail) || user?.email}
           senderName={user?.name}
+          isGmailConnected={Boolean(user?.isGmailConnected)}
           onSwipe={onSwipe}
           onOpenPitchEditor={onOpenPitchEditor}
           onSelectForDetail={onSelectForDetail}

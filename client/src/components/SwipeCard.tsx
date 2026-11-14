@@ -19,10 +19,11 @@ import {
   Users,
   Radio,
   Send,
+  Loader2,
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
-import { openEmailClient } from '../utils/email';
+import { openEmailClient, sendEmailViaGmailApi } from '../utils/email';
 import type { LeadCardData, SwipeAction, DecisionMaker } from '../types/lead';
 import { isExternalArticleUrl } from '../utils/publishedAt';
 
@@ -31,6 +32,7 @@ interface SwipeCardProps {
   isFront?: boolean;
   senderEmail?: string;
   senderName?: string;
+  isGmailConnected?: boolean;
   onSwipe: (action: SwipeAction) => void;
   onOpenPitchEditor?: (lead: LeadCardData) => void;
   onSelectForDetail?: (lead: LeadCardData) => void;
@@ -43,6 +45,7 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   lead,
   isFront = true,
   senderEmail,
+  isGmailConnected = false,
   onSwipe,
   onOpenPitchEditor,
   onOpenBranchOut,
@@ -50,6 +53,8 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   onEnrichContact,
 }) => {
   const [copiedPitch, setCopiedPitch] = useState(false);
+  const [isSendingGmail, setIsSendingGmail] = useState(false);
+  const [gmailSendState, setGmailSendState] = useState<'idle' | 'sent' | 'error'>('idle');
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
 
@@ -514,7 +519,52 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
                   <Sparkles className="w-3.5 h-3.5 text-blue-600" />
                   Quick Launch:
                 </span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {isGmailConnected && (
+                    <button
+                      type="button"
+                      disabled={isSendingGmail || gmailSendState === 'sent'}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setIsSendingGmail(true);
+                        setGmailSendState('idle');
+                        const res = await sendEmailViaGmailApi({
+                          to: effectiveRecipientEmail,
+                          subject: lead.emailDraft.subject,
+                          body: lead.emailDraft.body,
+                          contactId: lead.decisionMaker.id,
+                          signalId: lead.id,
+                          draftId: lead.emailDraft.id,
+                        });
+                        setIsSendingGmail(false);
+                        setGmailSendState(res.success ? 'sent' : 'error');
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer disabled:opacity-75 ${
+                        gmailSendState === 'sent'
+                          ? 'bg-emerald-600 text-white'
+                          : gmailSendState === 'error'
+                          ? 'bg-amber-600 text-white hover:bg-amber-700'
+                          : 'bg-red-600 hover:bg-red-700 text-white'
+                      }`}
+                    >
+                      {isSendingGmail ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : gmailSendState === 'sent' ? (
+                        <Check className="w-3.5 h-3.5" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {isSendingGmail
+                          ? 'Sending...'
+                          : gmailSendState === 'sent'
+                          ? 'Sent!'
+                          : gmailSendState === 'error'
+                          ? 'Retry Send'
+                          : 'Send via Gmail'}
+                      </span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {

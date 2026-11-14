@@ -24,6 +24,7 @@ import {
 import type { UserProfile } from '../types/lead';
 import { authFetch } from '../utils/api';
 import { playSound } from '../utils/audio';
+import { startGmailOAuthConnect, disconnectGmailAccount } from '../utils/email';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
 
 function ensureArray(val: unknown, fallback: string[] = []): string[] {
@@ -204,6 +205,43 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   };
 
   // Direct CRM Sync Handler
+  const [isConnectingGmail, setIsConnectingGmail] = useState(false);
+  const [isDisconnectingGmail, setIsDisconnectingGmail] = useState(false);
+  const [gmailMessage, setGmailMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleConnectGmail = async () => {
+    setIsConnectingGmail(true);
+    setGmailMessage(null);
+    const res = await startGmailOAuthConnect('/#profile');
+    if (!res.success) {
+      setGmailMessage({
+        type: 'error',
+        text: res.error || 'Could not start Gmail authorization.',
+      });
+      setIsConnectingGmail(false);
+    }
+  };
+
+  const handleDisconnectGmail = async () => {
+    if (!confirm('Disconnect your Gmail account from TwinFlow?')) return;
+    setIsDisconnectingGmail(true);
+    setGmailMessage(null);
+    const res = await disconnectGmailAccount();
+    if (res.success) {
+      setGmailMessage({ type: 'success', text: 'Gmail disconnected.' });
+      if (user) {
+        onProfileUpdated({
+          ...user,
+          isGmailConnected: false,
+          gmailEmail: null,
+        });
+      }
+    } else {
+      setGmailMessage({ type: 'error', text: res.error || 'Failed to disconnect Gmail.' });
+    }
+    setIsDisconnectingGmail(false);
+  };
+
   const handleSyncCrmDirectly = async () => {
     if (!user?.isGhlConnected) {
       onOpenCrmSettings();
@@ -944,6 +982,85 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         </button>
                       ))}
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 4b: Gmail Direct Outreach */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-red-600" />
+                    <h2 className="text-sm font-bold text-slate-900">Gmail Direct Outreach</h2>
+                  </div>
+                  <span
+                    className={`text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                      user?.isGmailConnected
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        user?.isGmailConnected ? 'bg-emerald-500' : 'bg-slate-400'
+                      }`}
+                    />
+                    {user?.isGmailConnected ? 'Connected' : 'Not Connected'}
+                  </span>
+                </div>
+
+                <div className="space-y-3 text-xs text-slate-600">
+                  <p className="text-[11px] leading-relaxed text-slate-600">
+                    Connect your Gmail account via Google OAuth to send personalized 2-sentence pitches directly from TwinFlow without leaving the app.
+                  </p>
+
+                  {user?.isGmailConnected && (
+                    <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200/80 flex items-center justify-between gap-2">
+                      <span className="text-slate-600">Sending As:</span>
+                      <span className="font-mono font-semibold text-emerald-900 truncate">
+                        {user.gmailEmail}
+                      </span>
+                    </div>
+                  )}
+
+                  {gmailMessage && (
+                    <div
+                      className={`p-2.5 rounded-lg text-[11px] font-medium ${
+                        gmailMessage.type === 'error'
+                          ? 'bg-red-50 text-red-700 border border-red-200'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}
+                    >
+                      {gmailMessage.text}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleConnectGmail}
+                      disabled={isConnectingGmail}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>
+                        {isConnectingGmail
+                          ? 'Redirecting to Google...'
+                          : user?.isGmailConnected
+                          ? 'Reconnect / Switch Gmail'
+                          : 'Connect Gmail Account'}
+                      </span>
+                    </button>
+                    {user?.isGmailConnected && (
+                      <button
+                        type="button"
+                        onClick={handleDisconnectGmail}
+                        disabled={isDisconnectingGmail}
+                        className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors cursor-pointer disabled:opacity-60"
+                      >
+                        {isDisconnectingGmail ? 'Disconnecting...' : 'Disconnect'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

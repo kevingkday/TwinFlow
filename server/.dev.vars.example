@@ -26,3 +26,9 @@ GHL_API_KEY=
 GHL_PIPELINE_ID=
 GHL_STAGE_ID=
 
+# Google OAuth 2.0 (Sign-In & Gmail Direct Sending)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+# Optional 32+ char secret for encrypting OAuth tokens at rest in D1
+GHL_TOKEN_ENCRYPTION_KEY=
+

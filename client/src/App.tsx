@@ -249,7 +249,8 @@ export const App: React.FC = () => {
     const hashPart = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '';
     const hashParams = new URLSearchParams(hashPart);
     const ghlStatus = url.searchParams.get('ghl_oauth') || hashParams.get('ghl_oauth');
-    const ghlMsg = url.searchParams.get('message') || hashParams.get('message');
+    const gmailStatus = url.searchParams.get('gmail_oauth') || hashParams.get('gmail_oauth');
+    const oauthMsg = url.searchParams.get('message') || hashParams.get('message');
 
     if (ghlStatus === 'connected') {
       confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
@@ -259,8 +260,19 @@ export const App: React.FC = () => {
       const cleanUrl = window.location.origin + window.location.pathname + '#profile';
       window.history.replaceState({}, document.title, cleanUrl);
     } else if (ghlStatus === 'error') {
-      alert(`HighLevel OAuth Error: ${ghlMsg || 'Failed to complete authorization'}`);
+      alert(`HighLevel OAuth Error: ${oauthMsg || 'Failed to complete authorization'}`);
       setGhlSettingsOpen(true);
+      setCurrentView('profile');
+      const cleanUrl = window.location.origin + window.location.pathname + '#profile';
+      window.history.replaceState({}, document.title, cleanUrl);
+    } else if (gmailStatus === 'connected') {
+      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+      fetchUserProfile();
+      setCurrentView('profile');
+      const cleanUrl = window.location.origin + window.location.pathname + '#profile';
+      window.history.replaceState({}, document.title, cleanUrl);
+    } else if (gmailStatus === 'error') {
+      alert(`Gmail OAuth Error: ${oauthMsg || 'Failed to connect Gmail account'}`);
       setCurrentView('profile');
       const cleanUrl = window.location.origin + window.location.pathname + '#profile';
       window.history.replaceState({}, document.title, cleanUrl);

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, Mail, Send, Check, ExternalLink } from 'lucide-react';
-import { openEmailClient } from '../utils/email';
+import { X, Mail, Send, Check, ExternalLink, Loader2 } from 'lucide-react';
+import { openEmailClient, sendEmailViaGmailApi, startGmailOAuthConnect } from '../utils/email';
 import type { LeadCardData } from '../types/lead';
 
 interface PitchEditorModalProps {
   lead: LeadCardData | null;
-  user?: { email?: string; name?: string } | null;
+  user?: { email?: string; name?: string; isGmailConnected?: boolean; gmailEmail?: string | null } | null;
   isOpen: boolean;
   onClose: () => void;
   onSaveAndApprove: (leadId: string, subject: string, body: string) => void;
@@ -22,11 +22,14 @@ export const PitchEditorModal: React.FC<PitchEditorModalProps> = ({
 }) => {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [isSendingGmail, setIsSendingGmail] = useState(false);
+  const [sendStatus, setSendStatus] = useState<{ type: 'success' | 'error'; text: string; needsReauth?: boolean } | null>(null);
 
   useEffect(() => {
     if (lead) {
       setSubject(lead.emailDraft.subject);
       setBody(lead.emailDraft.body);
+      setSendStatus(null);
     }
   }, [lead]);
 
@@ -41,7 +44,33 @@ export const PitchEditorModal: React.FC<PitchEditorModalProps> = ({
     )
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '')}.com`;
-  const senderEmail = user?.email || 'demo@twinflow.co';
+  const senderEmail = (user?.isGmailConnected && user?.gmailEmail) || user?.email || 'demo@twinflow.co';
+
+  const handleSendDirectGmail = async () => {
+    setIsSendingGmail(true);
+    setSendStatus(null);
+    const res = await sendEmailViaGmailApi({
+      to: recipientEmail,
+      subject,
+      body,
+      contactId: lead.decisionMaker.id,
+      signalId: lead.id,
+      draftId: lead.emailDraft.id,
+    });
+    setIsSendingGmail(false);
+    if (res.success) {
+      setSendStatus({
+        type: 'success',
+        text: `Sent from ${res.fromEmail || senderEmail} to ${recipientEmail}!`,
+      });
+    } else {
+      setSendStatus({
+        type: 'error',
+        text: res.error || 'Failed to send email via Gmail.',
+        needsReauth: res.needsReauth,
+      });
+    }
+  };
 
   const handleSave = () => {
     onUpdateDraft(lead.id, subject, body);
@@ -82,7 +111,15 @@ export const PitchEditorModal: React.FC<PitchEditorModalProps> = ({
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[10px] uppercase font-bold text-slate-400">From:</span>
             <span className="font-mono text-slate-800 font-medium truncate">{senderEmail}</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-100/70 text-red-700 font-medium">Gmail</span>
+            {user?.isGmailConnected ? (
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-700 font-semibold">
+                Gmail Connected
+              </span>
+            ) : (
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-100/70 text-red-700 font-medium">
+                Gmail
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[10px] uppercase font-bold text-slate-400">To:</span>
@@ -116,8 +153,45 @@ export const PitchEditorModal: React.FC<PitchEditorModalProps> = ({
           </div>
         </div>
 
+        {sendStatus && (
+          <div
+            className={`mb-2 px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between gap-2 ${
+              sendStatus.type === 'success'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}
+          >
+            <span>{sendStatus.text}</span>
+            {sendStatus.needsReauth && (
+              <button
+                type="button"
+                onClick={() => startGmailOAuthConnect('/#deck')}
+                className="px-2 py-1 rounded-lg bg-red-600 text-white text-[11px] font-semibold hover:bg-red-700 cursor-pointer shrink-0"
+              >
+                Reconnect Gmail
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-200 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {user?.isGmailConnected && (
+              <button
+                type="button"
+                onClick={handleSendDirectGmail}
+                disabled={isSendingGmail}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-60"
+                title={`Send directly from ${user.gmailEmail || 'connected Gmail'}`}
+              >
+                {isSendingGmail ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+                <span>{isSendingGmail ? 'Sending...' : 'Send via Gmail'}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => openEmailClient('gmail', recipientEmail, subject, body)}

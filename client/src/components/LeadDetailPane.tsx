@@ -13,16 +13,17 @@ import {
   Activity,
   Network,
   KeyRound,
+  Loader2,
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
-import { openEmailClient } from '../utils/email';
+import { openEmailClient, sendEmailViaGmailApi } from '../utils/email';
 import type { LeadCardData, SwipeAction } from '../types/lead';
 import { isExternalArticleUrl } from '../utils/publishedAt';
 
 interface LeadDetailPaneProps {
   lead: LeadCardData | null;
-  user?: { email?: string; name?: string } | null;
+  user?: { email?: string; name?: string; isGmailConnected?: boolean; gmailEmail?: string | null } | null;
   onSwipe: (action: SwipeAction) => void;
   onUpdateDraft?: (leadId: string, newSubject: string, newBody: string) => void;
   onCloseMobileModal?: () => void;
@@ -51,6 +52,12 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
   const [activeTab, setActiveTab] = useState<'pitch' | 'dossier' | 'pipeline'>('pitch');
   const [subject, setSubject] = useState(lead?.emailDraft.subject || '');
   const [body, setBody] = useState(lead?.emailDraft.body || '');
+  const [isSendingGmail, setIsSendingGmail] = useState(false);
+  const [gmailSendStatus, setGmailSendStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    setGmailSendStatus(null);
+  }, [lead?.id]);
 
   useEffect(() => {
     if (lead) {
@@ -182,6 +189,41 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
                 2-Sentence Pitch Studio
               </span>
               <div className="flex items-center gap-1.5 flex-wrap">
+                {user?.isGmailConnected && (
+                  <button
+                    type="button"
+                    disabled={isSendingGmail}
+                    onClick={async () => {
+                      const domain = (lead.companyName || lead.decisionMaker.company || 'domain')
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]/g, '');
+                      const recipient =
+                        lead.decisionMaker.email ||
+                        `${lead.decisionMaker.name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@${domain}.com`;
+                      setIsSendingGmail(true);
+                      setGmailSendStatus(null);
+                      const res = await sendEmailViaGmailApi({
+                        to: recipient,
+                        subject,
+                        body,
+                        contactId: lead.decisionMaker.id,
+                        signalId: lead.id,
+                        draftId: lead.emailDraft.id,
+                      });
+                      setIsSendingGmail(false);
+                      setGmailSendStatus(
+                        res.success
+                          ? { type: 'success', text: `Sent from ${res.fromEmail || user.gmailEmail} to ${recipient}` }
+                          : { type: 'error', text: res.error || 'Failed to send email' }
+                      );
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white transition cursor-pointer shadow-2xs disabled:opacity-60"
+                    title={`Send directly from ${user.gmailEmail || 'connected Gmail'}`}
+                  >
+                    {isSendingGmail ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                    <span>{isSendingGmail ? 'Sending...' : 'Send via Gmail'}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -227,6 +269,18 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
                 </button>
               </div>
             </div>
+
+            {gmailSendStatus && (
+              <div
+                className={`px-3 py-2 rounded-lg text-[11px] font-medium ${
+                  gmailSendStatus.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}
+              >
+                {gmailSendStatus.text}
+              </div>
+            )}
 
             {/* Sender / Recipient Metadata Bar */}
             <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">

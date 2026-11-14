@@ -21,6 +21,8 @@ import {
   Building,
   Sparkles,
   Flame,
+  Send,
+  Loader2,
 } from 'lucide-react';
 import { LinkedInIcon } from './icons';
 import type { PipelineContact, PipelineStats, SimilarContactCandidate } from '../types/contact';
@@ -29,7 +31,7 @@ import type { UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
 import { OrganizationDetailPage } from './OrganizationDetailPage';
 import { authFetch } from '../utils/api';
-import { openEmailClient } from '../utils/email';
+import { openEmailClient, sendEmailViaGmailApi } from '../utils/email';
 import { isExternalArticleUrl } from '../utils/publishedAt';
 
 interface ContactsPageProps {
@@ -63,6 +65,8 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [selectedContactForModal, setSelectedContactForModal] = useState<PipelineContact | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isSendingGmail, setIsSendingGmail] = useState(false);
+  const [gmailModalStatus, setGmailModalStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [syncingContactId, setSyncingContactId] = useState<string | null>(null);
   const [unlockingApolloId, setUnlockingApolloId] = useState<string | null>(null);
   const [similarContacts, setSimilarContacts] = useState<SimilarContactCandidate[]>([]);
@@ -1273,6 +1277,43 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      {user?.isGmailConnected && selectedContactForModal.email && (
+                        <button
+                          type="button"
+                          disabled={isSendingGmail}
+                          onClick={async () => {
+                            if (!selectedContactForModal.email || !selectedContactForModal.outreachDraft) return;
+                            setIsSendingGmail(true);
+                            setGmailModalStatus(null);
+                            const res = await sendEmailViaGmailApi({
+                              to: selectedContactForModal.email,
+                              subject: selectedContactForModal.outreachDraft.subject,
+                              body: selectedContactForModal.outreachDraft.body,
+                              contactId: selectedContactForModal.id,
+                              signalId: selectedContactForModal.signalId,
+                              draftId: selectedContactForModal.outreachDraft.id,
+                            });
+                            setIsSendingGmail(false);
+                            setGmailModalStatus(
+                              res.success
+                                ? {
+                                    type: 'success',
+                                    text: `Sent from ${res.fromEmail || user.gmailEmail} to ${selectedContactForModal.email}`,
+                                  }
+                                : { type: 'error', text: res.error || 'Failed to send email' }
+                            );
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-2xs transition-colors cursor-pointer disabled:opacity-60"
+                          title={`Send directly from ${user.gmailEmail || 'connected Gmail'}`}
+                        >
+                          {isSendingGmail ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          <span>{isSendingGmail ? 'Sending...' : 'Send via Gmail'}</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() =>
@@ -1335,14 +1376,36 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
                   <div className="mb-2.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="text-[10px] uppercase font-bold text-slate-400">From:</span>
-                      <span className="font-mono text-slate-800 font-medium truncate">{user?.email || 'demo@twinflow.co'}</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-100/70 text-red-700 font-medium">Gmail</span>
+                      <span className="font-mono text-slate-800 font-medium truncate">
+                        {(user?.isGmailConnected && user?.gmailEmail) || user?.email || 'demo@twinflow.co'}
+                      </span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                          user?.isGmailConnected
+                            ? 'bg-emerald-100 text-emerald-700 font-semibold'
+                            : 'bg-red-100/70 text-red-700'
+                        }`}
+                      >
+                        {user?.isGmailConnected ? 'Gmail Connected' : 'Gmail'}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="text-[10px] uppercase font-bold text-slate-400">To:</span>
                       <span className="font-mono text-slate-800 font-medium truncate">{selectedContactForModal.email || 'Direct email pending'}</span>
                     </div>
                   </div>
+
+                  {gmailModalStatus && (
+                    <div
+                      className={`mb-2.5 px-3 py-2 rounded-lg text-xs font-medium ${
+                        gmailModalStatus.type === 'success'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : 'bg-red-50 text-red-800 border border-red-200'
+                      }`}
+                    >
+                      {gmailModalStatus.text}
+                    </div>
+                  )}
 
                   <div className="text-xs font-semibold text-slate-900 pb-2 border-b border-slate-100">
                     Subject: <span className="font-normal text-slate-700">{selectedContactForModal.outreachDraft.subject}</span>

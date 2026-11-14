@@ -245,6 +245,33 @@ export const ghlOauthConnections = sqliteTable('ghl_oauth_connections', {
 });
 
 /**
+ * Gmail OAuth 2.0 Authorization States
+ * Ephemeral cryptographically random state tokens for CSRF protection during Gmail OAuth code flow
+ */
+export const gmailOauthStates = sqliteTable('gmail_oauth_states', {
+  state: text('state').primaryKey(),
+  userId: text('user_id').notNull(),
+  redirectAfter: text('redirect_after'),
+  expiresAt: integer('expires_at').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+/**
+ * Gmail OAuth 2.0 Connections
+ * Stores encrypted Google OAuth access and refresh tokens for sending emails via Gmail API
+ */
+export const gmailOauthConnections = sqliteTable('gmail_oauth_connections', {
+  userId: text('user_id').primaryKey(),
+  gmailEmail: text('gmail_email').notNull(),
+  scope: text('scope'),
+  accessTokenEnc: text('access_token_enc'),
+  refreshTokenEnc: text('refresh_token_enc'),
+  expiresAt: integer('expires_at'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+/**
  * Drizzle ORM Relations
  */
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -335,6 +362,13 @@ export const ghlOauthConnectionsRelations = relations(ghlOauthConnections, ({ on
   }),
 }));
 
+export const gmailOauthConnectionsRelations = relations(gmailOauthConnections, ({ one }) => ({
+  user: one(users, {
+    fields: [gmailOauthConnections.userId],
+    references: [users.id],
+  }),
+}));
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
@@ -364,3 +398,9 @@ export type InsertGhlOauthState = typeof ghlOauthStates.$inferInsert;
 
 export type GhlOauthConnection = typeof ghlOauthConnections.$inferSelect;
 export type InsertGhlOauthConnection = typeof ghlOauthConnections.$inferInsert;
+
+export type GmailOauthState = typeof gmailOauthStates.$inferSelect;
+export type InsertGmailOauthState = typeof gmailOauthStates.$inferInsert;
+
+export type GmailOauthConnection = typeof gmailOauthConnections.$inferSelect;
+export type InsertGmailOauthConnection = typeof gmailOauthConnections.$inferInsert;

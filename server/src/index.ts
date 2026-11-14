@@ -14,6 +14,7 @@ import { socialRouter } from './routes/social';
 import { contactsRouter } from './routes/contacts';
 import { stripeRouter } from './routes/stripe';
 import { ghlOAuthRouter } from './routes/ghlOAuth';
+import { gmailOAuthRouter } from './routes/gmailOAuth';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -38,6 +39,9 @@ app.route('/api/auth', authRouter);
 
 // GoHighLevel OAuth 2.0 & Auto-Provisioning endpoints (/api/oauth/ghl/start, /callback, /status, /disconnect)
 app.route('/api/oauth/ghl', ghlOAuthRouter);
+
+// Gmail OAuth 2.0 & Direct Email Sending endpoints (/api/oauth/gmail/start, /callback, /status, /disconnect, /send)
+app.route('/api/oauth/gmail', gmailOAuthRouter);
 
 // Campaigns management endpoints (/api/campaigns)
 app.route('/api/campaigns', campaignsRouter);
