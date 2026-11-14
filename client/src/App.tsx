@@ -140,7 +140,17 @@ export const App: React.FC = () => {
   const [serverOnline, setServerOnline] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isScouting, setIsScouting] = useState(false);
-  const [scoutToast, setScoutToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [scoutToast, setScoutToast] = useState<{
+    message: string;
+    type: 'success' | 'info' | 'error';
+    showInspect?: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!scoutToast || isScouting) return;
+    const timer = setTimeout(() => setScoutToast(null), 5000);
+    return () => clearTimeout(timer);
+  }, [scoutToast, isScouting]);
   const [makeNewsModalOpen, setMakeNewsModalOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [pipelineTrace, setPipelineTrace] = useState<PipelineTrace | null>(null);
@@ -437,6 +447,7 @@ export const App: React.FC = () => {
           setScoutToast({
             message: data.message || `AI Scout successfully enriched ${data.ingestedCount} new signals!`,
             type: 'success',
+            showInspect: true,
           });
           if (soundEnabled) playSound('streak');
           triggerConfetti();
@@ -446,6 +457,7 @@ export const App: React.FC = () => {
               data.message ||
               'Scout complete: No new unread articles matching this query.',
             type: 'info',
+            showInspect: true,
           });
         }
         await fetchDeck();
@@ -453,6 +465,7 @@ export const App: React.FC = () => {
         setScoutToast({
           message: data.error || 'Signal ingestion encountered an issue.',
           type: 'error',
+          showInspect: true,
         });
       }
     } catch (err) {
@@ -1032,11 +1045,21 @@ export const App: React.FC = () => {
               <AlertCircle className="w-4 h-4 text-rose-600" />
             )}
             <span>{scoutToast.message}</span>
+            {scoutToast.showInspect && (
+              <button
+                onClick={handleOpenInspector}
+                className="ml-1 text-blue-600 hover:text-blue-800 underline font-bold shrink-0 cursor-pointer"
+              >
+                Inspect
+              </button>
+            )}
             <button
-              onClick={handleOpenInspector}
-              className="ml-1 text-blue-600 hover:text-blue-800 underline font-bold shrink-0 cursor-pointer"
+              type="button"
+              onClick={() => setScoutToast(null)}
+              className="ml-1 text-slate-400 hover:text-slate-600 shrink-0 cursor-pointer"
+              aria-label="Dismiss notification"
             >
-              Inspect
+              ×
             </button>
           </div>
         </div>
