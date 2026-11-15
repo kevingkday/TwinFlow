@@ -21,7 +21,7 @@
     "db:setup": "npm run db:setup --prefix server"
   },
   "devDependencies": {
-    "wrangler": "^3.101.0"
+    "wrangler": "^4.162.0"
   },
   "keywords": [
     "lead-generation",
