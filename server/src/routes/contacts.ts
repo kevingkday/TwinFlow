@@ -852,3 +852,69 @@ contactsRouter.delete('/:id', async (c) => {
   }
 });
 
+/**
+ * PATCH /api/contacts/drafts/:draftId
+ * Updates subject/body/status of an outreach draft owned by the current user.
+ */
+contactsRouter.patch('/drafts/:draftId', async (c) => {
+  const draftId = c.req.param('draftId');
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
+  }
+
+  try {
+    const db = getDb(c.env.DB);
+    const currentUser = await getSessionUser(c);
+    if (!currentUser) return authenticationRequired(c);
+
+    const draft = await db.query.outreachDrafts.findFirst({
+      where: eq(schema.outreachDrafts.id, draftId),
+      with: { signal: true },
+    });
+
+    if (!draft || !draft.signal || draft.signal.userId !== currentUser.id) {
+      return c.json({ success: false, error: 'Outreach draft not found.' }, 404);
+    }
+
+    const body = (await c.req.json()) as {
+      subject?: string;
+      body?: string;
+      status?: 'draft' | 'queued' | 'sent';
+    };
+
+    const now = new Date().toISOString();
+    const updates: Partial<typeof schema.outreachDrafts.$inferInsert> = {
+      updatedAt: now,
+    };
+
+    if (typeof body.subject === 'string' && body.subject.trim()) {
+      updates.subject = body.subject.trim();
+    }
+    if (typeof body.body === 'string' && body.body.trim()) {
+      updates.body = body.body.trim();
+    }
+    if (body.status === 'draft' || body.status === 'queued' || body.status === 'sent') {
+      updates.status = body.status;
+    }
+
+    await db
+      .update(schema.outreachDrafts)
+      .set(updates)
+      .where(eq(schema.outreachDrafts.id, draftId));
+
+    return c.json({
+      success: true,
+      draft: {
+        id: draft.id,
+        subject: updates.subject ?? draft.subject,
+        body: updates.body ?? draft.body,
+        status: updates.status ?? draft.status,
+        updatedAt: now,
+      },
+    });
+  } catch (err: any) {
+    console.error('Error in PATCH /api/contacts/drafts/:draftId:', err);
+    return c.json({ success: false, error: err.message || 'Failed to update outreach draft.' }, 500);
+  }
+});
+

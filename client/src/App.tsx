@@ -30,6 +30,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { LandingPage } from './components/LandingPage';
 import { ProfilePage } from './components/ProfilePage';
 import { ContactsPage } from './components/ContactsPage';
+import { EmailsPage } from './components/EmailsPage';
 import { MakeNewsModal } from './components/MakeNewsModal';
 import { PipelineInspectorModal } from './components/PipelineInspectorModal';
 import { playSound } from './utils/audio';
@@ -166,18 +167,19 @@ export const App: React.FC = () => {
     branchCombo: 0,
   });
 
-  const [currentView, setCurrentView] = useState<'landing' | 'deck' | 'contacts' | 'profile'>(() => {
+  const [currentView, setCurrentView] = useState<'landing' | 'deck' | 'contacts' | 'emails' | 'profile'>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.split('?')[0];
       if (hash === '#deck') return 'deck';
       if (hash === '#contacts') return 'contacts';
+      if (hash === '#emails') return 'emails';
       if (hash === '#profile') return 'profile';
     }
     return 'landing';
   });
 
   const handleNavigate = useCallback(
-    (view: 'landing' | 'deck' | 'contacts' | 'profile') => {
+    (view: 'landing' | 'deck' | 'contacts' | 'emails' | 'profile') => {
       setCurrentView(view);
       if (typeof window !== 'undefined') {
         window.location.hash =
@@ -185,6 +187,8 @@ export const App: React.FC = () => {
             ? '#deck'
             : view === 'contacts'
             ? '#contacts'
+            : view === 'emails'
+            ? '#emails'
             : view === 'profile'
             ? '#profile'
             : '';
@@ -204,6 +208,8 @@ export const App: React.FC = () => {
         setCurrentView('deck');
       } else if (hash === '#contacts') {
         setCurrentView('contacts');
+      } else if (hash === '#emails') {
+        setCurrentView('emails');
       } else if (hash === '#profile') {
         setCurrentView('profile');
       } else if (!hash || hash === '#home') {
@@ -1137,6 +1143,14 @@ export const App: React.FC = () => {
           activeCampaignId={activeCampaignId}
           onNavigateDeck={handleLaunchDeck}
           onOpenCrmSettings={() => setGhlSettingsOpen(true)}
+        />
+      ) : currentView === 'emails' ? (
+        <EmailsPage
+          user={userProfile}
+          campaigns={campaigns}
+          activeCampaignId={activeCampaignId}
+          onNavigateDeck={handleLaunchDeck}
+          onNavigateProfile={() => handleNavigate('profile')}
         />
       ) : (
         <>

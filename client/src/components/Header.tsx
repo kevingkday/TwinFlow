@@ -16,6 +16,7 @@ import {
   Share2,
   Building2,
   SlidersHorizontal,
+  Mail,
 } from 'lucide-react';
 import type { SwipeStats, UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
@@ -38,8 +39,8 @@ interface HeaderProps {
   onOpenAuth?: (initialMode?: 'signup' | 'login') => void;
   onLogout?: () => void;
   onOpenOnboarding?: () => void;
-  currentView?: 'landing' | 'deck' | 'contacts' | 'profile';
-  onNavigate?: (view: 'landing' | 'deck' | 'contacts' | 'profile') => void;
+  currentView?: 'landing' | 'deck' | 'contacts' | 'emails' | 'profile';
+  onNavigate?: (view: 'landing' | 'deck' | 'contacts' | 'emails' | 'profile') => void;
   leadsCount?: number;
   contactsCount?: number;
 }
@@ -132,6 +133,20 @@ export const Header: React.FC<HeaderProps> = ({
             {contactsCount}
           </span>
         )}
+      </button>
+      <button
+        type="button"
+        onClick={() => onNavigate?.('emails')}
+        className={`${
+          isMobile ? 'flex-1 min-w-max justify-center' : ''
+        } flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+          currentView === 'emails'
+            ? 'bg-white text-slate-900 shadow-xs font-semibold'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+        }`}
+      >
+        <Mail className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+        <span>Emails</span>
       </button>
       <button
         type="button"
