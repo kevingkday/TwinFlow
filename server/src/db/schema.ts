@@ -135,6 +135,8 @@ export const signals = sqliteTable('signals', {
   publishedAt: text('published_at').notNull(),
   summaryBullets: text('summary_bullets').notNull(), // JSON array string e.g. ["point 1", "point 2", "point 3"]
   articleSummary: text('article_summary'),
+  sourceExcerpts: text('source_excerpts'), // JSON array of { quote: string, context: string }
+  sourceSnapshot: text('source_snapshot'), // Clean, truncated Firecrawl markdown up to 6,000 chars
   companyName: text('company_name').notNull(),
   signalType: text('signal_type').notNull(),
   industryTags: text('industry_tags'), // JSON array string e.g. ["Fintech", "Series A"]
@@ -272,6 +274,26 @@ export const gmailOauthConnections = sqliteTable('gmail_oauth_connections', {
 });
 
 /**
+ * Research Briefs Table
+ * Source-verified, credit-gated organization teardowns separating verified facts from inferred opportunities
+ */
+export const researchBriefs = sqliteTable('research_briefs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  organizationName: text('organization_name').notNull(),
+  companyDomain: text('company_domain'),
+  signalId: text('signal_id').references(() => signals.id, { onDelete: 'set null' }),
+  briefTitle: text('brief_title').notNull(),
+  verifiedFacts: text('verified_facts').notNull(), // JSON array of { statement, sourceUrl, sourceLabel, sourceDate, verbatimQuote }
+  inferredOpportunities: text('inferred_opportunities').notNull(), // JSON array of { area, rationale, confidence: 'high' | 'medium' }
+  investigationQuestions: text('investigation_questions').notNull(), // JSON array of strings
+  verificationLog: text('verification_log'), // JSON summary of claims checked/corrected by Pass 2
+  createdAt: text('created_at').notNull(),
+});
+
+/**
  * Drizzle ORM Relations
  */
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -279,6 +301,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   sessions: many(sessions),
   signals: many(signals),
   campaigns: many(campaigns),
+  researchBriefs: many(researchBriefs),
   activeCampaign: one(campaigns, {
     fields: [users.activeCampaignId],
     references: [campaigns.id],
@@ -319,6 +342,7 @@ export const signalsRelations = relations(signals, ({ one, many }) => ({
   contacts: many(contacts),
   outreachDrafts: many(outreachDrafts),
   relatedEntities: many(relatedEntities),
+  researchBriefs: many(researchBriefs),
   parentSignal: one(signals, {
     fields: [signals.parentSignalId],
     references: [signals.id],
@@ -369,6 +393,17 @@ export const gmailOauthConnectionsRelations = relations(gmailOauthConnections, (
   }),
 }));
 
+export const researchBriefsRelations = relations(researchBriefs, ({ one }) => ({
+  user: one(users, {
+    fields: [researchBriefs.userId],
+    references: [users.id],
+  }),
+  signal: one(signals, {
+    fields: [researchBriefs.signalId],
+    references: [signals.id],
+  }),
+}));
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
@@ -404,3 +439,6 @@ export type InsertGmailOauthState = typeof gmailOauthStates.$inferInsert;
 
 export type GmailOauthConnection = typeof gmailOauthConnections.$inferSelect;
 export type InsertGmailOauthConnection = typeof gmailOauthConnections.$inferInsert;
+
+export type ResearchBrief = typeof researchBriefs.$inferSelect;
+export type InsertResearchBrief = typeof researchBriefs.$inferInsert;

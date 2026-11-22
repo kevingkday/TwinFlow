@@ -669,6 +669,12 @@ signalsRouter.post('/ingest', async (c) => {
       const signalId = `sig_${Date.now()}_${uniqueSuffix}`;
       const draftId = `dr_${Date.now()}_${uniqueSuffix}`;
 
+      const sourceExcerptsList = (enriched.verbatimQuotes || []).map((quote) => ({
+        quote,
+        context: 'Article excerpt',
+      }));
+      const sourceSnapshot = crawled.markdown ? crawled.markdown.trim().slice(0, 6000) : null;
+
       // Insert into D1 signals
       await db.insert(schema.signals).values({
         id: signalId,
@@ -680,6 +686,8 @@ signalsRouter.post('/ingest', async (c) => {
         publishedAt: article.publishedAt || now,
         summaryBullets: JSON.stringify(enriched.summaryBullets),
         articleSummary: enriched.articleSummary || null,
+        sourceExcerpts: sourceExcerptsList.length > 0 ? JSON.stringify(sourceExcerptsList) : null,
+        sourceSnapshot,
         companyName: enriched.companyName,
         signalType: enriched.signalType,
         industryTags: JSON.stringify(enriched.industryTags),

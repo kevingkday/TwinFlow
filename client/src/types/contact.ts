@@ -55,3 +55,40 @@ export interface SimilarOrganizationGroup {
   contacts: SimilarContactCandidate[];
 }
 
+export interface VerifiedFact {
+  statement: string;
+  sourceUrl: string;
+  sourceLabel: string;
+  sourceDate: string;
+  verbatimQuote: string;
+}
+
+export interface InferredOpportunity {
+  area: string;
+  rationale: string;
+  confidence: 'high' | 'medium';
+}
+
+export interface VerificationLog {
+  checkedFacts: number;
+  keptFacts: number;
+  rejectedFacts: number;
+  rewrittenFacts: number;
+  rewrittenOpportunities: number;
+  pass2Mode: 'openai' | 'deterministic';
+  notes: string[];
+}
+
+export interface ResearchBrief {
+  id: string;
+  organizationName: string;
+  companyDomain: string | null;
+  signalId: string | null;
+  briefTitle: string;
+  verifiedFacts: VerifiedFact[];
+  inferredOpportunities: InferredOpportunity[];
+  investigationQuestions: string[];
+  verificationLog: VerificationLog | null;
+  createdAt: string;
+}
+

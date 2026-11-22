@@ -4,4 +4,6 @@
  */
 export const APPROVAL_CREDIT_COST = 10;
 export const BRANCH_SCOUT_CREDIT_COST = 5;
+export const RESEARCH_BRIEF_CREDIT_COST = 10;
+export const RESEARCH_BRIEF_XP_AWARD = 15;
 export const DEV_REPLENISH_CREDITS = 100;

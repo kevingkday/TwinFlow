@@ -48,6 +48,7 @@ export interface EnrichedSignalData {
   industryTags: string[];
   summaryBullets: [string, string, string];
   articleSummary?: string;
+  verbatimQuotes?: string[];
   decisionMaker: {
     name: string;
     role: string;
@@ -392,6 +393,9 @@ You must respond with valid JSON adhering exactly to this structure:
     "Commercial angle: Why reaching out now gives an unfair advantage"
   ],
   "articleSummary": "2-3 sentence executive synopsis summarizing the core story, key figures, and background context of the article",
+  "verbatimQuotes": [
+    "2-3 exact sentences copied word-for-word from the article supporting the company, trigger event, and key figures"
+  ],
   "relevantToSender": true,
   "decisionMaker": {
     "name": "Full name copied verbatim from the article, or empty string if the article does not print a person's first and last name",
@@ -505,6 +509,12 @@ Extract and generate the structured JSON intelligence object.`;
                 parsed.summaryBullets[2],
               ],
               articleSummary: parsed.articleSummary,
+              verbatimQuotes: Array.isArray(parsed.verbatimQuotes)
+                ? parsed.verbatimQuotes
+                    .filter((q): q is string => typeof q === 'string' && q.trim().length > 10)
+                    .map((q) => q.trim())
+                    .slice(0, 3)
+                : [],
               decisionMaker: {
                 name: verifiedName,
                 role: verifiedRole,
@@ -656,6 +666,13 @@ export function generateHeuristicEnrichment(
   const pitchSubject = `commercial insurance quote for ${company}`;
   const pitchBody = `Hi ${firstName},\n\nI saw the recent news regarding ${company}'s milestone ("${cleanHeadline}"). Congratulations on the growth.\n\nWe provide commercial coverage and risk services here in Vancouver. As operations and scale expand, could we put together a competitive quote for your upcoming insurance renewal?\n\nBest,`;
 
+  const rawSentences = text
+    .replace(/^#.*$/gm, '')
+    .replace(/\*\*Source URL\*\*:.*$/gm, '')
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 25 && s.length <= 320);
+
   return {
     companyName: company,
     companyDomain: cleanDomain,
@@ -667,6 +684,7 @@ export function generateHeuristicEnrichment(
       `Commercial Opportunity: Operational growth creates vendor, facilities, and risk coverage requirements.`,
     ],
     articleSummary: `${company} announced "${cleanHeadline}". As operations scale, new commercial requirements and risk coverage opportunities emerge.`,
+    verbatimQuotes: rawSentences.slice(0, 3),
     decisionMaker: {
       name: dmName,
       role: dmRole,

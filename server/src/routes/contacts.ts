@@ -5,6 +5,8 @@ import { eq, desc, and } from 'drizzle-orm';
 import { getSessionUser } from './auth';
 import { upsertContact, createNote } from '../services/ghl';
 import { resolveUserGhlCredentials } from '../services/ghlOAuth';
+import { RESEARCH_BRIEF_CREDIT_COST, RESEARCH_BRIEF_XP_AWARD } from '../services/credits';
+import { generateVerifiedResearchBrief } from '../services/briefGenerator';
 import {
   enrichApolloOrganization,
   extractBusinessDomain,
@@ -915,6 +917,362 @@ contactsRouter.patch('/drafts/:draftId', async (c) => {
   } catch (err: any) {
     console.error('Error in PATCH /api/contacts/drafts/:draftId:', err);
     return c.json({ success: false, error: err.message || 'Failed to update outreach draft.' }, 500);
+  }
+});
+
+function safeParseJson<T>(raw: string | null | undefined, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function parseJsonStringArray(raw: string | null | undefined): string[] {
+  const parsed = safeParseJson<unknown>(raw, []);
+  return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+}
+
+function serializeBriefRow(row: typeof schema.researchBriefs.$inferSelect) {
+  return {
+    id: row.id,
+    organizationName: row.organizationName,
+    companyDomain: row.companyDomain,
+    signalId: row.signalId,
+    briefTitle: row.briefTitle,
+    verifiedFacts: safeParseJson(row.verifiedFacts, []),
+    inferredOpportunities: safeParseJson(row.inferredOpportunities, []),
+    investigationQuestions: safeParseJson(row.investigationQuestions, []),
+    verificationLog: safeParseJson(row.verificationLog, null),
+    createdAt: row.createdAt,
+  };
+}
+
+/**
+ * GET /api/contacts/organization/brief?orgName=...
+ * Returns the latest existing Research Brief for the authenticated user and organization.
+ */
+contactsRouter.get('/organization/brief', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
+  }
+
+  try {
+    const db = getDb(c.env.DB);
+    const user = await getSessionUser(c);
+    if (!user) return authenticationRequired(c);
+
+    const orgName = (c.req.query('orgName') || '').trim();
+    if (!orgName) {
+      return c.json({ success: false, error: 'orgName query parameter is required.' }, 400);
+    }
+
+    const row = await db.query.researchBriefs.findFirst({
+      where: and(
+        eq(schema.researchBriefs.userId, user.id),
+        eq(schema.researchBriefs.organizationName, orgName)
+      ),
+      orderBy: [desc(schema.researchBriefs.createdAt)],
+    });
+
+    return c.json({
+      success: true,
+      brief: row ? serializeBriefRow(row) : null,
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/contacts/organization/brief:', err);
+    return c.json({ success: false, error: err.message || 'Failed to load research brief.' }, 500);
+  }
+});
+
+/**
+ * POST /api/contacts/organization/brief
+ * Credit-gated (10 credits) generator for an evidence-verified Research Brief (+15 XP).
+ */
+contactsRouter.post('/organization/brief', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
+  }
+
+  try {
+    const db = getDb(c.env.DB);
+    const user = await getSessionUser(c);
+    if (!user) return authenticationRequired(c);
+
+    const body = (await c.req.json().catch(() => ({}))) as {
+      organizationName?: string;
+      companyDomain?: string | null;
+      signalId?: string | null;
+    };
+
+    const organizationName = (body.organizationName || '').trim();
+    if (!organizationName) {
+      return c.json({ success: false, error: 'organizationName is required.' }, 400);
+    }
+
+    if (user.creditBalance < RESEARCH_BRIEF_CREDIT_COST) {
+      return c.json(
+        {
+          success: false,
+          error: `Insufficient credits. ${RESEARCH_BRIEF_CREDIT_COST} credits required to generate a Research Brief.`,
+          creditBalance: user.creditBalance,
+        },
+        402
+      );
+    }
+
+    // Load the target signal (owned by this user) and infer companyDomain if not supplied
+    let targetSignal: typeof schema.signals.$inferSelect | undefined;
+    if (body.signalId) {
+      targetSignal = await db.query.signals.findFirst({
+        where: and(eq(schema.signals.id, body.signalId), eq(schema.signals.userId, user.id)),
+      });
+    }
+    if (!targetSignal) {
+      targetSignal = await db.query.signals.findFirst({
+        where: and(
+          eq(schema.signals.userId, user.id),
+          eq(schema.signals.companyName, organizationName)
+        ),
+        orderBy: [desc(schema.signals.updatedAt)],
+      });
+    }
+
+    let resolvedDomain = (body.companyDomain || '').trim() || null;
+    if (!resolvedDomain && targetSignal) {
+      const orgContact = await db.query.contacts.findFirst({
+        where: eq(schema.contacts.signalId, targetSignal.id),
+      });
+      if (orgContact?.companyDomain) {
+        resolvedDomain = orgContact.companyDomain;
+      }
+    }
+
+    const activeCampaign = user.activeCampaignId
+      ? await db.query.campaigns.findFirst({
+          where: and(eq(schema.campaigns.id, user.activeCampaignId), eq(schema.campaigns.userId, user.id)),
+        })
+      : undefined;
+
+    const generated = await generateVerifiedResearchBrief({
+      signal: targetSignal || null,
+      organizationName,
+      companyDomain: resolvedDomain,
+      sellerProfile: {
+        organization: activeCampaign?.legalBusinessName || user.organization || user.legalBusinessName,
+        companyDescription: activeCampaign?.companyDescription || user.companyDescription,
+        valueProp: activeCampaign?.valueProp || user.valueProp,
+        userMission: activeCampaign?.userMission || user.userMission,
+        servicesOffered: parseJsonStringArray(activeCampaign?.servicesOffered || user.servicesOffered),
+        productsOffered: parseJsonStringArray(activeCampaign?.productsOffered || user.productsOffered),
+        targetIndustries: parseJsonStringArray(activeCampaign?.targetIndustries || user.targetIndustries),
+        targetRoles: parseJsonStringArray(activeCampaign?.targetRoles || user.targetRoles),
+        userIntent: activeCampaign?.userIntent || user.userIntent,
+      },
+      env: c.env,
+    });
+
+    const now = new Date().toISOString();
+    const freshUser = await db.query.users.findFirst({
+      where: eq(schema.users.id, user.id),
+    });
+    const currentCredits = freshUser?.creditBalance ?? user.creditBalance;
+    if (currentCredits < RESEARCH_BRIEF_CREDIT_COST) {
+      return c.json(
+        {
+          success: false,
+          error: `Insufficient credits. ${RESEARCH_BRIEF_CREDIT_COST} credits required to generate a Research Brief.`,
+          creditBalance: currentCredits,
+        },
+        402
+      );
+    }
+
+    const newBalance = currentCredits - RESEARCH_BRIEF_CREDIT_COST;
+    const newTotalPoints = (freshUser?.totalPoints ?? user.totalPoints) + RESEARCH_BRIEF_XP_AWARD;
+    const briefId = `rb_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    await db
+      .update(schema.users)
+      .set({
+        creditBalance: newBalance,
+        totalPoints: newTotalPoints,
+        updatedAt: now,
+      })
+      .where(eq(schema.users.id, user.id));
+
+    await db.insert(schema.creditTransactions).values({
+      id: `tx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      userId: user.id,
+      amount: -RESEARCH_BRIEF_CREDIT_COST,
+      balanceAfter: newBalance,
+      type: 'research_brief',
+      referenceId: briefId,
+      description: `Generated verified Research Brief for ${organizationName} (+${RESEARCH_BRIEF_XP_AWARD} XP)`,
+      createdAt: now,
+    });
+
+    const briefRow: typeof schema.researchBriefs.$inferInsert = {
+      id: briefId,
+      userId: user.id,
+      organizationName,
+      companyDomain: resolvedDomain,
+      signalId: targetSignal?.id || null,
+      briefTitle: generated.briefTitle,
+      verifiedFacts: JSON.stringify(generated.verifiedFacts),
+      inferredOpportunities: JSON.stringify(generated.inferredOpportunities),
+      investigationQuestions: JSON.stringify(generated.investigationQuestions),
+      verificationLog: JSON.stringify(generated.verificationLog),
+      createdAt: now,
+    };
+
+    await db.insert(schema.researchBriefs).values(briefRow);
+
+    return c.json({
+      success: true,
+      brief: serializeBriefRow(briefRow as typeof schema.researchBriefs.$inferSelect),
+      creditBalance: newBalance,
+      totalPoints: newTotalPoints,
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/contacts/organization/brief:', err);
+    return c.json({ success: false, error: err.message || 'Failed to generate research brief.' }, 500);
+  }
+});
+
+/**
+ * POST /api/contacts/organization/brief/save-crm
+ * Pushes a generated Research Brief as a note to GoHighLevel on the organization's contact.
+ */
+contactsRouter.post('/organization/brief/save-crm', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
+  }
+
+  try {
+    const db = getDb(c.env.DB);
+    const currentUser = await getSessionUser(c);
+    if (!currentUser) return authenticationRequired(c);
+
+    const creds = await resolveUserGhlCredentials(db, currentUser, c.env);
+    if (creds.authMethod === 'mock' || !creds.token || creds.token.length <= 10 || creds.token.includes('your_')) {
+      return c.json(
+        {
+          success: false,
+          crmNotConnected: true,
+          error: 'GoHighLevel CRM connection required. Please connect your HighLevel account in CRM Settings.',
+        },
+        400
+      );
+    }
+
+    const body = (await c.req.json().catch(() => ({}))) as {
+      organizationName?: string;
+      briefId?: string;
+    };
+    const organizationName = (body.organizationName || '').trim();
+    if (!organizationName) {
+      return c.json({ success: false, error: 'organizationName is required.' }, 400);
+    }
+
+    const briefRow = body.briefId
+      ? await db.query.researchBriefs.findFirst({
+          where: and(eq(schema.researchBriefs.id, body.briefId), eq(schema.researchBriefs.userId, currentUser.id)),
+        })
+      : await db.query.researchBriefs.findFirst({
+          where: and(
+            eq(schema.researchBriefs.userId, currentUser.id),
+            eq(schema.researchBriefs.organizationName, organizationName)
+          ),
+          orderBy: [desc(schema.researchBriefs.createdAt)],
+        });
+
+    if (!briefRow) {
+      return c.json({ success: false, error: 'Research Brief not found for this organization.' }, 404);
+    }
+
+    const orgSignals = await db.query.signals.findMany({
+      where: and(
+        eq(schema.signals.userId, currentUser.id),
+        eq(schema.signals.companyName, organizationName)
+      ),
+      with: { contacts: true },
+    });
+
+    const orgContacts = orgSignals.flatMap((s) => s.contacts || []);
+    const primaryContact = orgContacts.find((ct) => Boolean(ct.ghlContactId)) || orgContacts[0];
+
+    if (!primaryContact) {
+      return c.json(
+        { success: false, error: `No contacts found for ${organizationName} to attach CRM note.` },
+        404
+      );
+    }
+
+    const subaccountId =
+      creds.locationId || currentUser.ghlSubaccountId || c.env?.GHL_LOCATION_ID || 'y3KLRBUZzf2t45o7rzp9';
+
+    let ghlContactId = primaryContact.ghlContactId;
+    if (!ghlContactId) {
+      const nameParts = primaryContact.name.trim().split(/\s+/);
+      const upserted = await upsertContact(
+        subaccountId,
+        {
+          firstName: nameParts[0] || 'Executive',
+          lastName: nameParts.slice(1).join(' '),
+          email: primaryContact.email || null,
+          companyName: organizationName,
+          tags: ['twinflow-research-brief'],
+        },
+        creds.token
+      );
+      if (!upserted.success) {
+        return c.json({ success: false, error: upserted.error || 'Failed to sync contact to CRM.' }, 400);
+      }
+      ghlContactId = upserted.id;
+      await db
+        .update(schema.contacts)
+        .set({ ghlContactId, updatedAt: new Date().toISOString() })
+        .where(eq(schema.contacts.id, primaryContact.id));
+    }
+
+    const brief = serializeBriefRow(briefRow);
+    const factsText = (brief.verifiedFacts as Array<{ statement: string; sourceLabel: string; sourceDate: string }>)
+      .map((f, i) => `${i + 1}. ${f.statement} (${f.sourceLabel}, ${f.sourceDate})`)
+      .join('\n');
+    const oppsText = (brief.inferredOpportunities as Array<{ area: string; rationale: string; confidence: string }>)
+      .map((o, i) => `${i + 1}. [${o.confidence.toUpperCase()}] ${o.area}: ${o.rationale}`)
+      .join('\n');
+    const questionsText = (brief.investigationQuestions as string[])
+      .map((q, i) => `${i + 1}. ${q}`)
+      .join('\n');
+
+    const noteContent = `📋 ${brief.briefTitle}
+Generated: ${brief.createdAt.slice(0, 10)}
+
+VERIFIED FACTS:
+${factsText || 'None recorded.'}
+
+ANALYTICAL ASSESSMENT — STRATEGIC OPPORTUNITIES:
+${oppsText || 'None recorded.'}
+
+QUESTIONS WORTH INVESTIGATING:
+${questionsText || 'None recorded.'}`;
+
+    const noteResult = await createNote(subaccountId, ghlContactId, noteContent, creds.token);
+    if (!noteResult.success) {
+      return c.json({ success: false, error: noteResult.error || 'Failed to save note to CRM.' }, 400);
+    }
+
+    return c.json({
+      success: true,
+      ghlContactId,
+      message: 'Research Brief saved to GoHighLevel CRM Notes.',
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/contacts/organization/brief/save-crm:', err);
+    return c.json({ success: false, error: err.message || 'Failed to save Research Brief to CRM.' }, 500);
   }
 });
 

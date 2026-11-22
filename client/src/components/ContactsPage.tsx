@@ -529,6 +529,14 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({
           onSelectContactDossier={(contact) => setSelectedContactForModal(contact)}
           onUnlockSimilar={handleUnlockSimilar}
           onOpenOrganization={(org) => setSelectedOrganizationName(org)}
+          onCreditsUpdated={(creditBalance, totalPoints) =>
+            setGamification((prev) => ({
+              ...prev,
+              credits: creditBalance,
+              xp: totalPoints,
+            }))
+          }
+          onToast={showToast}
         />
       ) : (
         <>
