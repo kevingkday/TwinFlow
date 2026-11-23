@@ -99,9 +99,12 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
     emailDraft: {
       id: item.outreachDraft?.id,
       subject: item.outreachDraft?.subject || `quick question re: ${item.companyName}`,
-      body:
+      body: (
         item.outreachDraft?.body ||
-        `Hi ${primaryContact.name.split(' ')[0] || 'there'},\n\nI saw the recent article regarding ${item.companyName}'s upcoming plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`,
+        `Hi ${primaryContact.name.split(' ')[0] || 'there'},\n\nI saw the recent article regarding ${item.companyName}'s upcoming plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`
+      )
+        .replace(/\\r\\n/g, '\n')
+        .replace(/\\n/g, '\n'),
       cta: 'Connect re: offerings',
       estimatedReadTime: `${readSeconds} sec read`,
     },
@@ -1238,6 +1241,30 @@ export const App: React.FC = () => {
                         return [target, ...prev.filter((item) => item.id !== leadId)];
                       });
                       window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    onDismissLead={async (leadId) => {
+                      const target = leads.find((item) => item.id === leadId);
+                      if (!target) return;
+                      const remaining = leads.filter((item) => item.id !== leadId);
+                      setLeads(remaining);
+                      setHistory((prev) => [...prev, { lead: target, action: 'pass' }]);
+                      setStats((prev) => ({
+                        ...prev,
+                        passedCount: prev.passedCount + 1,
+                        remainingCount: remaining.length,
+                        streak: 0,
+                      }));
+                      if (userProfile) {
+                        try {
+                          await authFetch(`/api/signals/${leadId}/action`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'pass' }),
+                          });
+                        } catch (err) {
+                          console.error('Failed to dismiss queued lead:', err);
+                        }
+                      }
                     }}
                   />
                 </>

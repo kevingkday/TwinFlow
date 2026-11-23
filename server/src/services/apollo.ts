@@ -391,30 +391,38 @@ export async function resolveSignalContacts(input: ContactResolutionInput, apiKe
 
   // 2. Article company, no named person.
   if (isRealCompany || domain) {
-    const hits = await searchApolloPeople(
-      domain
-        ? { organizationDomains: [domain], personTitles: titles }
-        : { organizationName: company, organizationLocations: input.locations, personTitles: titles },
-      key
-    );
-    trail.push(`company:${hits.length}`);
-    if (hits.length > 0) {
-      const contacts = await revealTop(hits, titles, 'company', key, company);
-      if (contacts.length > 0) return { contacts, source: 'company', trail };
+    if (domain) {
+      const domainHits = await searchApolloPeople({ organizationDomains: [domain], personTitles: titles }, key);
+      trail.push(`company_domain:${domainHits.length}`);
+      if (domainHits.length > 0) {
+        const contacts = await revealTop(domainHits, titles, 'company', key, company);
+        if (contacts.length > 0) return { contacts, source: 'company', trail };
+      }
     }
 
-    // 3. Lookalikes of the article company (needs an Apollo org id seed).
-    const seed = domain ? await enrichApolloOrganization(domain, key) : null;
-    trail.push(`seed:${seed ? 'found' : 'none'}`);
-    if (seed) {
-      const lookalikes = await searchApolloPeople(
-        { lookalikeOrganizationIds: [seed.id], organizationLocations: input.locations, personTitles: titles },
+    if (isRealCompany) {
+      const localHits = await searchApolloPeople(
+        { organizationName: company, organizationLocations: input.locations, personTitles: titles },
         key
       );
-      trail.push(`lookalike:${lookalikes.length}`);
-      const contacts = await revealTop(lookalikes, titles, 'lookalike', key, '');
-      if (contacts.length > 0) return { contacts, source: 'lookalike', trail };
+      trail.push(`company_local:${localHits.length}`);
+      if (localHits.length > 0) {
+        const contacts = await revealTop(localHits, titles, 'company', key, company);
+        if (contacts.length > 0) return { contacts, source: 'company', trail };
+      }
+
+      if (input.locations?.length) {
+        const nationalHits = await searchApolloPeople({ organizationName: company, personTitles: titles }, key);
+        trail.push(`company_any_loc:${nationalHits.length}`);
+        if (nationalHits.length > 0) {
+          const contacts = await revealTop(nationalHits, titles, 'company', key, company);
+          if (contacts.length > 0) return { contacts, source: 'company', trail };
+        }
+      }
     }
+
+    // Do not attach unrelated lookalike/related company contacts onto a named-company signal.
+    return { contacts: [], source: 'none', trail };
   }
 
   // 4. Related companies matching the buyer profile in the service area.

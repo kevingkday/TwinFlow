@@ -527,7 +527,12 @@ Extract and generate the structured JSON intelligence object.`;
               })),
               coldIntroHook: parsed.coldIntroHook || `I saw the recent article in ${publisher} regarding ${parsed.companyName}'s upcoming plans.`,
               pitchSubject: parsed.pitchSubject || `quick question re: ${parsed.companyName}`,
-              pitchBody: parsed.pitchBody || `Hi ${(verifiedName || 'there').split(' ')[0] || 'there'},\n\nI saw the recent article in ${publisher} regarding ${parsed.companyName}'s expansion plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`,
+              pitchBody: (
+                parsed.pitchBody ||
+                `Hi ${(verifiedName || 'there').split(' ')[0] || 'there'},\n\nI saw the recent article in ${publisher} regarding ${parsed.companyName}'s expansion plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`
+              )
+                .replace(/\\r\\n/g, '\n')
+                .replace(/\\n/g, '\n'),
               competitors: defaultCompetitors,
               suggestedPeerRoles: defaultPeerRoles,
             };

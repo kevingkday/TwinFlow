@@ -1,10 +1,11 @@
 import React from 'react';
-import { ArrowUpRight, CheckCircle2, Globe, Layers } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, Globe, Layers, Trash2 } from 'lucide-react';
 import type { LeadCardData } from '../types/lead';
 
 interface DeckQueueListProps {
   leads: LeadCardData[];
   onSelectLead: (leadId: string) => void;
+  onDismissLead?: (leadId: string) => void;
 }
 
 function formatSourceLabel(lead: LeadCardData): string {
@@ -20,7 +21,7 @@ function formatSourceLabel(lead: LeadCardData): string {
   return rawSource || 'News Source';
 }
 
-export const DeckQueueList: React.FC<DeckQueueListProps> = ({ leads, onSelectLead }) => {
+export const DeckQueueList: React.FC<DeckQueueListProps> = ({ leads, onSelectLead, onDismissLead }) => {
   if (leads.length === 0) return null;
 
   return (
@@ -38,7 +39,7 @@ export const DeckQueueList: React.FC<DeckQueueListProps> = ({ leads, onSelectLea
         </p>
       </div>
 
-      <div className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
+      <div className="divide-y divide-slate-100">
         {leads.map((lead, index) => {
           const isCurrent = index === 0;
           const sourceLabel = formatSourceLabel(lead);
@@ -127,6 +128,19 @@ export const DeckQueueList: React.FC<DeckQueueListProps> = ({ leads, onSelectLea
                   <span className="px-2.5 py-1 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200">
                     Display
                   </span>
+                )}
+                {onDismissLead && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDismissLead(lead.id);
+                    }}
+                    title="Remove / Pass lead"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 )}
               </div>
             </div>
