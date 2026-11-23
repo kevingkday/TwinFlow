@@ -18,6 +18,7 @@ import { Header } from './components/Header';
 import { StatsBar } from './components/StatsBar';
 import { DeckView } from './components/DeckView';
 import { ActionControls } from './components/ActionControls';
+import { DeckQueueList } from './components/DeckQueueList';
 import { LeadDetailPane } from './components/LeadDetailPane';
 import { PitchEditorModal } from './components/PitchEditorModal';
 import { HelpModal } from './components/HelpModal';
@@ -1214,18 +1215,32 @@ export const App: React.FC = () => {
 
               {/* Deck Action Controls */}
               {leads.length > 0 && (
-                <div className="w-full max-w-6xl mt-4">
-                  <ActionControls
-                    onAction={handleSwipe}
-                    onEditPitch={() => activeLead && setEditingLead(activeLead)}
-                    disabled={leads.length === 0}
-                    creditBalance={stats.creditsRemaining}
-                    onUpgradePrompt={() => setUpgradeModalOpen(true)}
-                    isCrmConnected={Boolean(userProfile?.hasCustomGhlKey || userProfile?.isGhlConnected)}
-                    isDemo={!userProfile}
-                    onOpenCrmSettings={() => setGhlSettingsOpen(true)}
+                <>
+                  <div className="w-full max-w-6xl mt-4">
+                    <ActionControls
+                      onAction={handleSwipe}
+                      onEditPitch={() => activeLead && setEditingLead(activeLead)}
+                      disabled={leads.length === 0}
+                      creditBalance={stats.creditsRemaining}
+                      onUpgradePrompt={() => setUpgradeModalOpen(true)}
+                      isCrmConnected={Boolean(userProfile?.hasCustomGhlKey || userProfile?.isGhlConnected)}
+                      isDemo={!userProfile}
+                      onOpenCrmSettings={() => setGhlSettingsOpen(true)}
+                    />
+                  </div>
+
+                  <DeckQueueList
+                    leads={leads}
+                    onSelectLead={(leadId) => {
+                      setLeads((prev) => {
+                        const target = prev.find((item) => item.id === leadId);
+                        if (!target) return prev;
+                        return [target, ...prev.filter((item) => item.id !== leadId)];
+                      });
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
                   />
-                </div>
+                </>
               )}
             </div>
           </main>
