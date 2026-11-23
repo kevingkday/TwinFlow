@@ -30,6 +30,7 @@ export interface AuditLogEntry {
   publisher: string;
   url: string;
   publishedAt?: string;
+  sourceTier?: 'news' | 'pr_wire';
   status: 'ingested' | 'filtered';
   reason: string;
   companyName?: string;
@@ -48,6 +49,7 @@ const LAST_PIPELINE_TRACE: Record<
   {
     timestamp: string;
     query: string;
+    queries?: string[];
     location: string;
     telemetry: any;
     auditLog: AuditLogEntry[];
@@ -552,7 +554,10 @@ signalsRouter.post('/ingest', async (c) => {
     const telemetry = {
       fetchedCount: wideNet.candidates.length,
       rawCount: wideNet.rawCount,
+      queries: wideNet.queries,
       serpQueries: wideNet.queries,
+      prWireFetchedCount: wideNet.candidates.filter((candidate) => candidate.sourceTier === 'pr_wire').length,
+      prWireSelectedCount: winners.filter((winner) => winner.sourceTier === 'pr_wire').length,
       searchSource: wideNet.source,
       alreadyIngestedCount: pool.length - fresh.length,
       triageInputCount: fresh.length,
@@ -610,6 +615,7 @@ signalsRouter.post('/ingest', async (c) => {
           publisher: article.publisher,
           url: article.url,
           publishedAt: article.publishedAt,
+          sourceTier: article.sourceTier,
           status: 'filtered',
           reason: `Disqualified by geography: ${judgment.locationReason || judgment.relevantReason}`,
         });
@@ -778,6 +784,7 @@ signalsRouter.post('/ingest', async (c) => {
         publisher: article.publisher,
         url: article.url,
         publishedAt: article.publishedAt,
+        sourceTier: article.sourceTier,
         status: 'ingested',
         reason: triage.reasoning[article.index] || 'Qualified commercial trigger in target geography',
         companyName: enriched.companyName,
@@ -817,6 +824,7 @@ signalsRouter.post('/ingest', async (c) => {
           publisher: article.publisher,
           url: article.url,
           publishedAt: article.publishedAt,
+          sourceTier: article.sourceTier,
           status: 'filtered',
           reason: triage.reasoning[article.index] || hardRejectReason(article) || 'Ranked below batch triage cutoff (general commercial news)',
         });
@@ -831,6 +839,7 @@ signalsRouter.post('/ingest', async (c) => {
           publisher: article.publisher,
           url: article.url,
           publishedAt: article.publishedAt,
+          sourceTier: article.sourceTier,
           status: 'filtered',
           reason: 'Already ingested into your deck in a previous scout session.',
         });
@@ -848,6 +857,7 @@ signalsRouter.post('/ingest', async (c) => {
     LAST_PIPELINE_TRACE[user.id] = {
       timestamp: now,
       query: queryLabel,
+      queries: wideNet.queries,
       location: locationLock.enforced ? [locationLock.city, locationLock.region].filter(Boolean).join(' / ') : 'National',
       telemetry: fullTelemetry,
       auditLog,

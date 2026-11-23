@@ -19,10 +19,10 @@ export interface NamedPerson {
 }
 
 const LOW_YIELD_TITLE =
-  /\b(top\s+\d+|round-?up|week in review|what to know|things to know|newsletter|listicle|best of|stocks to watch|movers|need to know|\d+\s+(companies|stocks|reasons|things|ways|tips))\b/i;
+  /\b(top\s+\d+|round-?up|week in review|market wrap|earnings call transcript|what to know|things to know|newsletter|listicle|best of|stocks to watch|movers|need to know|\d+\s+(companies|stocks|reasons|things|ways|tips))\b/i;
 
 const LOW_YIELD_SOURCE =
-  /(pr newswire|business wire|globenewswire|accesswire|cision|yahoo finance|finance\.yahoo|seeking alpha|benzinga)/i;
+  /(yahoo finance|finance\.yahoo|seeking alpha|benzinga)/i;
 
 const ROLE_RE =
   /\b(CEO|CFO|COO|CIO|CISO|CTO|CRO|CHRO|CMO|President|Founder|Co-founder|Owner|Partner|Chair(?:man|woman|person)?|General Manager|Managing Director|Vice President|VP|Director|Chief [A-Z][a-z]+ Officer)\b/;

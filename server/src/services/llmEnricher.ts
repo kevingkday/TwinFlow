@@ -120,7 +120,7 @@ const TRIGGER_WEIGHT: Partial<Record<ArticleType, number>> = {
 };
 
 const STOCK_BLURB =
-  /\b(shares? (?:rose|fell|jumped|slid|gained|dropped|up\b|down\b)|stock (?:price|rises|falls|jumps)|price target|52-week|nyse:|nasdaq:|tsx:|tsxv:|otc:|short interest|dividend declared|earnings call transcript|analyst (?:rating|upgrade|downgrade)|(?:upgraded|downgraded) to (?:buy|sell|hold|outperform|underperform))/i;
+  /\b(shares? (?:rose|fell|jumped|slid|gained|dropped|up\b|down\b)|stock (?:price|rises|falls|jumps)|why\b[^.]{0,60}\b(?:stock|shares)\b[^.]{0,40}\bmoved|market wrap|daily market|pre-market movers|after-hours movers|price target|52-week|short interest|dividend declared|earnings call transcript|analyst (?:rating|upgrade|downgrade)|(?:upgraded|downgraded) to (?:buy|sell|hold|outperform|underperform))/i;
 
 const OPINION_PIECE = /\b(opinion|op-ed|editorial|columnist|column:|commentary|letters? to the editor|perspective:|analysis:|viewpoint)/i;
 
@@ -221,7 +221,7 @@ function jevQuestionsFor(index: number, profile: TriageBuyerProfile, lock: Locat
     },
     [`a${index}_noise`]: {
       type: 'noul',
-      instructions: `Is ${ref} a listicle, "top N" list, wire roundup, stock ticker or earnings blurb, opinion or editorial piece, policy commentary, sports, crime, or obituary?`,
+      instructions: `Is ${ref} a listicle, "top N" list, market wrap or wire roundup, automated stock-ticker movement blurb (e.g. "Why Stock X moved today"), earnings call transcript, opinion or editorial piece, policy commentary, sports, crime, or obituary? (Note: an official corporate press release announcing a contract, facility expansion, acquisition, or executive hire is NOT noise.)`,
     },
   };
   if (lock.enforced) {
@@ -596,14 +596,17 @@ export function generateHeuristicPeerRoles(signalType: string): PeerRoleBranch[]
 }
 
 const GEO_PREFIX = /^(?:In\s+|From\s+)?([A-Za-z.'-]+(?:\s+[A-Za-z.'-]+)?)(?:'s|’s)\s+/i;
-const ACTION_VERBS = /\s+(?:grows|expands|opens|launches|acquires|purchases|buys|merges with|names|appoints|hires|taps|promotes|raises|secures|closes|lands|wins|breaks ground|relocates|reports|celebrates|awarded|gets)\b/i;
+const WIRE_DATELINE_PREFIX =
+  /^(?:[A-Z][A-Za-z.'\s-]{1,40},\s*(?:[A-Z]{2}|[A-Za-z.\s]{2,20})(?:,\s*[A-Za-z.\s0-9,]{2,25})?\s*(?:--|\/)\s*(?:\([^)]+\)|[A-Za-z\s]{2,30})\s*(?:--|\/)\s*)/;
+const TICKER_TAG_RE = /\s*\((?:NYSE|NASDAQ|TSX|TSXV|OTC|CSE|NEO|AMEX|LON|ASX)\s*:\s*[A-Z0-9.-]+\)/gi;
+const ACTION_VERBS = /\s+(?:grows|expands|opens|launches|acquires|purchases|buys|merges with|names|appoints|hires|taps|promotes|raises|secures|closes|lands|wins|breaks ground|relocates|reports|celebrates|awarded|gets|announces|signs|completes)\b/i;
 const STOP_ENTITIES = new Set([
   'vancouver', 'toronto', 'calgary', 'edmonton', 'montreal', 'ottawa', 'victoria', 'canada',
   'british columbia', 'ontario', 'alberta', 'morning', 'industry', 'business', 'the', 'new', 'city', 'us', 'usa', 'enterprise'
 ]);
 
 export function extractCompanyFromHeadline(headline: string): string {
-  let cleaned = headline.trim();
+  let cleaned = headline.trim().replace(WIRE_DATELINE_PREFIX, '').replace(TICKER_TAG_RE, '').trim();
   const geoMatch = cleaned.match(GEO_PREFIX);
   if (geoMatch && geoMatch[1] && STOP_ENTITIES.has(geoMatch[1].toLowerCase())) {
     cleaned = cleaned.slice(geoMatch[0].length).trim();

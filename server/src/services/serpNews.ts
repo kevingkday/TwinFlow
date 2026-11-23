@@ -6,6 +6,7 @@
 import { parsePublishedAtOrNull } from './publishedAt';
 import {
   applyLocationLock,
+  buildPrWireQuery,
   buildWideNetQueries,
   resolveLocationLock,
   WIDE_NET_EVENT_KEYWORDS,
@@ -15,6 +16,8 @@ import {
 } from './aiQueryPlanner';
 import { isLowYieldArticle, isRecentPublished, isSportsArticle, withSportsExclusion } from './signalQuality';
 
+export type SerpSourceTier = 'news' | 'pr_wire';
+
 export interface SerpArticle {
   title: string;
   publisher: string;
@@ -22,11 +25,13 @@ export interface SerpArticle {
   snippet: string;
   publishedAt: string;
   query?: string;
+  sourceTier?: SerpSourceTier;
 }
 
 /** One wide-net search hit, indexed for batch headline/snippet triage. */
 export interface SerpCandidate extends SerpArticle {
   index: number;
+  sourceTier: SerpSourceTier;
 }
 
 /** Candidates requested per SerpAPI call. One credit, maximum recall. */
@@ -335,10 +340,63 @@ export interface WideNetSearchResult {
   source: 'serpapi' | 'sample' | 'none';
 }
 
+function normalizeCandidateUrl(url: string): string {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/^utm_/i.test(key) || key === 'fbclid' || key === 'gclid') {
+        parsed.searchParams.delete(key);
+      }
+    }
+    return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}${parsed.search}`.toLowerCase();
+  } catch {
+    return trimmed.toLowerCase().replace(/\/+$/, '');
+  }
+}
+
+function normalizeCandidateTitle(title: string): string {
+  return (title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function blendAndDeduplicateCandidates(
+  newsArticles: SerpArticle[],
+  prWireArticles: SerpArticle[],
+  poolSize: number
+): SerpCandidate[] {
+  const blended: SerpCandidate[] = [];
+  const seenUrls = new Set<string>();
+  const seenTitles = new Set<string>();
+
+  const tryPush = (article: SerpArticle, tier: SerpSourceTier) => {
+    if (blended.length >= poolSize) return;
+    const normUrl = normalizeCandidateUrl(article.url);
+    const normTitle = normalizeCandidateTitle(article.title);
+    if (!normUrl || !normTitle || seenUrls.has(normUrl) || seenTitles.has(normTitle)) return;
+    seenUrls.add(normUrl);
+    seenTitles.add(normTitle);
+    blended.push({
+      ...article,
+      sourceTier: tier,
+      index: blended.length,
+    });
+  };
+
+  const maxLen = Math.max(newsArticles.length, prWireArticles.length);
+  for (let i = 0; i < maxLen && blended.length < poolSize; i += 1) {
+    if (i < newsArticles.length) tryPush(newsArticles[i], 'news');
+    if (i < prWireArticles.length) tryPush(prWireArticles[i], 'pr_wire');
+  }
+
+  return blended;
+}
+
 /**
  * Wide-net retrieval: one large SerpAPI pull (num=40) per query, location
- * lock injected into every query, widening only the event keywords. Returns
- * an indexed pool for batch headline/snippet triage. Usually costs 1 credit.
+ * lock injected into every query, widening only the event keywords, plus a
+ * dedicated corporate press release wire tier. Returns an indexed pool for
+ * batch headline/snippet triage.
  */
 export async function fetchWideNetCandidates(params: WideNetSearchParams): Promise<WideNetSearchResult> {
   const poolSize = Math.max(1, Math.min(params.poolSize ?? WIDE_NET_POOL_SIZE, 100));
@@ -346,38 +404,76 @@ export async function fetchWideNetCandidates(params: WideNetSearchParams): Promi
   const maxQueries = Math.max(1, params.maxQueries ?? 3);
   const lock = params.locationLock || (params.ladder ? resolveLocationLock(params.ladder) : null);
 
+  const prWireQuery = buildPrWireQuery(
+    lock || { enforced: false, city: '', region: '', clause: '' }
+  );
+
   const planned: string[] = [];
   if (params.keywords?.trim()) planned.push(lockedQuery(params.keywords, lock));
   if (params.ladder) planned.push(...buildWideNetQueries({ ...params.ladder, locationLock: lock || undefined }));
   if (planned.length === 0) {
     planned.push(lockedQuery(`(${WIDE_NET_EVENT_KEYWORDS.map((w) => (/\s/.test(w) ? `"${w}"` : w)).join(' OR ')})`, lock));
   }
-  const queries = planned.filter((q, i, list) => list.indexOf(q) === i).slice(0, maxQueries);
+  const newsQueries = planned
+    .filter((q, i, list) => q !== prWireQuery && list.indexOf(q) === i)
+    .slice(0, maxQueries);
+  const allPlannedQueries = [...newsQueries, prWireQuery].filter((q, i, list) => Boolean(q) && list.indexOf(q) === i);
 
   const cleanKey = hasLiveSerpKey(params.apiKey);
   if (!cleanKey) {
     if (params.allowSampleFallback) {
-      const candidates = sampleArticles(poolSize).map((article, index) => ({ ...article, index }));
-      return { candidates, queries, rawCount: candidates.length, source: 'sample' };
+      const candidates = sampleArticles(poolSize).map((article, index) => ({
+        ...article,
+        index,
+        sourceTier: 'news' as const,
+      }));
+      return { candidates, queries: allPlannedQueries, rawCount: candidates.length, source: 'sample' };
     }
     console.warn('[SerpAPI] No live key for wide-net search. Returning no candidates.');
-    return { candidates: [], queries, rawCount: 0, source: 'none' };
+    return { candidates: [], queries: allPlannedQueries, rawCount: 0, source: 'none' };
   }
 
-  const collected: SerpArticle[] = [];
-  const seen = new Set<string>();
+  const newsCollected: SerpArticle[] = [];
+  const newsSeen = new Set<string>();
   const executed: string[] = [];
   let rawCount = 0;
-  for (const q of queries) {
+
+  for (const q of newsQueries) {
     executed.push(q);
     try {
-      rawCount += await runNewsQuery(q, lock?.enforced ? 'wide-net:locked' : 'wide-net', cleanKey, params.gl || 'us', collected, seen, poolSize);
+      rawCount += await runNewsQuery(
+        q,
+        lock?.enforced ? 'wide-net:locked' : 'wide-net',
+        cleanKey,
+        params.gl || 'us',
+        newsCollected,
+        newsSeen,
+        poolSize
+      );
     } catch (err) {
       console.warn(`SerpAPI wide-net query failed for "${q}":`, err);
     }
-    if (collected.length >= minPool) break;
+    if (newsCollected.length >= minPool) break;
   }
 
-  const candidates = collected.slice(0, poolSize).map((article, index) => ({ ...article, index }));
+  const prWireCollected: SerpArticle[] = [];
+  if (prWireQuery) {
+    executed.push(prWireQuery);
+    try {
+      rawCount += await runNewsQuery(
+        prWireQuery,
+        lock?.enforced ? 'wide-net:pr_wire:locked' : 'wide-net:pr_wire',
+        cleanKey,
+        params.gl || 'us',
+        prWireCollected,
+        new Set<string>(),
+        poolSize
+      );
+    } catch (err) {
+      console.warn(`SerpAPI PR wire query failed for "${prWireQuery}":`, err);
+    }
+  }
+
+  const candidates = blendAndDeduplicateCandidates(newsCollected, prWireCollected, poolSize);
   return { candidates, queries: executed, rawCount, source: 'serpapi' };
 }

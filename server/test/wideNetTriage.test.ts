@@ -2,11 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applyLocationLock,
   buildLocationLock,
+  buildPrWireQuery,
   buildWideNetQueries,
   generateAlgorithmicQueryPlan,
   parseCityRegion,
+  PR_WIRE_SITES,
 } from '../src/services/aiQueryPlanner';
-import { keywordTriageCandidates, triageCandidates, type TriageCandidate } from '../src/services/llmEnricher';
+import {
+  extractCompanyFromHeadline,
+  keywordTriageCandidates,
+  triageCandidates,
+  type TriageCandidate,
+} from '../src/services/llmEnricher';
 import { fetchWideNetCandidates } from '../src/services/serpNews';
 
 const vancouverPlan = () =>
@@ -56,6 +63,25 @@ describe('location lock', () => {
       expect(q).toContain('-roster');
     }
     expect(queries.some((q) => /appoints OR raises|raises OR/.test(q) && q.includes('"breaks ground"'))).toBe(true);
+    expect(queries.some((q) => q.includes('site:prnewswire.com'))).toBe(true);
+  });
+
+  it('builds a geo-locked PR wire query with all wire site operators and noise exclusions', () => {
+    const localLock = buildLocationLock('Vancouver, British Columbia, Canada');
+    const localQuery = buildPrWireQuery(localLock);
+    for (const site of PR_WIRE_SITES) {
+      expect(localQuery).toContain(`site:${site}`);
+    }
+    expect(localQuery).toContain('("Vancouver" OR "British Columbia")');
+    expect(localQuery).toContain('(appoints OR expands OR acquires OR contract OR "breaks ground" OR "new facility")');
+    expect(localQuery).toContain('-NHL');
+    expect(localQuery).toContain('-roster');
+
+    const nationalLock = buildLocationLock('Vancouver, British Columbia, Canada', 'national');
+    const nationalQuery = buildPrWireQuery(nationalLock);
+    expect(nationalQuery).toContain('site:prnewswire.com');
+    expect(nationalQuery).not.toContain('Vancouver');
+    expect(nationalQuery).toContain('-NHL');
   });
 });
 
@@ -81,14 +107,69 @@ describe('wide-net SerpAPI retrieval', () => {
       ladder: plan.queryLadder,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     const url = new URL(String((fetchMock.mock.calls[0] as unknown[])[0]));
     expect(url.searchParams.get('num')).toBe('40');
     expect(url.searchParams.get('q')).toContain('("Vancouver" OR "British Columbia")');
     expect(url.searchParams.get('q')).toContain('-NHL');
+    const wireUrl = new URL(String((fetchMock.mock.calls[1] as unknown[])[0]));
+    expect(wireUrl.searchParams.get('q')).toContain('site:prnewswire.com');
+    expect(result.queries).toHaveLength(2);
     expect(result.candidates).toHaveLength(20);
-    expect(result.candidates[3]).toMatchObject({ index: 3, title: 'Acme 3 raises funding in Vancouver', publisher: 'BIV' });
+    expect(result.candidates[3]).toMatchObject({ index: 3, title: 'Acme 3 raises funding in Vancouver', publisher: 'BIV', sourceTier: 'news' });
     expect(result.candidates[0]).toHaveProperty('publishedAt');
+  });
+
+  it('blends and deduplicates news and PR wire candidates with sourceTier tags', async () => {
+    const now = new Date().toISOString();
+    const newsHits = [
+      {
+        title: 'Acme Corp Expands Vancouver Engineering Hub',
+        link: 'https://news.example.org/acme-expands',
+        source: { name: 'BIV' },
+        snippet: 'Vancouver tech firm expands.',
+        date: now,
+      },
+    ];
+    const wireHits = [
+      {
+        title: 'Acme Corp Expands Vancouver Engineering Hub',
+        link: 'https://www.prnewswire.com/news-releases/acme-expands.html',
+        source: { name: 'PR Newswire' },
+        snippet: 'Duplicate headline from PR Newswire.',
+        date: now,
+      },
+      {
+        title: 'Pacific Metals (TSX: PMET) Appoints Elena Vance as CFO in Vancouver',
+        link: 'https://www.globenewswire.com/news-release/pacific-metals-cfo',
+        source: { name: 'GlobeNewswire' },
+        snippet: 'Vancouver-based Pacific Metals appoints Elena Vance as Chief Financial Officer.',
+        date: now,
+      },
+    ];
+    let callIdx = 0;
+    const fetchMock = vi.fn(async () => {
+      const payload = callIdx === 0 ? newsHits : wireHits;
+      callIdx += 1;
+      return new Response(JSON.stringify({ news_results: payload }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const plan = vancouverPlan();
+    const result = await fetchWideNetCandidates({
+      apiKey: 'live_serp_key_123456',
+      gl: 'ca',
+      ladder: plan.queryLadder,
+      minPool: 1,
+    });
+
+    expect(result.candidates).toHaveLength(2);
+    expect(result.candidates[0]).toMatchObject({ index: 0, sourceTier: 'news' });
+    expect(result.candidates[1]).toMatchObject({
+      index: 1,
+      sourceTier: 'pr_wire',
+      publisher: 'GlobeNewswire',
+    });
   });
 });
 
@@ -168,5 +249,39 @@ describe('batch headline triage', () => {
     const result = await triageCandidates(candidates, profile, 5, { apiKey: 'ts_live_test_key_123' });
     expect(result.modelUsed).toBe('keyword_fallback');
     expect(result.selectedIndices).toEqual([2, 4]);
+  });
+
+  it('keeps genuine corporate press releases and rejects stock-ticker spam / market wraps', () => {
+    const prCandidates: TriageCandidate[] = [
+      {
+        index: 0,
+        title: 'Why Pacific Tech Stock Moved Today in Vancouver',
+        snippet: 'Shares rose 12% after market wrap commentary.',
+        publisher: 'Yahoo Finance',
+      },
+      {
+        index: 1,
+        title: 'Pacific Tech Corp. Q3 Earnings Call Transcript',
+        snippet: 'Full earnings call transcript for Vancouver investors.',
+        publisher: 'Seeking Alpha',
+      },
+      {
+        index: 2,
+        title: 'Pacific Tech Inc. (TSX: PTEC) Appoints Elena Vance as CFO',
+        snippet: 'Vancouver technology company Pacific Tech Inc. announced a new CFO.',
+        publisher: 'GlobeNewswire',
+      },
+      {
+        index: 3,
+        title: 'Cascadia Logistics (NASDAQ: CLOG) Breaks Ground on New Facility in British Columbia',
+        snippet: 'Cascadia Logistics breaks ground on a new distribution facility in Burnaby, British Columbia.',
+        publisher: 'Business Wire',
+      },
+    ];
+
+    const result = keywordTriageCandidates(prCandidates, profile, 5);
+    expect(result.selectedIndices).toEqual([2, 3]);
+    expect(extractCompanyFromHeadline(prCandidates[2].title)).toBe('Pacific Tech Inc.');
+    expect(extractCompanyFromHeadline(prCandidates[3].title)).toBe('Cascadia Logistics');
   });
 });

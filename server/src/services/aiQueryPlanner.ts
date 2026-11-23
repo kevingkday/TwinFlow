@@ -1,5 +1,5 @@
 import { withSportsExclusion } from './signalQuality';
-import { deriveBuyerProfile } from './buyerProfile';
+import { deriveBuyerProfile, type BuyerProfile } from './buyerProfile';
 
 /**
  * AI News Query Planner Service (Powered by GPT-4o)
@@ -54,6 +54,17 @@ export interface QueryLadder {
 
 /** Buyer trigger verbs used to widen a query. Widen these, never the geography. */
 export const WIDE_NET_EVENT_KEYWORDS = ['appoints', 'raises', 'expansion', 'acquires', 'breaks ground', 'contract'];
+
+/** Major corporate newswire domains for public company and press release discovery. */
+export const PR_WIRE_SITES = [
+  'prnewswire.com',
+  'businesswire.com',
+  'globenewswire.com',
+  'accesswire.com',
+  'newswire.ca',
+] as const;
+
+const PR_WIRE_CATALYST_VERBS = '(appoints OR expands OR acquires OR contract OR "breaks ground" OR "new facility")';
 
 const REGION_ABBREVIATIONS: Record<string, string> = {
   bc: 'British Columbia',
@@ -190,6 +201,19 @@ function eventGroup(extraTrigger?: string): string {
 }
 
 /**
+ * Build a dedicated site-scoped corporate press release wire query.
+ * Respects `locationLock` when enforced, targets high-signal corporate catalyst
+ * verbs, and appends negative sports noise filters.
+ */
+export function buildPrWireQuery(locationLock: LocationLock, _buyerProfile?: BuyerProfile): string {
+  const siteClause = `(${PR_WIRE_SITES.map((site) => `site:${site}`).join(' OR ')})`;
+  const base = locationLock?.enforced && locationLock.clause
+    ? `${siteClause} ${locationLock.clause} ${PR_WIRE_CATALYST_VERBS}`
+    : `${siteClause} ${PR_WIRE_CATALYST_VERBS}`;
+  return withSportsExclusion(base);
+}
+
+/**
  * Wide-net SerpAPI queries for one ladder, most specific first. Each query
  * keeps the location clause (when enforced) and widens only the event
  * keywords. Sports exclusions are appended once per query.
@@ -211,6 +235,11 @@ export function buildWideNetQueries(ladder: QueryLadder): string[] {
     if (seen.has(locked)) continue;
     seen.add(locked);
     queries.push(locked);
+  }
+  const prWireQuery = buildPrWireQuery(lock);
+  if (prWireQuery && !seen.has(prWireQuery)) {
+    seen.add(prWireQuery);
+    queries.push(prWireQuery);
   }
   return queries;
 }
