@@ -4,6 +4,9 @@ export interface Campaign {
   targetLocation: string;
   userIntent: string;
   userMission: string;
+  companyDescription?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
   targetIndustries: string[];
   targetTriggers: string[];
   targetRoles: string[];

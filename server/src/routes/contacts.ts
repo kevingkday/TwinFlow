@@ -159,7 +159,7 @@ contactsRouter.get('/', async (c) => {
         const defaultDraft = sig.outreachDrafts?.[0] || null;
         allContacts.push({
           id: `ct_virtual_${sig.id}`,
-          name: 'Target Decision Maker',
+          name: '',
           title: 'Executive',
           email: null,
           linkedinUrl: null,

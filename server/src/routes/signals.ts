@@ -20,7 +20,7 @@ import { getSessionUser } from './auth';
 import { publicDemoSignals } from '../data/demoSignals';
 import { isLowYieldArticle, isNonBuyerRole, isSportsArticle, usableCompanyDomain } from '../services/signalQuality';
 import { judgeArticleRelevance } from '../services/relevanceJudge';
-import { APPROVAL_CREDIT_COST, BRANCH_SCOUT_CREDIT_COST, DEV_REPLENISH_CREDITS } from '../services/credits';
+import { APPROVAL_CREDIT_COST, BRANCH_SCOUT_CREDIT_COST, DEV_REPLENISH_CREDITS, SCOUT_RUN_CREDIT_COST } from '../services/credits';
 
 export const signalsRouter = new Hono<{ Bindings: Bindings }>();
 
@@ -274,25 +274,12 @@ signalsRouter.get('/deck', async (c) => {
       .where(and(eq(schema.signals.status, 'dismissed'), eq(schema.signals.userId, user.id)));
     const dismissedCount = Number(dismissedCountRes[0]?.count || 0);
 
-    if (queuedSignals.length === 0 && (approvedCount + dismissedCount === 0)) {
-      await seedStarterSignalsForUser(db, user.id, targetCampaignId);
-      queuedSignals = await db.query.signals.findMany({
-        where: and(...deckConditions),
-        limit: 10,
-        orderBy: [desc(schema.signals.createdAt)],
-        with: {
-          contacts: {
-            with: {
-              outreachDrafts: true,
-            },
-          },
-          outreachDrafts: true,
-        },
-      });
-    }
+    // Keep demo leads out of the real queue: filter out any legacy seeded demo rows.
+    const demoUrlSet = new Set(publicDemoSignals().map((d) => d.sourceUrl));
+    const realQueuedSignals = queuedSignals.filter((sig) => !demoUrlSet.has(sig.sourceUrl));
 
     // Format cards for the frontend deck
-    const formattedCards = queuedSignals.map((sig) => {
+    const formattedCards = realQueuedSignals.map((sig) => {
       let bullets: string[] = [];
       try {
         bullets = JSON.parse(sig.summaryBullets);
@@ -340,6 +327,8 @@ signalsRouter.get('/deck', async (c) => {
         companyName: sig.companyName,
         signalType: sig.signalType,
         industryTags: sig.industryTags ? (JSON.parse(sig.industryTags) as string[]) : [],
+        fitScore: typeof sig.fitScore === 'number' ? sig.fitScore : null,
+        whyMatched: sig.whyMatched || null,
         status: sig.status,
         contacts: allContacts,
         contact: primaryContact
@@ -366,10 +355,16 @@ signalsRouter.get('/deck', async (c) => {
       };
     });
 
+    const demoSignals =
+      formattedCards.length === 0 && approvedCount + dismissedCount === 0
+        ? publicDemoSignals()
+        : [];
+
     return c.json({
       success: true,
       count: formattedCards.length,
       signals: formattedCards,
+      demoSignals,
       approvedCount,
       user: {
         id: user.id,
@@ -433,6 +428,44 @@ signalsRouter.post('/reset', async (c) => {
  * Inserts completed records into D1 signals, contacts, and outreach_drafts tables.
  * Deduplicates by article URL or company name to avoid duplicate cards.
  */
+interface ScoutJobState {
+  id: string;
+  userId: string;
+  status: 'running' | 'completed' | 'failed';
+  stage: string;
+  message: string;
+  progress: number;
+  result?: Record<string, unknown>;
+  error?: string;
+  createdAt: number;
+}
+
+const SCOUT_JOBS: Record<string, ScoutJobState> = {};
+
+signalsRouter.get('/ingest/status/:jobId', async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return authenticationRequired(c);
+
+  const jobId = c.req.param('jobId');
+  const job = SCOUT_JOBS[jobId];
+  if (!job || job.userId !== user.id) {
+    return c.json({ success: false, error: 'Scout job not found' }, 404);
+  }
+
+  return c.json({
+    success: true,
+    job: {
+      id: job.id,
+      status: job.status,
+      stage: job.stage,
+      message: job.message,
+      progress: job.progress,
+      result: job.result,
+      error: job.error,
+    },
+  });
+});
+
 signalsRouter.post('/ingest', async (c) => {
   if (!c.env?.DB) {
     return c.json({ success: false, error: 'Cloudflare D1 binding (DB) is missing.' }, 500);
@@ -441,18 +474,100 @@ signalsRouter.post('/ingest', async (c) => {
   const user = await getSessionUser(c);
   if (!user) return authenticationRequired(c);
 
-  let body: { query?: string; limit?: number } = {};
+  let body: { query?: string; limit?: number; async?: boolean } = {};
   try {
     body = await c.req.json();
   } catch {
     body = {};
   }
 
+  if (user.creditBalance < SCOUT_RUN_CREDIT_COST) {
+    return c.json(
+      {
+        success: false,
+        insufficientCredits: true,
+        error: `Insufficient credits. Scouting requires ${SCOUT_RUN_CREDIT_COST} credits (current balance: ${user.creditBalance}).`,
+        creditBalance: user.creditBalance,
+      },
+      402
+    );
+  }
+
   const customQuery = body.query?.trim() || '';
   const limit = Math.max(1, Math.min(body.limit || 3, 10));
 
+  if (body.async) {
+    const jobId = `scout_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const job: ScoutJobState = {
+      id: jobId,
+      userId: user.id,
+      status: 'running',
+      stage: 'planning',
+      message: 'Generating search terms from your services...',
+      progress: 10,
+      createdAt: Date.now(),
+    };
+    SCOUT_JOBS[jobId] = job;
+
+    const runPromise = runIngestPipeline(c.env, user, customQuery, limit, (stage, message, progress) => {
+      job.stage = stage;
+      job.message = message;
+      job.progress = progress;
+    })
+      .then((result) => {
+        job.status = 'completed';
+        job.stage = 'done';
+        job.progress = 100;
+        job.message = String(result.message || 'Scout complete');
+        job.result = result;
+      })
+      .catch((err) => {
+        job.status = 'failed';
+        job.stage = 'error';
+        job.error = err instanceof Error ? err.message : 'Ingestion pipeline failed';
+        job.message = job.error;
+      });
+
+    try {
+      c.executionCtx?.waitUntil(runPromise);
+    } catch {
+      // Non-Workers environment (e.g. Node/Vitest) runs the promise in the background
+    }
+
+    return c.json({
+      success: true,
+      async: true,
+      jobId,
+      status: 'running',
+      stage: job.stage,
+      message: job.message,
+      progress: job.progress,
+    });
+  }
+
   try {
-    const db = getDb(c.env.DB);
+    const result = await runIngestPipeline(c.env, user, customQuery, limit);
+    return c.json(result);
+  } catch (error) {
+    console.error('Error during signal ingestion pipeline:', error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Ingestion pipeline failed',
+      },
+      500
+    );
+  }
+});
+
+async function runIngestPipeline(
+  env: Bindings,
+  user: typeof schema.users.$inferSelect,
+  customQuery: string,
+  limit: number,
+  onProgress?: (stage: string, message: string, progress: number) => void
+) {
+  const db = getDb(env.DB);
 
     // 0. Resolve targeting from the active campaign (falls back to the user profile).
     const activeCampaign = user.activeCampaignId
@@ -484,11 +599,20 @@ signalsRouter.post('/ingest', async (c) => {
     const userIntent = target.userIntent || user.userIntent || 'sales_client_acquisition';
     const userMission = target.userMission || user.userMission || '';
     const valueProp = target.valueProp || user.valueProp || '';
+    const servicesOffered = asList(target.servicesOffered || user.servicesOffered);
+    const productsOffered = asList(target.productsOffered || user.productsOffered);
+    const companyDescription = target.companyDescription || user.companyDescription || '';
+    const savedIcpQuery = (target.icpQuery || user.icpQuery || '').trim();
+
+    onProgress?.('searching', 'Searching Google News for matching triggers...', 25);
 
     const plan = generateAlgorithmicQueryPlan({
       location,
       userIntent,
       userMission,
+      companyDescription,
+      servicesOffered,
+      productsOffered,
       targetIndustries,
       targetTriggers,
       valueProp,
@@ -499,17 +623,17 @@ signalsRouter.post('/ingest', async (c) => {
       buyerCompanySize,
     });
     const locationLock = plan.locationLock;
-    const queryLabel = customQuery || plan.primaryQuery;
+    const queryLabel = customQuery || savedIcpQuery || plan.primaryQuery;
 
     // 1. Wide-net SerpAPI pull (~30-40 candidates, location lock on every query).
     const wideNet = await fetchWideNetCandidates({
-      apiKey: c.env.SERP_API_KEY,
+      apiKey: env.SERP_API_KEY,
       gl: plan.geographicFocus.gl,
       ladder: plan.queryLadder,
       locationLock,
-      keywords: customQuery || undefined,
+      keywords: customQuery || savedIcpQuery || undefined,
       poolSize: WIDE_NET_POOL_SIZE,
-      allowSampleFallback: !c.env.SERP_API_KEY,
+      allowSampleFallback: !env.SERP_API_KEY,
     });
     const pool = wideNet.candidates.filter(
       (article) => !isLowYieldArticle(article.title, article.publisher, article.url) && !isSportsArticle(article.title, article.publisher)
@@ -526,11 +650,13 @@ signalsRouter.post('/ingest', async (c) => {
     const existingUrls = new Set(existingRows.map((row) => row.sourceUrl));
     const fresh = pool.filter((article) => !existingUrls.has(article.url));
 
+    onProgress?.('triaging', `Triaging ${fresh.length} fresh articles...`, 45);
+
     // 2. Fast batch headline/snippet triage BEFORE any Firecrawl spend.
     const triage = await triageCandidates(
       fresh.map(({ index, title, snippet, publisher, url, publishedAt }) => ({ index, title, snippet, publisher, url, publishedAt })),
       {
-        offering: [valueProp, userMission].filter(Boolean).join(' — ') || undefined,
+        offering: [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
         targetIndustries,
         buyerIndustries: buyerIndustries.length ? buyerIndustries : [plan.queryLadder.sector],
         targetTriggers,
@@ -541,9 +667,9 @@ signalsRouter.post('/ingest', async (c) => {
       },
       limit,
       {
-        apiKey: c.env.TYPESAFE_AI_API_KEY || c.env.TYPESAFE_API_KEY,
-        model: c.env.TYPESAFE_MODEL,
-        baseUrl: c.env.TYPESAFE_BASE_URL,
+        apiKey: env.TYPESAFE_AI_API_KEY || env.TYPESAFE_API_KEY,
+        model: env.TYPESAFE_MODEL,
+        baseUrl: env.TYPESAFE_BASE_URL,
       }
     );
     const freshByIndex = new Map(fresh.map((article) => [article.index, article]));
@@ -576,18 +702,20 @@ signalsRouter.post('/ingest', async (c) => {
     const auditLog: AuditLogEntry[] = [];
     const now = new Date().toISOString();
 
+    onProgress?.('enriching', `Scoring and enriching ${winners.length} candidate leads...`, 65);
+
     // 3. Only triage winners reach Firecrawl, full enrichment, and Apollo.
     for (const article of winners) {
       // 3a. Firecrawl Scrape / Crawl
-      const crawled = await crawlArticle(article.url, c.env.FIRECRAWL_API_KEY, article.snippet);
+      const crawled = await crawlArticle(article.url, env.FIRECRAWL_API_KEY, article.snippet);
 
       // 3b. OpenAI (gpt-4o-mini) Enrichment
       const enriched = await enrichSignalWithLLM(
         article.title,
         crawled.markdown,
         article.publisher,
-        c.env.OPENAI_API_KEY,
-        valueProp || userMission || undefined,
+        env.OPENAI_API_KEY,
+        [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
         userIntent || undefined
       );
 
@@ -596,18 +724,19 @@ signalsRouter.post('/ingest', async (c) => {
           location: location || undefined,
           userIntent: userIntent || undefined,
           userMission: userMission || undefined,
+          servicesOffered,
           targetIndustries,
           targetTriggers,
           valueProp: valueProp || undefined,
-          companyDescription: target.companyDescription || user.companyDescription || undefined,
+          companyDescription: companyDescription || undefined,
           serviceArea,
+          allowNationalSearch: serviceArea === 'national',
+          buyerIndustries,
         },
         { title: article.title, publisher: article.publisher, text: `${article.snippet}\n${crawled.markdown}` },
-        c.env.OPENAI_API_KEY
+        env.OPENAI_API_KEY
       );
-      // Triage has already selected this candidate as a qualified commercial milestone.
-      // We only drop it post-crawl if the article is definitively disqualified by geography or non-commercial noise.
-      if (!judgment.relevant && !judgment.locationMatch) {
+      if (!judgment.relevant) {
         telemetry.rejectedByJudge += 1;
         auditLog.push({
           index: article.index,
@@ -617,9 +746,9 @@ signalsRouter.post('/ingest', async (c) => {
           publishedAt: article.publishedAt,
           sourceTier: article.sourceTier,
           status: 'filtered',
-          reason: `Disqualified by geography: ${judgment.locationReason || judgment.relevantReason}`,
+          reason: `Rejected (fit ${judgment.fitScore}%): ${judgment.whyMatched || judgment.locationReason || judgment.relevantReason}`,
         });
-        console.log(`[Ingest] dropped non-local article "${article.title}": ${judgment.relevantReason}`);
+        console.log(`[Ingest] dropped low-fit article "${article.title}" (${judgment.fitScore}%): ${judgment.relevantReason}`);
         continue;
       }
       const articlePerson =
@@ -664,7 +793,7 @@ signalsRouter.post('/ingest', async (c) => {
           ],
           locations: apolloLocations(locationLock, plan.geographicFocus.gl),
         },
-        c.env.APOLLO_API_KEY
+        env.APOLLO_API_KEY
       );
       telemetry.contactSources[resolution.source] = (telemetry.contactSources[resolution.source] || 0) + 1;
       if (resolution.source === 'none') telemetry.signalsWithoutContact += 1;
@@ -697,6 +826,8 @@ signalsRouter.post('/ingest', async (c) => {
         companyName: enriched.companyName,
         signalType: enriched.signalType,
         industryTags: JSON.stringify(enriched.industryTags),
+        fitScore: judgment.fitScore,
+        whyMatched: judgment.whyMatched,
         status: 'queued',
         createdAt: now,
         updatedAt: now,
@@ -740,8 +871,8 @@ signalsRouter.post('/ingest', async (c) => {
         await db.insert(schema.contacts).values({
           id: contactId,
           signalId,
-          name: contact.name,
-          title: contact.title || 'Decision Maker',
+          name: contact.name || '',
+          title: contact.title || '',
           email: contact.email || null,
           linkedinUrl: contact.linkedinUrl || null,
           avatarUrl: contact.avatarUrl || null,
@@ -758,7 +889,7 @@ signalsRouter.post('/ingest', async (c) => {
             publisher: article.publisher,
             userOrganization: user.organization || user.legalBusinessName || undefined,
             userName: user.name || undefined,
-            userServices: asList(user.servicesOffered),
+            userServices: servicesOffered,
             valueProp: valueProp || undefined,
             userMission: userMission || undefined,
             userIntent,
@@ -867,27 +998,36 @@ signalsRouter.post('/ingest', async (c) => {
       ? `(${telemetry.fetchedCount} articles scouted, ${telemetry.alreadyIngestedCount} already seen, ${telemetry.triagedWinnerCount} AI triaged)`
       : '';
 
-    return c.json({
+    // Deduct scout run credits and record transaction
+    const newCreditBalance = Math.max(0, user.creditBalance - SCOUT_RUN_CREDIT_COST);
+    await db
+      .update(schema.users)
+      .set({ creditBalance: newCreditBalance, updatedAt: new Date().toISOString() })
+      .where(eq(schema.users.id, user.id));
+    await db.insert(schema.creditTransactions).values({
+      id: `tx_scout_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      userId: user.id,
+      amount: -SCOUT_RUN_CREDIT_COST,
+      balanceAfter: newCreditBalance,
+      type: 'scout_run',
+      referenceId: user.activeCampaignId || null,
+      description: `AI Scout run (${ingestedSignals.length} new leads) (-${SCOUT_RUN_CREDIT_COST} credits)`,
+      createdAt: new Date().toISOString(),
+    });
+
+    return {
       success: true,
       ingestedCount: ingestedSignals.length,
+      creditsDeducted: SCOUT_RUN_CREDIT_COST,
+      creditBalance: newCreditBalance,
       signals: ingestedSignals,
       telemetry: fullTelemetry,
       message:
         ingestedSignals.length > 0
-          ? `Ingested and enriched ${ingestedSignals.length} new signals from "${queryLabel}". ${summaryDetail}`.trim()
+          ? `Found ${ingestedSignals.length} new lead${ingestedSignals.length === 1 ? '' : 's'} from "${queryLabel}". ${summaryDetail}`.trim()
           : `No new unread articles matched "${queryLabel}"${locationLock.enforced ? ` in ${[locationLock.city, locationLock.region].filter(Boolean).join(' / ')}` : ''} right now. ${summaryDetail}`.trim(),
-    });
-  } catch (error) {
-    console.error('Error during signal ingestion pipeline:', error);
-    return c.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Ingestion pipeline failed',
-      },
-      500
-    );
-  }
-});
+    };
+}
 
 /**
  * GET /api/signals/pipeline-trace
@@ -1160,9 +1300,9 @@ signalsRouter.post('/:id/action', async (c) => {
       const primaryContact = existingSignal.contacts?.[0];
       const primaryDraft = existingSignal.outreachDrafts?.[0];
 
-      const contactName = primaryContact?.name || 'Verified Executive';
-      const nameParts = contactName.trim().split(/\s+/);
-      const firstName = nameParts[0] || 'Executive';
+      const contactName = (primaryContact?.name || '').trim();
+      const nameParts = contactName ? contactName.split(/\s+/) : [];
+      const firstName = nameParts[0] || '';
       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
       const email = primaryContact?.email || null;
       const companyName = existingSignal.companyName;

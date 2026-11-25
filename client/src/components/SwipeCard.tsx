@@ -59,12 +59,8 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   const [isEnriching, setIsEnriching] = useState(false);
 
   const currentContact = lead.decisionMaker;
-  const effectiveSenderEmail = senderEmail || 'demo@twinflow.co';
-  const effectiveRecipientEmail =
-    currentContact.email ||
-    `${(currentContact.name || 'contact').toLowerCase().replace(/[^a-z0-9]/g, '.')}@${(lead.companyName || 'domain')
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '')}.com`;
+  const effectiveSenderEmail = senderEmail || '';
+  const effectiveRecipientEmail = currentContact.email || '';
   const contactsList = lead.contacts && lead.contacts.length > 0 ? lead.contacts : [lead.decisionMaker];
 
   const handleSelectContact = (contact: DecisionMaker) => {
@@ -235,6 +231,16 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
             )}
           </div>
 
+          {/* Why Matched Callout */}
+          {lead.whyMatched && (
+            <div className="mt-3 p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-emerald-900 text-xs leading-relaxed">
+              <span className="text-[10px] uppercase font-bold text-emerald-700 tracking-wider block mb-0.5">
+                Why Matched
+              </span>
+              <p className="font-medium">{lead.whyMatched}</p>
+            </div>
+          )}
+
           {/* Executive Article Summary Callout */}
           {lead.articleSummary && (
             <div className="mt-3.5 p-3.5 sm:p-4 rounded-xl bg-slate-50 border-l-4 border-blue-600 text-slate-700 text-xs sm:text-[13px] leading-relaxed">
@@ -369,28 +375,34 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="mt-3 pt-2.5 border-t border-slate-200/80">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEnrich(currentContact);
-                    }}
-                    disabled={isEnriching}
-                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-                  >
-                    {isEnriching ? (
-                      <>
-                        <Radio className="w-3.5 h-3.5 animate-spin text-white" />
-                        <span>Enriching Dossier via Apollo...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-                        <span>Enrich {currentContact.name.split(' ')[0]} (Find Verified Email)</span>
-                      </>
-                    )}
-                  </button>
+                <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <Mail className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+                    <span>No email found</span>
+                  </div>
+                  {currentContact.name && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEnrich(currentContact);
+                      }}
+                      disabled={isEnriching}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isEnriching ? (
+                        <>
+                          <Radio className="w-3.5 h-3.5 animate-spin text-white" />
+                          <span>Enriching Dossier via Apollo...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                          <span>Enrich {currentContact.name.split(' ')[0]} (Find Verified Email)</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -498,7 +510,9 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
                 </div>
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-[10px] uppercase font-bold text-slate-400">To:</span>
-                  <span className="font-mono text-slate-800 truncate font-medium">{effectiveRecipientEmail}</span>
+                  <span className={`font-mono truncate font-medium ${effectiveRecipientEmail ? 'text-slate-800' : 'text-slate-400'}`}>
+                    {effectiveRecipientEmail || 'No email found'}
+                  </span>
                 </div>
               </div>
 

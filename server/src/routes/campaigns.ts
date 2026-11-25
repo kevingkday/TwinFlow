@@ -3,6 +3,7 @@ import type { Bindings } from '../db';
 import { getDb, schema } from '../db';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import { getSessionUser } from './auth';
+import { getUserProfileData } from './user';
 import { planNewsQueryWithAI } from '../services/aiQueryPlanner';
 import { isLowYieldArticle, isNonBuyerRole, isRecentPublished, isSportsArticle, usableCompanyDomain } from '../services/signalQuality';
 import { judgeArticleRelevance } from '../services/relevanceJudge';
@@ -10,7 +11,7 @@ import { deriveBuyerProfile, validateSignalEvidence } from '../services/buyerPro
 import { parsePublishedAtOrNull } from '../services/publishedAt';
 import { fetchSerpNews } from '../services/serpNews';
 import { crawlArticle } from '../services/firecrawl';
-import { enrichSignalWithLLM } from '../services/llmEnricher';
+import { adaptPitchForContact, enrichSignalWithLLM } from '../services/llmEnricher';
 import { findApolloContact } from '../services/apollo';
 
 export const campaignsRouter = new Hono<{ Bindings: Bindings }>();
@@ -134,6 +135,9 @@ campaignsRouter.get('/', async (c) => {
         targetLocation: cmp.targetLocation || '',
         userIntent: cmp.userIntent || 'sales_client_acquisition',
         userMission: cmp.userMission || '',
+        companyDescription: cmp.companyDescription || '',
+        servicesOffered: cmp.servicesOffered ? JSON.parse(cmp.servicesOffered) : [],
+        productsOffered: cmp.productsOffered ? JSON.parse(cmp.productsOffered) : [],
         targetIndustries: cmp.targetIndustries ? JSON.parse(cmp.targetIndustries) : [],
         targetTriggers: cmp.targetTriggers ? JSON.parse(cmp.targetTriggers) : [],
         targetRoles: cmp.targetRoles ? JSON.parse(cmp.targetRoles) : [],
@@ -176,6 +180,10 @@ campaignsRouter.post('/', async (c) => {
     targetLocation?: string;
     userIntent?: string;
     userMission?: string;
+    companyDescription?: string;
+    servicesOffered?: string[];
+    productsOffered?: string[];
+    icpQuery?: string;
     targetIndustries?: string[];
     targetTriggers?: string[];
     targetRoles?: string[];
@@ -197,6 +205,13 @@ campaignsRouter.post('/', async (c) => {
   const targetLocation = (body.targetLocation || '').trim();
   const userIntent = (body.userIntent || 'sales_client_acquisition').trim();
   const userMission = (body.userMission || '').trim();
+  const companyDescription = (body.companyDescription !== undefined ? body.companyDescription : userMission).trim();
+  const servicesOffered = Array.isArray(body.servicesOffered)
+    ? body.servicesOffered.map((s) => s.trim()).filter(Boolean)
+    : [];
+  const productsOffered = Array.isArray(body.productsOffered)
+    ? body.productsOffered.map((p) => p.trim()).filter(Boolean)
+    : [];
   const targetIndustries = Array.isArray(body.targetIndustries) ? body.targetIndustries : [];
   const targetTriggers = Array.isArray(body.targetTriggers) ? body.targetTriggers : [];
   const targetRoles = Array.isArray(body.targetRoles) ? body.targetRoles : [];
@@ -205,6 +220,9 @@ campaignsRouter.post('/', async (c) => {
     location: targetLocation,
     userIntent,
     userMission,
+    companyDescription,
+    servicesOffered,
+    productsOffered,
     targetIndustries,
     targetTriggers,
     targetRoles,
@@ -220,6 +238,9 @@ campaignsRouter.post('/', async (c) => {
       location: targetLocation,
       userIntent,
       userMission,
+      companyDescription,
+      servicesOffered,
+      productsOffered,
       targetIndustries,
       targetTriggers,
       targetRoles,
@@ -228,6 +249,7 @@ campaignsRouter.post('/', async (c) => {
     },
     c.env.OPENAI_API_KEY
   );
+  const finalIcpQuery = (body.icpQuery || '').trim() || queryPlan.primaryQuery;
 
   const campaignId = `cmp_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
@@ -243,11 +265,14 @@ campaignsRouter.post('/', async (c) => {
     targetLocation: targetLocation || null,
     userIntent,
     userMission: userMission || null,
+    companyDescription: companyDescription || null,
+    servicesOffered: JSON.stringify(servicesOffered),
+    productsOffered: JSON.stringify(productsOffered),
     targetIndustries: JSON.stringify(targetIndustries),
     targetTriggers: JSON.stringify(targetTriggers),
     targetRoles: JSON.stringify(targetRoles),
     valueProp: valueProp || queryPlan.missionSummary,
-    icpQuery: queryPlan.primaryQuery,
+    icpQuery: finalIcpQuery,
     buyerIndustries: JSON.stringify(buyer.buyerIndustries),
     buyerRoles: JSON.stringify(buyer.buyerRoles),
     buyerCompanySize: buyer.buyerCompanySize,
@@ -267,11 +292,29 @@ campaignsRouter.post('/', async (c) => {
       .update(schema.users)
       .set({
         activeCampaignId: campaignId,
+        targetLocation: targetLocation || null,
+        userIntent,
+        userMission: userMission || null,
+        companyDescription: companyDescription || null,
+        servicesOffered: JSON.stringify(servicesOffered),
+        productsOffered: JSON.stringify(productsOffered),
+        targetIndustries: JSON.stringify(targetIndustries),
+        targetTriggers: JSON.stringify(targetTriggers),
+        targetRoles: JSON.stringify(targetRoles),
+        valueProp: valueProp || queryPlan.missionSummary,
+        icpQuery: finalIcpQuery,
+        buyerIndustries: JSON.stringify(buyer.buyerIndustries),
+        buyerRoles: JSON.stringify(buyer.buyerRoles),
+        buyerCompanySize: buyer.buyerCompanySize,
+        serviceArea: buyer.serviceArea,
+        allowNationalSearch: buyer.allowNationalSearch,
         onboardingCompleted: true,
         updatedAt: now,
       })
       .where(eq(schema.users.id, user.id));
   }
+
+  let ingestedCount = 0;
 
   // Attempt non-blocking initial signal scout for this new campaign
   try {
@@ -360,6 +403,8 @@ campaignsRouter.post('/', async (c) => {
           companyName: enriched.companyName,
           signalType: enriched.signalType,
           industryTags: JSON.stringify(enriched.industryTags || targetIndustries),
+          fitScore: judgment.fitScore,
+          whyMatched: judgment.whyMatched,
           status: 'queued',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -378,16 +423,37 @@ campaignsRouter.post('/', async (c) => {
           updatedAt: new Date().toISOString(),
         });
 
+        const adapted = adaptPitchForContact(
+          enriched,
+          {
+            name: enriched.decisionMaker.name,
+            title: enriched.decisionMaker.role,
+            company: enriched.companyName,
+            source: 'article',
+          },
+          {
+            publisher: art.publisher,
+            userOrganization: user.organization || user.legalBusinessName || undefined,
+            userName: user.name || undefined,
+            userServices: servicesOffered,
+            valueProp: valueProp || undefined,
+            userMission: userMission || undefined,
+            userIntent,
+            city: targetLocation.split(',')[0]?.trim() || undefined,
+          }
+        );
+
         await db.insert(schema.outreachDrafts).values({
           id: drfId,
           signalId: sigId,
           contactId: cntId,
-          subject: enriched.pitchSubject,
-          body: enriched.pitchBody,
+          subject: adapted.subject,
+          body: adapted.body,
           status: 'draft',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
+        ingestedCount++;
       } catch {
         // Individual article error ignored
       }
@@ -396,22 +462,28 @@ campaignsRouter.post('/', async (c) => {
     // Ingestion network error non-fatal
   }
 
+  const freshUser = (await db.query.users.findFirst({ where: eq(schema.users.id, user.id) })) || user;
+
   return c.json({
     success: true,
+    user: await getUserProfileData(db, freshUser, c.env),
     campaign: {
       id: campaignId,
       name: generatedName,
       targetLocation,
       userIntent,
       userMission,
+      companyDescription,
+      servicesOffered,
+      productsOffered,
       targetIndustries,
       targetTriggers,
       targetRoles,
       valueProp,
-      icpQuery: queryPlan.primaryQuery,
+      icpQuery: finalIcpQuery,
       isDefault: false,
       isActive: makeActive,
-      leadsCount: 3,
+      leadsCount: ingestedCount,
       createdAt: now,
       updatedAt: now,
     },
@@ -447,13 +519,32 @@ campaignsRouter.post('/:id/activate', async (c) => {
     .update(schema.users)
     .set({
       activeCampaignId: campaignId,
+      targetLocation: campaign.targetLocation,
+      userIntent: campaign.userIntent,
+      userMission: campaign.userMission,
+      companyDescription: campaign.companyDescription,
+      servicesOffered: campaign.servicesOffered,
+      productsOffered: campaign.productsOffered,
+      targetIndustries: campaign.targetIndustries,
+      targetTriggers: campaign.targetTriggers,
+      targetRoles: campaign.targetRoles,
+      valueProp: campaign.valueProp,
+      icpQuery: campaign.icpQuery,
+      buyerIndustries: campaign.buyerIndustries,
+      buyerRoles: campaign.buyerRoles,
+      buyerCompanySize: campaign.buyerCompanySize,
+      serviceArea: campaign.serviceArea,
+      allowNationalSearch: campaign.allowNationalSearch,
       updatedAt: new Date().toISOString(),
     })
     .where(eq(schema.users.id, user.id));
 
+  const freshUser = (await db.query.users.findFirst({ where: eq(schema.users.id, user.id) })) || user;
+
   return c.json({
     success: true,
     activeCampaignId: campaignId,
+    user: await getUserProfileData(db, freshUser, c.env),
     message: `Switched active campaign to ${campaign.name}`,
   });
 });
@@ -487,6 +578,10 @@ campaignsRouter.patch('/:id', async (c) => {
     targetLocation?: string;
     userIntent?: string;
     userMission?: string;
+    companyDescription?: string;
+    servicesOffered?: string[];
+    productsOffered?: string[];
+    icpQuery?: string;
     targetIndustries?: string[];
     targetTriggers?: string[];
     targetRoles?: string[];
@@ -507,6 +602,13 @@ campaignsRouter.patch('/:id', async (c) => {
   const targetLocation = body.targetLocation !== undefined ? body.targetLocation.trim() : campaign.targetLocation;
   const userIntent = body.userIntent || campaign.userIntent;
   const userMission = body.userMission !== undefined ? body.userMission.trim() : campaign.userMission;
+  const companyDescription = body.companyDescription !== undefined ? body.companyDescription.trim() : (campaign.companyDescription || userMission);
+  const servicesOffered = body.servicesOffered !== undefined
+    ? body.servicesOffered.map((s) => s.trim()).filter(Boolean)
+    : (campaign.servicesOffered ? JSON.parse(campaign.servicesOffered) : []);
+  const productsOffered = body.productsOffered !== undefined
+    ? body.productsOffered.map((p) => p.trim()).filter(Boolean)
+    : (campaign.productsOffered ? JSON.parse(campaign.productsOffered) : []);
   const targetIndustries = body.targetIndustries !== undefined ? body.targetIndustries : (campaign.targetIndustries ? JSON.parse(campaign.targetIndustries) : []);
   const targetTriggers = body.targetTriggers !== undefined ? body.targetTriggers : (campaign.targetTriggers ? JSON.parse(campaign.targetTriggers) : []);
   const targetRoles = body.targetRoles !== undefined ? body.targetRoles : (campaign.targetRoles ? JSON.parse(campaign.targetRoles) : []);
@@ -515,6 +617,9 @@ campaignsRouter.patch('/:id', async (c) => {
     location: targetLocation || '',
     userIntent: userIntent || 'sales_client_acquisition',
     userMission: userMission || '',
+    companyDescription: companyDescription || '',
+    servicesOffered,
+    productsOffered,
     targetIndustries,
     targetTriggers,
     targetRoles,
@@ -531,6 +636,9 @@ campaignsRouter.patch('/:id', async (c) => {
       location: targetLocation || '',
       userIntent: userIntent || 'sales_client_acquisition',
       userMission: userMission || '',
+      companyDescription: companyDescription || '',
+      servicesOffered,
+      productsOffered,
       targetIndustries,
       targetTriggers,
       targetRoles,
@@ -539,6 +647,7 @@ campaignsRouter.patch('/:id', async (c) => {
     },
     c.env.OPENAI_API_KEY
   );
+  const finalIcpQuery = body.icpQuery?.trim() || queryPlan.primaryQuery;
 
   const now = new Date().toISOString();
   await db
@@ -548,11 +657,14 @@ campaignsRouter.patch('/:id', async (c) => {
       targetLocation: targetLocation || null,
       userIntent,
       userMission: userMission || null,
+      companyDescription: companyDescription || null,
+      servicesOffered: JSON.stringify(servicesOffered),
+      productsOffered: JSON.stringify(productsOffered),
       targetIndustries: JSON.stringify(targetIndustries),
       targetTriggers: JSON.stringify(targetTriggers),
       targetRoles: JSON.stringify(targetRoles),
       valueProp: valueProp || queryPlan.missionSummary,
-      icpQuery: queryPlan.primaryQuery,
+      icpQuery: finalIcpQuery,
       buyerIndustries: JSON.stringify(buyer.buyerIndustries),
       buyerRoles: JSON.stringify(buyer.buyerRoles),
       buyerCompanySize: buyer.buyerCompanySize,
@@ -562,19 +674,50 @@ campaignsRouter.patch('/:id', async (c) => {
     })
     .where(eq(schema.campaigns.id, campaignId));
 
+  if (user.activeCampaignId === campaignId) {
+    await db
+      .update(schema.users)
+      .set({
+        targetLocation: targetLocation || null,
+        userIntent,
+        userMission: userMission || null,
+        companyDescription: companyDescription || null,
+        servicesOffered: JSON.stringify(servicesOffered),
+        productsOffered: JSON.stringify(productsOffered),
+        targetIndustries: JSON.stringify(targetIndustries),
+        targetTriggers: JSON.stringify(targetTriggers),
+        targetRoles: JSON.stringify(targetRoles),
+        valueProp: valueProp || queryPlan.missionSummary,
+        icpQuery: finalIcpQuery,
+        buyerIndustries: JSON.stringify(buyer.buyerIndustries),
+        buyerRoles: JSON.stringify(buyer.buyerRoles),
+        buyerCompanySize: buyer.buyerCompanySize,
+        serviceArea: buyer.serviceArea,
+        allowNationalSearch: buyer.allowNationalSearch,
+        updatedAt: now,
+      })
+      .where(eq(schema.users.id, user.id));
+  }
+
+  const freshUser = (await db.query.users.findFirst({ where: eq(schema.users.id, user.id) })) || user;
+
   return c.json({
     success: true,
+    user: await getUserProfileData(db, freshUser, c.env),
     campaign: {
       id: campaignId,
       name,
       targetLocation,
       userIntent,
       userMission,
+      companyDescription,
+      servicesOffered,
+      productsOffered,
       targetIndustries,
       targetTriggers,
       targetRoles,
       valueProp,
-      icpQuery: queryPlan.primaryQuery,
+      icpQuery: finalIcpQuery,
       updatedAt: now,
     },
   });

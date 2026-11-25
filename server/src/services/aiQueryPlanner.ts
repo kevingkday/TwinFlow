@@ -301,17 +301,17 @@ export async function planNewsQueryWithAI(
 Your task is to analyze a user's location, commercial intent, and free-form mission description, and generate high-precision Google News queries that uncover actionable business catalysts.
 
 CRITICAL RULES FOR GOOGLE NEWS SEARCH QUERIES:
-1. SEARCH THE BUYER'S EVENTS, NOT THE SELLER'S TRADE:
-   - A cyber/AI insurance broker sells to technology companies. Search "Vancouver technology funding" or "Vancouver technology hires", never "Insurance Business Vancouver" or "Canadian Underwriter".
-   - A managed IT provider sells to local operating companies. Search "Ontario company expansion" or "Ontario company hires", never the insurance trade press.
-   - A captive consultant searches companies that might form a captive ("company captive", "forms captive"), not generic insurance appointments.
-   - A commercial real estate broker searches tenants and occupiers ("Dallas office lease", "Dallas headquarters").
-   - A contractor searches project owners ("Calgary construction breaks ground").
-   - A SaaS marketing agency searches software companies ("Toronto software raises", "Toronto software hires").
+1. BUILD EACH SEARCH FROM 2–3 TERMS: WHAT THE BUSINESS SELLS (OR TARGET BUYER), A BUYING TRIGGER, AND THE PLACE:
+   - A cyber/AI insurance broker in BC: "Vancouver cybersecurity breach", "BC AI rollout funding", "Vancouver technology expansion".
+   - A managed IT provider in Kelowna selling to clinics and law firms: "Kelowna IT clinic expansion", "Kelowna law firm breach", "Okanagan medical clinic new location".
+   - A captive consultant: "company captive", "forms captive".
+   - A commercial real estate broker: "Dallas office lease", "Dallas headquarters expansion".
+   - A contractor: "Calgary construction breaks ground".
+   - A SaaS marketing agency (national): "B2B SaaS Series A funding", "software AI rollout hires".
 2. SHORT QUERIES, WIDEN EVENTS — NEVER THE GEOGRAPHY OF A LOCAL SELLER:
    - No OR groups. No when: operators. No mandatory quoted exact phrases.
-   - Each query is place + buyer sector + one trigger word (funding, hires, expansion, lease, breaks ground, captive).
-   - For a local/regional seller, every query (primary and fallbacks) must keep the city or province/state. Widen the event keywords (appoints, raises, expansion, acquires, breaks ground, contract), not the place. Only a national seller may omit the place.
+   - Each query is 2–3 terms: what the business sells/buyer sector + one buying trigger (data breach, AI rollout, funding, new location, regulation, expansion, contract) + place.
+   - Licensed or local businesses (insurance, IT MSP, contractors, lawyers, real estate) search their city and widen at most to province or state. Software and agency businesses search anywhere (omit place).
    - One fallback may be a real site: restriction for a trade outlet that covers the BUYER sector: site:betakit.com, site:bisnow.com, site:constructconnect.com, or site:captiveinsurancetimes.com. Do not use the outlet name as a keyword.
    - Do not add sports minus-terms yourself. They are appended once later.
 
@@ -403,14 +403,23 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
               targetIndustries: industries,
               targetTriggers: triggers,
               valueProp,
+              companyDescription: input.companyDescription,
+              servicesOffered: input.servicesOffered,
+              productsOffered: input.productsOffered,
               defaultGl,
               serviceArea: input.serviceArea,
               buyerIndustries: input.buyerIndustries,
               buyerRoles: input.buyerRoles,
               buyerCompanySize: input.buyerCompanySize,
             });
+            const cleanAiPrimary = parsed.primaryQuery.replace(/\s+-\w+/g, '').trim();
+            const cleanAiFallbacks = Array.isArray(parsed.fallbackQueries)
+              ? parsed.fallbackQueries.map((q) => q.replace(/\s+-\w+/g, '').trim()).filter(Boolean)
+              : [];
             return {
               ...buyerPlan,
+              primaryQuery: cleanAiPrimary || buyerPlan.primaryQuery,
+              fallbackQueries: cleanAiFallbacks.length > 0 ? cleanAiFallbacks : buyerPlan.fallbackQueries,
               missionSummary: parsed.missionSummary || buyerPlan.missionSummary,
               recommendedPitchAngle: parsed.recommendedPitchAngle || buyerPlan.recommendedPitchAngle,
               modelUsed: `${modelUsed}+buyer_tiers`,
@@ -431,12 +440,73 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
     targetIndustries: industries,
     targetTriggers: triggers,
     valueProp,
+    companyDescription: input.companyDescription,
+    servicesOffered: input.servicesOffered,
+    productsOffered: input.productsOffered,
     defaultGl,
     serviceArea: input.serviceArea,
     buyerIndustries: input.buyerIndustries,
     buyerRoles: input.buyerRoles,
     buyerCompanySize: input.buyerCompanySize,
   });
+}
+
+function extractOfferingSearchTerm(params: {
+  servicesOffered?: string[];
+  productsOffered?: string[];
+  userMission?: string;
+  valueProp?: string;
+  companyDescription?: string;
+  buyerIndustries: string[];
+}): string {
+  const blob = [
+    ...(params.servicesOffered || []),
+    ...(params.productsOffered || []),
+    params.userMission || '',
+    params.valueProp || '',
+    params.companyDescription || '',
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  if (/cyber\s*(?:&|and)?\s*ai|cyber insurance|ai risk|ai liability/.test(blob)) {
+    return /technology companies/.test(blob) ? 'technology' : 'cybersecurity';
+  }
+  if (/managed it|\bmsp\b|managed services|it support/.test(blob)) {
+    const firstBuyer = params.buyerIndustries[0];
+    if (firstBuyer && /clinic|law|medical|legal|accounting/.test(firstBuyer)) {
+      return `IT ${firstBuyer.split(' ')[0]}`;
+    }
+    return 'managed IT';
+  }
+  if (/captive/.test(blob)) return 'captive insurance';
+  if (/commercial insurance|property and casualty|p&c|insurance broker/.test(blob)) return 'commercial expansion';
+  if (/roofing|hvac|contractor|construction/.test(blob)) return 'commercial construction';
+  if (/real estate|tenant|lease/.test(blob)) return 'office lease';
+
+  if (params.servicesOffered && params.servicesOffered.length > 0) {
+    const words = params.servicesOffered[0].trim().split(/\s+/).slice(0, 2).join(' ');
+    if (words) return words;
+  }
+  const rawSector = params.buyerIndustries[0] || 'business';
+  return rawSector.toLowerCase().includes('operating') || rawSector.toLowerCase().includes('company')
+    ? 'business'
+    : rawSector.split(' ').slice(0, 2).join(' ');
+}
+
+function extractTriggerSearchTerm(targetTriggers: string[], blob: string): string {
+  const lowerTriggers = targetTriggers.join(' ').toLowerCase();
+  const combined = `${lowerTriggers} ${blob.toLowerCase()}`;
+  if (/breach|ransomware|cybersecurity|cyber/.test(combined) && /cyber|ai/.test(blob.toLowerCase())) return 'breach';
+  if (/ai rollout|ai adoption|artificial intelligence/.test(combined)) return 'AI';
+  if (/funding|series|venture|capital/.test(lowerTriggers)) return 'funding';
+  if (/facility|location|opening|expansion/.test(lowerTriggers)) return 'expansion';
+  if (/contract|rfp/.test(lowerTriggers)) return 'contract';
+  if (/regulat|compliance|licensing/.test(lowerTriggers)) return 'regulation';
+  if (/hire|hiring|leadership|partner/.test(lowerTriggers)) return 'appoints';
+  if (/merger|acquisition|m&a/.test(lowerTriggers)) return 'acquires';
+  if (targetTriggers[0]) return targetTriggers[0].split(/\s+/)[0].toLowerCase();
+  return 'expansion';
 }
 
 export function generateAlgorithmicQueryPlan(params: {
@@ -446,6 +516,9 @@ export function generateAlgorithmicQueryPlan(params: {
   targetIndustries: string[];
   targetTriggers: string[];
   valueProp: string;
+  companyDescription?: string;
+  servicesOffered?: string[];
+  productsOffered?: string[];
   defaultGl: string;
   serviceArea?: 'local' | 'national';
   buyerIndustries?: string[];
@@ -482,20 +555,31 @@ export function generateAlgorithmicQueryPlan(params: {
     targetIndustries,
     targetTriggers,
     valueProp: params.valueProp,
+    companyDescription: params.companyDescription,
+    servicesOffered: params.servicesOffered,
+    productsOffered: params.productsOffered,
     buyerIndustries: params.buyerIndustries,
     buyerRoles: params.buyerRoles,
     buyerCompanySize: params.buyerCompanySize,
     serviceArea: params.serviceArea,
   });
-  const rawSector = buyer.buyerIndustries[0] || 'business';
-  const sector = rawSector.toLowerCase().includes('operating') || rawSector.toLowerCase().includes('company')
-    ? 'business'
-    : rawSector.split(' ').slice(0, 2).join(' ');
-  const trigger = targetTriggers[0] ? targetTriggers[0].split(/\s+/)[0] : '';
+  const offeringTerm = extractOfferingSearchTerm({
+    servicesOffered: params.servicesOffered,
+    productsOffered: params.productsOffered,
+    userMission,
+    valueProp: params.valueProp,
+    companyDescription: params.companyDescription,
+    buyerIndustries: buyer.buyerIndustries,
+  });
+  const sector = offeringTerm;
+  const trigger = extractTriggerSearchTerm(
+    targetTriggers,
+    `${userMission} ${params.valueProp} ${params.companyDescription || ''} ${(params.servicesOffered || []).join(' ')}`
+  );
   let site: string | undefined;
-  if (/technology|software/.test(sector)) site = 'betakit.com';
-  else if (/law|occupier|professional/.test(sector)) site = 'bisnow.com';
-  else if (/developer|building|owner/.test(sector)) site = 'constructconnect.com';
+  if (/technology|software|cyber|ai/i.test(sector)) site = 'betakit.com';
+  else if (/law|occupier|professional|clinic/i.test(sector)) site = 'bisnow.com';
+  else if (/developer|building|owner|construction/i.test(sector)) site = 'constructconnect.com';
   else if (/captive/i.test(userMission)) site = 'captiveinsurancetimes.com';
   else site = 'newswire.ca';
 
@@ -503,11 +587,13 @@ export function generateAlgorithmicQueryPlan(params: {
   if (!region && parsedPlace.region) region = parsedPlace.region;
   const locationLock = buildLocationLock({ city, region }, buyer.serviceArea);
   const place = buyer.serviceArea === 'national' ? '' : city || region;
-  // If sector is general 'business' or empty, don't restrict to a single trigger word; keep it wide for Google News.
-  const startTerms = sector && sector !== 'business'
-    ? [place, sector, trigger].filter(Boolean).slice(0, 3)
-    : [place, 'business'].filter(Boolean);
-  const primary = withSportsExclusion(startTerms.join(' '));
+  // Build each search from 2-3 terms: what the business sells + buying trigger + place.
+  const startTerms = [place, offeringTerm, trigger].filter(Boolean).slice(0, 3);
+  const primary = withSportsExclusion(startTerms.join(' ').trim());
+  const fallbackQueries = [
+    [place, offeringTerm].filter(Boolean).join(' ').trim(),
+    [region || place, buyer.buyerIndustries[0] || offeringTerm, trigger].filter(Boolean).join(' ').trim(),
+  ].filter((q, idx, arr) => Boolean(q) && q !== primary && arr.indexOf(q) === idx);
   const queryLadder: QueryLadder = {
     serviceArea: buyer.serviceArea,
     sector,
@@ -520,14 +606,14 @@ export function generateAlgorithmicQueryPlan(params: {
   const searchTiers: SearchTier[] = [
     {
       label: buyer.serviceArea === 'national' ? 'country' : city ? 'city' : 'region',
-      queries: [primary],
+      queries: [primary, ...fallbackQueries],
     },
   ];
   const geoAnchor = place || country || 'any location';
 
   return {
     primaryQuery: primary,
-    fallbackQueries: [],
+    fallbackQueries,
     searchTiers,
     queryLadder,
     locationLock,

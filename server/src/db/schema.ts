@@ -140,6 +140,8 @@ export const signals = sqliteTable('signals', {
   companyName: text('company_name').notNull(),
   signalType: text('signal_type').notNull(),
   industryTags: text('industry_tags'), // JSON array string e.g. ["Fintech", "Series A"]
+  fitScore: integer('fit_score'),
+  whyMatched: text('why_matched'),
   status: text('status', { enum: ['queued', 'approved', 'dismissed'] }).notNull().default('queued'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

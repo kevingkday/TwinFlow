@@ -192,14 +192,10 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
                 {user?.isGmailConnected && (
                   <button
                     type="button"
-                    disabled={isSendingGmail}
+                    disabled={isSendingGmail || !lead.decisionMaker.email}
                     onClick={async () => {
-                      const domain = (lead.companyName || lead.decisionMaker.company || 'domain')
-                        .toLowerCase()
-                        .replace(/[^a-z0-9]/g, '');
-                      const recipient =
-                        lead.decisionMaker.email ||
-                        `${lead.decisionMaker.name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@${domain}.com`;
+                      const recipient = lead.decisionMaker.email;
+                      if (!recipient) return;
                       setIsSendingGmail(true);
                       setGmailSendStatus(null);
                       const res = await sendEmailViaGmailApi({
@@ -227,12 +223,7 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    const domain = (lead.companyName || lead.decisionMaker.company || 'domain')
-                      .toLowerCase()
-                      .replace(/[^a-z0-9]/g, '');
-                    const recipient =
-                      lead.decisionMaker.email ||
-                      `${lead.decisionMaker.name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@${domain}.com`;
+                    const recipient = lead.decisionMaker.email || '';
                     openEmailClient('gmail', recipient, subject, body);
                   }}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 transition cursor-pointer shadow-2xs"
@@ -245,12 +236,7 @@ export const LeadDetailPane: React.FC<LeadDetailPaneProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    const domain = (lead.companyName || lead.decisionMaker.company || 'domain')
-                      .toLowerCase()
-                      .replace(/[^a-z0-9]/g, '');
-                    const recipient =
-                      lead.decisionMaker.email ||
-                      `${lead.decisionMaker.name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@${domain}.com`;
+                    const recipient = lead.decisionMaker.email || '';
                     openEmailClient('default', recipient, subject, body);
                   }}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"

@@ -84,7 +84,8 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
     sourceUrl: item.sourceUrl,
     publishedAgo: item.parentSignalId ? 'Branched Lead' : formatPublishedAgo(item.publishedAt),
     category: item.signalType as SignalCategory,
-    fitScore: 94 + (item.id.charCodeAt(item.id.length - 1) % 5),
+    fitScore: typeof item.fitScore === 'number' ? item.fitScore : 75,
+    whyMatched: item.whyMatched || undefined,
     summaryBullets:
       item.summaryBullets && item.summaryBullets.length > 0
         ? item.summaryBullets
@@ -101,7 +102,7 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
       subject: item.outreachDraft?.subject || `quick question re: ${item.companyName}`,
       body: (
         item.outreachDraft?.body ||
-        `Hi ${primaryContact.name.split(' ')[0] || 'there'},\n\nI saw the recent article regarding ${item.companyName}'s upcoming plans. Given our work in commercial services, would there be an opportunity to connect and see if we can present our services for your upcoming milestones?\n\nBest,`
+        `Hi ${primaryContact.name && !/^(verified|executive|decision|target|unknown)$/i.test(primaryContact.name.split(' ')[0]) ? primaryContact.name.split(' ')[0] : 'there'},\n\nI saw the recent news regarding ${item.companyName}'s ${item.signalType.toLowerCase()} milestone ("${item.title.slice(0, 70)}"). Would you be open to a brief conversation on how we can support your team as this unfolds?\n\nBest regards,`
       )
         .replace(/\\r\\n/g, '\n')
         .replace(/\\n/g, '\n'),
@@ -121,6 +122,7 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
 
 export const App: React.FC = () => {
   const [leads, setLeads] = useState<LeadCardData[]>(INITIAL_LEADS);
+  const [demoLeads, setDemoLeads] = useState<LeadCardData[]>([]);
   const [history, setHistory] = useState<{ lead: LeadCardData; action: SwipeAction }[]>([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -343,6 +345,7 @@ export const App: React.FC = () => {
         if (data.signals.length > 0) {
           const mapped = data.signals.map(mapApiSignalToLead);
           setLeads(mapped);
+          setDemoLeads([]);
           setServerOnline(true);
           if (data.user) {
             setStats((prev) => ({
@@ -356,6 +359,7 @@ export const App: React.FC = () => {
           }
         } else {
           setLeads([]);
+          setDemoLeads(Array.isArray(data.demoSignals) ? data.demoSignals.map(mapApiSignalToLead) : []);
           setServerOnline(true);
           if (data.user) {
             setStats((prev) => ({
@@ -430,20 +434,54 @@ export const App: React.FC = () => {
       const activeQuery =
         userProfile?.icpQuery ||
         campaigns.find((c) => c.id === activeCampaignId)?.icpQuery ||
-        'commercial expansion OR new facility OR contract award';
+        '';
       const res = await authFetch('/api/signals/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: activeQuery,
           limit,
+          async: true,
         }),
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP ${res.status}`);
+      }
+      let data = await res.json();
+
+      // Poll background scout job until complete so UI never freezes or hits 30s timeout
+      if (data.async && data.jobId) {
+        const jobId = data.jobId;
+        for (let attempt = 0; attempt < 60; attempt++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const statusRes = await authFetch(`/api/signals/ingest/status/${jobId}`);
+          if (!statusRes.ok) continue;
+          const statusData = await statusRes.json();
+          const job = statusData.job;
+          if (!job) break;
+          if (job.status === 'running') {
+            setScoutToast({
+              message: `${job.message || 'Scouting...'} (${job.progress || 20}%)`,
+              type: 'info',
+            });
+            continue;
+          }
+          if (job.status === 'failed') {
+            throw new Error(job.error || 'Scouting failed');
+          }
+          if (job.status === 'completed' && job.result) {
+            data = job.result;
+            break;
+          }
+        }
+      }
 
       if (data.success) {
+        if (typeof data.creditBalance === 'number') {
+          setStats((prev) => ({ ...prev, creditsRemaining: data.creditBalance }));
+        }
         if (data.telemetry?.auditLog) {
           setPipelineTrace({
             timestamp: new Date().toISOString(),
@@ -591,9 +629,15 @@ export const App: React.FC = () => {
       prev.map((c) => ({ ...c, isActive: c.id === campaignId }))
     );
     try {
-      await authFetch(`/api/campaigns/${campaignId}/activate`, {
+      const res = await authFetch(`/api/campaigns/${campaignId}/activate`, {
         method: 'POST',
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          setUserProfile(data.user);
+        }
+      }
     } catch (err) {
       console.warn('Failed to persist active campaign:', err);
     }
@@ -1131,6 +1175,10 @@ export const App: React.FC = () => {
       ) : currentView === 'profile' ? (
         <ProfilePage
           user={userProfile}
+          campaigns={campaigns}
+          activeCampaignId={activeCampaignId}
+          onSelectCampaign={handleSelectCampaign}
+          onCreateNewCampaign={handleOpenCreateCampaign}
           onProfileUpdated={(updated) => {
             setUserProfile((prev) => (prev ? { ...prev, ...updated } : updated));
             fetchCampaigns();
@@ -1202,6 +1250,7 @@ export const App: React.FC = () => {
             <div className="flex-1 w-full max-w-6xl mx-auto flex flex-col items-center">
               <DeckView
                 leads={leads}
+                demoLeads={demoLeads}
                 user={userProfile}
                 hasCampaigns={campaigns.length > 0}
                 onCreateCampaign={handleOpenCreateCampaign}

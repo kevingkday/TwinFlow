@@ -6,6 +6,7 @@ import { SwipeCard } from './SwipeCard';
 
 interface DeckViewProps {
   leads: LeadCardData[];
+  demoLeads?: LeadCardData[];
   user?: { email?: string; name?: string; isGmailConnected?: boolean; gmailEmail?: string | null } | null;
   hasCampaigns?: boolean;
   onCreateCampaign?: () => void;
@@ -22,6 +23,7 @@ interface DeckViewProps {
 
 export const DeckView: React.FC<DeckViewProps> = ({
   leads,
+  demoLeads = [],
   user,
   hasCampaigns = true,
   onCreateCampaign,
@@ -80,7 +82,9 @@ export const DeckView: React.FC<DeckViewProps> = ({
           Queue Cleared!
         </h3>
         <p className="text-sm text-slate-600 mb-6 max-w-sm leading-relaxed">
-          All intelligence signals have been triaged. Approved pitches are saved and synchronized directly to your CRM.
+          {demoLeads.length > 0
+            ? 'Your live queue is empty. Run AI Scout to find real leads matching your profile, or preview the example cards below.'
+            : 'All intelligence signals have been triaged. Approved pitches are saved and synchronized directly to your CRM.'}
         </p>
         <div className="flex flex-col sm:flex-row items-center gap-3">
           {onScoutNews && (
@@ -103,9 +107,38 @@ export const DeckView: React.FC<DeckViewProps> = ({
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
-            <span>Reset Demo Batch</span>
+            <span>Refresh Queue</span>
           </button>
         </div>
+
+        {demoLeads.length > 0 && (
+          <div className="w-full mt-8 pt-6 border-t border-slate-200 text-left">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Example Signals (Demo Preview Only)
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold">
+                Removed once you scout a real lead
+              </span>
+            </div>
+            <div className="space-y-2">
+              {demoLeads.map((demo) => (
+                <div
+                  key={demo.id}
+                  className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-800 truncate">{demo.companyName || demo.headline}</p>
+                    <p className="text-[11px] text-slate-500 truncate">{demo.headline}</p>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-500 shrink-0">
+                    Demo
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </motion.div>
     );
   }

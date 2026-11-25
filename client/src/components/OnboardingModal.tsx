@@ -265,10 +265,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   );
 
   const [activeSectorTab, setActiveSectorTab] = useState<string>('popular');
-  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([
-    'Commercial Real Estate',
-    'General Contracting & Construction',
-  ]);
+  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [customIndustry, setCustomIndustry] = useState('');
   const [selectedTriggers, setSelectedTriggers] = useState<string[]>([
     'New Location or Facility Opening',
@@ -373,6 +370,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             targetLocation,
             userIntent,
             userMission,
+            companyDescription: userMission,
+            servicesOffered: ensureArray(user?.servicesOffered, []),
             targetIndustries: selectedIndustries,
             targetTriggers: selectedTriggers,
             targetRoles: selectedRoles,
@@ -392,6 +391,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             targetLocation,
             userIntent,
             userMission,
+            companyDescription: userMission,
+            servicesOffered: ensureArray(user?.servicesOffered, []),
             targetIndustries: selectedIndustries,
             targetTriggers: selectedTriggers,
             targetRoles: selectedRoles,
@@ -430,9 +431,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       onClick={(e) => {
         if (e.target === e.currentTarget && onClose) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs"
     >
-      <div className="relative w-full max-w-2xl rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col text-slate-800">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-2xl rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col text-slate-800"
+      >
         {/* Header */}
         <div className="p-5 sm:p-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -670,7 +674,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
               {/* STEP 2: Target Industries & Sectors */}
               {step === 2 && (
-                <div className="space-y-4 animate-fade-in">
+                <div className="space-y-4">
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                       <Target className="w-4 h-4 text-blue-600" />

@@ -428,7 +428,10 @@ You must respond with valid JSON adhering exactly to this structure:
 
       const userPrompt = `News Publisher: ${publisher}
 Headline: ${headline}
-${operatorValueProp ? `Sender Value Proposition / What we do: ${operatorValueProp}\nAlign the commercial angle, pitchSubject, and pitchBody to present this solution naturally to the trigger event.` : ''}
+${operatorValueProp ? `Sender Value Proposition / What we do: ${operatorValueProp}\nAlign the commercial angle, pitchSubject, and pitchBody to present this exact service naturally to the trigger event.` : ''}
+- Opening line MUST reference the specific article/event and connect directly to the sender's services.
+- If no real person first name is known, start with "Hi there,". Never use placeholder names like "Verified" or "Executive".
+- Do NOT include any unsubscribe or opt-out line (these are 1:1 personal emails).
 ${intentGuidance}
 
 Article Content:
@@ -545,7 +548,7 @@ Extract and generate the structured JSON intelligence object.`;
   }
 
   // Intelligent heuristic fallback (works seamlessly when API key is not yet set)
-  return generateHeuristicEnrichment(headline, articleMarkdown, publisher);
+  return generateHeuristicEnrichment(headline, articleMarkdown, publisher, operatorValueProp);
 }
 
 export function generateHeuristicCompetitors(company: string, signalType: string): CompetitorBranch[] {
@@ -646,7 +649,8 @@ export function extractCompanyFromHeadline(headline: string): string {
 export function generateHeuristicEnrichment(
   headline: string,
   text: string,
-  publisher: string
+  publisher: string,
+  operatorValueProp?: string
 ): EnrichedSignalData {
   const company = extractCompanyFromHeadline(headline);
   const cleanDomain = '';
@@ -668,11 +672,14 @@ export function generateHeuristicEnrichment(
   const dmName = named[0]?.name || '';
   const dmRole = named[0]?.role || '';
 
-  const firstName = dmName.split(' ')[0] || 'there';
+  const firstName = dmName && !/^(verified|executive|decision|target|unknown)$/i.test(dmName.split(' ')[0])
+    ? dmName.split(' ')[0]
+    : 'there';
   const cleanHeadline = headline.replace(/["']/g, '').slice(0, 80).trim();
   const coldIntroHook = `I saw the recent news regarding ${company}'s milestone: "${cleanHeadline}".`;
-  const pitchSubject = `commercial insurance quote for ${company}`;
-  const pitchBody = `Hi ${firstName},\n\nI saw the recent news regarding ${company}'s milestone ("${cleanHeadline}"). Congratulations on the growth.\n\nWe provide commercial coverage and risk services here in Vancouver. As operations and scale expand, could we put together a competitive quote for your upcoming insurance renewal?\n\nBest,`;
+  const focusOffering = (operatorValueProp || '').trim() || 'your upcoming operational priorities';
+  const pitchSubject = `${company} — ${cleanHeadline.slice(0, 48)}`;
+  const pitchBody = `Hi ${firstName},\n\nI saw the news about ${company} ("${cleanHeadline}") and wanted to reach out given our focus on ${focusOffering}.\n\nWould you be open to a brief conversation on how we can support ${company} as this unfolds?`;
 
   const rawSentences = text
     .replace(/^#.*$/gm, '')
@@ -724,34 +731,41 @@ export function adaptPitchForContact(
   contact: { name: string; title: string; company: string; source: string },
   context: AdaptPitchContext
 ): { subject: string; body: string } {
-  const firstName = (contact.name || 'there').split(' ')[0] || 'there';
+  const rawFirst = (contact.name || '').trim().split(/\s+/)[0] || '';
+  const firstName =
+    rawFirst && !/^(verified|executive|decision|target|unknown|contact)$/i.test(rawFirst)
+      ? rawFirst
+      : 'there';
   const targetCompany = contact.company || enriched.companyName || 'your team';
-  const senderOrg = context.userOrganization?.replace(/\s*-\s*TwinFlow/i, '').trim() || 'Ocean Falls Insurance Services';
-  const senderName = context.userName || 'Kevin Day';
-  const senderCity = context.city || 'Vancouver';
+  const senderOrg = (context.userOrganization || '').replace(/\s*-\s*TwinFlow/i, '').trim();
+  const senderName = (context.userName && context.userName !== 'Operator' ? context.userName : '').trim();
 
-  const isInsurance = /insurance|liability|casualty|brokerage|coverage|risk/i.test(
-    `${context.userOrganization || ''} ${context.valueProp || ''} ${(context.userServices || []).join(' ')} ${context.userMission || ''}`
-  );
-  const isContractor = /construction|contractor|roofing|plumbing|hvac|building/i.test(
-    `${context.userOrganization || ''} ${context.valueProp || ''} ${(context.userServices || []).join(' ')}`
-  );
+  const offeringText =
+    (context.userServices && context.userServices.length > 0
+      ? context.userServices.slice(0, 2).join(' and ')
+      : '') ||
+    context.valueProp ||
+    context.userMission ||
+    context.offering ||
+    '';
 
-  let subject = `commercial insurance quote for ${targetCompany}`;
-  let body = '';
+  const articleEvent =
+    (enriched.coldIntroHook || '').trim() ||
+    `I saw the recent news about ${targetCompany} (${enriched.signalType.toLowerCase()}).`;
 
-  if (isInsurance) {
-    subject = `commercial insurance quote for ${targetCompany}`;
-    body = `Hi ${firstName},\n\nI saw the recent news regarding ${targetCompany}'s milestone in ${senderCity} — congratulations on the growth.\n\nWe're a commercial insurance brokerage based here in ${senderCity} (${senderOrg}). As your physical footprint, team, and operational scale expand, your commercial liability and property coverage requirements naturally change.\n\nCould we put together a competitive quote for your upcoming insurance renewal?\n\nBest regards,\n${senderName}\n${senderOrg}`;
-  } else if (isContractor) {
-    subject = `commercial project bidding for ${targetCompany}`;
-    body = `Hi ${firstName},\n\nI saw the recent news regarding ${targetCompany}'s expansion in ${senderCity} — congratulations on the milestone.\n\nWe're a commercial contractor based here in ${senderCity} (${senderOrg}). As your facility and space requirements expand, could we present our qualifications to bid on your upcoming work?\n\nBest regards,\n${senderName}\n${senderOrg}`;
-  } else {
-    const offeringDesc = (context.userServices && context.userServices[0]) || context.valueProp || 'commercial services';
-    subject = `commercial inquiry for ${targetCompany}`;
-    body = `Hi ${firstName},\n\nI saw the recent news regarding ${targetCompany}'s milestone in ${senderCity} — congratulations on the progress.\n\nWe provide ${offeringDesc.toLowerCase()} based here in ${senderCity} (${senderOrg}). As your operations scale, could we connect briefly to see if we can provide a competitive quote for your upcoming requirements?\n\nBest regards,\n${senderName}\n${senderOrg}`;
-  }
+  const signatureLines = [senderName, senderOrg].filter(Boolean);
+  const signature = signatureLines.length > 0 ? `\n\nBest regards,\n${signatureLines.join('\n')}` : '\n\nBest regards,';
 
-  return { subject, body };
+  const subjectCore = offeringText
+    ? `${offeringText.slice(0, 38)} for ${targetCompany}`
+    : `${targetCompany} — ${enriched.signalType}`;
+
+  const serviceSentence = offeringText
+    ? `We specialize in ${offeringText}${context.city ? ` in ${context.city}` : ''}, and this kind of milestone often creates immediate needs around it.`
+    : `Given what we do${context.city ? ` in ${context.city}` : ''}, I wanted to see if we could be helpful as this moves forward.`;
+
+  const body = `Hi ${firstName},\n\n${articleEvent} ${serviceSentence}\n\nWould you have 10 minutes this week for a quick intro?${signature}`;
+
+  return { subject: subjectCore, body };
 }
 

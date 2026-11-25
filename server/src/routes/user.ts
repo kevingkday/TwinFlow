@@ -171,6 +171,9 @@ interface UpdateProfilePayload {
   targetIndustries?: string[];
   targetTriggers?: string[];
   targetRoles?: string[];
+  icpQuery?: string;
+  campaignName?: string;
+  regenerateQuery?: boolean;
   syncToCrm?: boolean;
 }
 
@@ -260,36 +263,47 @@ userRouter.patch('/profile', async (c) => {
     c.env.OPENAI_API_KEY
   );
 
-  updates.icpQuery = queryPlan.primaryQuery;
+  const customQuery = body.icpQuery !== undefined ? body.icpQuery.trim() : '';
+  const servicesChanged = body.servicesOffered !== undefined && JSON.stringify(body.servicesOffered.map((s) => s.trim()).filter(Boolean)) !== (user.servicesOffered || '[]');
+  const descChanged = body.companyDescription !== undefined && body.companyDescription.trim() !== (user.companyDescription || '');
+  const missionChanged = body.userMission !== undefined && body.userMission.trim() !== (user.userMission || '');
+  const shouldUseCustomQuery = Boolean(customQuery) && body.regenerateQuery === false && !servicesChanged && !descChanged && !missionChanged;
+
+  updates.icpQuery = shouldUseCustomQuery ? customQuery : queryPlan.primaryQuery;
 
   await db.update(schema.users).set(updates).where(eq(schema.users.id, user.id));
 
   // If user has an active campaign, synchronize search parameters with it
   if (user.activeCampaignId) {
+    const campaignUpdates: Partial<typeof schema.campaigns.$inferInsert> = {
+      targetLocation: finalLocation,
+      userIntent: finalIntent,
+      userMission: finalMission,
+      companyDescription: finalDesc,
+      servicesOffered: updates.servicesOffered,
+      productsOffered: updates.productsOffered,
+      website: updates.website,
+      legalBusinessName: updates.legalBusinessName,
+      phone: updates.phone,
+      streetAddress: updates.streetAddress,
+      city: updates.city,
+      state: updates.state,
+      postalCode: updates.postalCode,
+      country: updates.country,
+      timezone: updates.timezone,
+      targetIndustries: updates.targetIndustries,
+      targetTriggers: updates.targetTriggers,
+      targetRoles: updates.targetRoles,
+      valueProp: updates.valueProp,
+      icpQuery: updates.icpQuery,
+      updatedAt: now,
+    };
+    if (body.campaignName?.trim()) {
+      campaignUpdates.name = body.campaignName.trim();
+    }
     await db
       .update(schema.campaigns)
-      .set({
-        targetLocation: finalLocation,
-        userIntent: finalIntent,
-        userMission: finalMission,
-        companyDescription: finalDesc,
-        servicesOffered: updates.servicesOffered,
-        productsOffered: updates.productsOffered,
-        website: updates.website,
-        legalBusinessName: updates.legalBusinessName,
-        phone: updates.phone,
-        streetAddress: updates.streetAddress,
-        city: updates.city,
-        state: updates.state,
-        postalCode: updates.postalCode,
-        country: updates.country,
-        timezone: updates.timezone,
-        targetIndustries: updates.targetIndustries,
-        targetTriggers: updates.targetTriggers,
-        targetRoles: updates.targetRoles,
-        icpQuery: queryPlan.primaryQuery,
-        updatedAt: now,
-      })
+      .set(campaignUpdates)
       .where(eq(schema.campaigns.id, user.activeCampaignId));
   }
 

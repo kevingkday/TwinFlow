@@ -37,6 +37,7 @@ export interface LeadCardData {
   publishedAgo: string;
   category: SignalCategory;
   fitScore: number;
+  whyMatched?: string;
   summaryBullets: string[];
   articleSummary?: string;
   decisionMaker: DecisionMaker;
@@ -107,6 +108,8 @@ export interface ApiSignalItem {
   companyName: string;
   signalType: string;
   industryTags?: string[];
+  fitScore?: number | null;
+  whyMatched?: string | null;
   status: 'queued' | 'approved' | 'dismissed';
   contacts?: Array<{
     id: string;
@@ -138,8 +141,10 @@ export interface ApiSignalItem {
 
 export interface ApiDeckResponse {
   success: boolean;
+  isDemo?: boolean;
   count: number;
   signals: ApiSignalItem[];
+  demoSignals?: ApiSignalItem[];
   approvedCount?: number;
   user: {
     id: string;
