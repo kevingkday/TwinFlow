@@ -454,19 +454,22 @@ export const App: React.FC = () => {
       }
       let data = await res.json();
 
-      // Poll background scout job until complete so UI never freezes or hits 30s timeout
-      if (data.async && data.jobId) {
+      // Poll D1-backed scout job (each poll advances 1 winner article cleanly under Worker limits)
+      if (data.async && data.status === 'completed' && data.result) {
+        data = data.result;
+      } else if (data.async && data.jobId) {
         const jobId = data.jobId;
-        for (let attempt = 0; attempt < 60; attempt++) {
-          await new Promise((r) => setTimeout(r, 2000));
+        let completed = false;
+        for (let attempt = 0; attempt < 90; attempt++) {
+          await new Promise((r) => setTimeout(r, 1200));
           const statusRes = await authFetch(`/api/signals/ingest/status/${jobId}`);
           if (!statusRes.ok) continue;
           const statusData = await statusRes.json();
           const job = statusData.job;
-          if (!job) break;
+          if (!job) continue;
           if (job.status === 'running') {
             setScoutToast({
-              message: `${job.message || 'Scouting...'} (${job.progress || 20}%)`,
+              message: `${job.message || 'Scouting...'} (${job.progress || 40}%)`,
               type: 'info',
             });
             continue;
@@ -476,8 +479,12 @@ export const App: React.FC = () => {
           }
           if (job.status === 'completed' && job.result) {
             data = job.result;
+            completed = true;
             break;
           }
+        }
+        if (!completed) {
+          throw new Error('Scout timed out waiting for completion.');
         }
       }
 
@@ -512,6 +519,7 @@ export const App: React.FC = () => {
           });
         }
         await fetchDeck();
+        await fetchCampaigns();
       } else {
         setScoutToast({
           message: data.error || 'Signal ingestion encountered an issue.',

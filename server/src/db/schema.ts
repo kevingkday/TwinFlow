@@ -119,6 +119,28 @@ export const campaignQueries = sqliteTable('campaign_queries', {
 });
 
 /**
+ * Scout Jobs Table
+ * Persists async background scout state in D1 so multi-step scouts survive isolate boundaries and 30s Worker limits
+ */
+export const scoutJobs = sqliteTable('scout_jobs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  campaignId: text('campaign_id'),
+  status: text('status', { enum: ['running', 'completed', 'failed'] }).notNull().default('running'),
+  stage: text('stage').notNull().default('searching'),
+  message: text('message').notNull().default('Searching Google News...'),
+  progress: integer('progress').notNull().default(10),
+  limitCount: integer('limit_count').notNull().default(3),
+  stateJson: text('state_json'),
+  resultJson: text('result_json'),
+  error: text('error'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+/**
  * User Sessions Table
  * Active authenticated login sessions (cookie or bearer token)
  */

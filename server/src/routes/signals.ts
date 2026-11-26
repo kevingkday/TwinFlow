@@ -439,42 +439,158 @@ signalsRouter.post('/reset', async (c) => {
  * Inserts completed records into D1 signals, contacts, and outreach_drafts tables.
  * Deduplicates by article URL or company name to avoid duplicate cards.
  */
-interface ScoutJobState {
-  id: string;
-  userId: string;
-  status: 'running' | 'completed' | 'failed';
-  stage: string;
-  message: string;
-  progress: number;
-  result?: Record<string, unknown>;
-  error?: string;
-  createdAt: number;
+interface PersistedScoutState {
+  nextIndex: number;
+  limit: number;
+  activeCampaignId: string | null;
+  activeCampaignOrg: string | null;
+  activeCampaignLoc: string | null;
+  activeCampaignServiceArea: string | null;
+  location: string;
+  userIntent: string;
+  userMission: string;
+  valueProp: string;
+  companyDescription: string;
+  servicesOffered: string[];
+  targetIndustries: string[];
+  targetTriggers: string[];
+  buyerIndustries: string[];
+  buyerRoles: string[];
+  serviceArea: 'local' | 'national';
+  locationLock: LocationLock;
+  gl: string;
+  queryLabel: string;
+  selectedQueries: Array<{ id: string | null; queryText: string }>;
+  queryStats: Record<string, { articlesReturned: number; relevantCount: number }>;
+  winners: Array<any>;
+  fresh: Array<any>;
+  existingPoolUrls: Array<any>;
+  triageReasoning: Record<number, string>;
+  telemetry: Record<string, any>;
+  ingestedSignals: Array<any>;
+  auditLog: AuditLogEntry[];
+  now: string;
 }
 
-const SCOUT_JOBS: Record<string, ScoutJobState> = {};
-
 signalsRouter.get('/ingest/status/:jobId', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Database unavailable' }, 500);
+  }
   const user = await getSessionUser(c);
   if (!user) return authenticationRequired(c);
 
+  const db = getDb(c.env.DB);
   const jobId = c.req.param('jobId');
-  const job = SCOUT_JOBS[jobId];
-  if (!job || job.userId !== user.id) {
+  const job = await db.query.scoutJobs.findFirst({
+    where: and(eq(schema.scoutJobs.id, jobId), eq(schema.scoutJobs.userId, user.id)),
+  });
+  if (!job) {
     return c.json({ success: false, error: 'Scout job not found' }, 404);
   }
 
-  return c.json({
-    success: true,
-    job: {
-      id: job.id,
-      status: job.status,
-      stage: job.stage,
-      message: job.message,
-      progress: job.progress,
-      result: job.result,
-      error: job.error,
-    },
-  });
+  if (job.status === 'completed' || job.status === 'failed') {
+    return c.json({
+      success: true,
+      job: {
+        id: job.id,
+        status: job.status,
+        stage: job.stage,
+        message: job.message,
+        progress: job.progress,
+        result: job.resultJson ? JSON.parse(job.resultJson) : undefined,
+        error: job.error || undefined,
+      },
+    });
+  }
+
+  // Advance 1 winner article per poll request so no single Worker call exceeds 30s
+  try {
+    const state = JSON.parse(job.stateJson || '{}') as PersistedScoutState;
+    if (state.nextIndex < state.winners.length && state.ingestedSignals.length < state.limit) {
+      const article = state.winners[state.nextIndex];
+      await processWinnerArticle(db, c.env, user, state, article);
+      state.nextIndex += 1;
+    }
+
+    const isDone = state.nextIndex >= state.winners.length || state.ingestedSignals.length >= state.limit;
+    if (isDone) {
+      const finalResult = await finalizeScoutState(db, user, state);
+      await db
+        .update(schema.scoutJobs)
+        .set({
+          status: 'completed',
+          stage: 'done',
+          progress: 100,
+          message: String(finalResult.message || 'Scout complete'),
+          stateJson: null,
+          resultJson: JSON.stringify(finalResult),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(schema.scoutJobs.id, job.id));
+
+      return c.json({
+        success: true,
+        job: {
+          id: job.id,
+          status: 'completed',
+          stage: 'done',
+          progress: 100,
+          message: String(finalResult.message || 'Scout complete'),
+          result: finalResult,
+        },
+      });
+    }
+
+    const total = Math.max(1, state.winners.length);
+    const progress = Math.min(95, 40 + Math.round((state.nextIndex / total) * 55));
+    const message = `Scoring & enriching lead ${state.nextIndex + 1} of ${total}...`;
+
+    await db
+      .update(schema.scoutJobs)
+      .set({
+        stage: 'enriching',
+        progress,
+        message,
+        stateJson: JSON.stringify(state),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.scoutJobs.id, job.id));
+
+    return c.json({
+      success: true,
+      job: {
+        id: job.id,
+        status: 'running',
+        stage: 'enriching',
+        progress,
+        message,
+      },
+    });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'Scout step failed';
+    await db
+      .update(schema.scoutJobs)
+      .set({
+        status: 'failed',
+        stage: 'error',
+        error: errMsg,
+        message: errMsg,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.scoutJobs.id, job.id));
+
+    return c.json({
+      success: true,
+      job: {
+        id: job.id,
+        status: 'failed',
+        stage: 'error',
+        progress: job.progress,
+        message: errMsg,
+        error: errMsg,
+      },
+    });
+  }
 });
 
 signalsRouter.post('/ingest', async (c) => {
@@ -508,56 +624,84 @@ signalsRouter.post('/ingest', async (c) => {
   const limit = Math.max(1, Math.min(body.limit || 3, 10));
 
   if (body.async) {
-    const jobId = `scout_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const job: ScoutJobState = {
-      id: jobId,
-      userId: user.id,
-      status: 'running',
-      stage: 'planning',
-      message: 'Generating search terms from your services...',
-      progress: 10,
-      createdAt: Date.now(),
-    };
-    SCOUT_JOBS[jobId] = job;
+    try {
+      const db = getDb(c.env.DB);
+      const state = await prepareScoutState(c.env, user, customQuery, limit);
+      const jobId = `scout_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const nowIso = new Date().toISOString();
 
-    const runPromise = runIngestPipeline(c.env, user, customQuery, limit, (stage, message, progress) => {
-      job.stage = stage;
-      job.message = message;
-      job.progress = progress;
-    })
-      .then((result) => {
-        job.status = 'completed';
-        job.stage = 'done';
-        job.progress = 100;
-        job.message = String(result.message || 'Scout complete');
-        job.result = result;
-      })
-      .catch((err) => {
-        job.status = 'failed';
-        job.stage = 'error';
-        job.error = err instanceof Error ? err.message : 'Ingestion pipeline failed';
-        job.message = job.error;
+      if (state.winners.length === 0) {
+        const finalResult = await finalizeScoutState(db, user, state);
+        await db.insert(schema.scoutJobs).values({
+          id: jobId,
+          userId: user.id,
+          campaignId: state.activeCampaignId,
+          status: 'completed',
+          stage: 'done',
+          message: String(finalResult.message || 'Scout complete'),
+          progress: 100,
+          limitCount: limit,
+          stateJson: null,
+          resultJson: JSON.stringify(finalResult),
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+        return c.json({
+          success: true,
+          async: true,
+          jobId,
+          status: 'completed',
+          stage: 'done',
+          message: String(finalResult.message || 'Scout complete'),
+          progress: 100,
+          result: finalResult,
+        });
+      }
+
+      const initMsg = `Scoring & enriching lead 1 of ${state.winners.length}...`;
+      await db.insert(schema.scoutJobs).values({
+        id: jobId,
+        userId: user.id,
+        campaignId: state.activeCampaignId,
+        status: 'running',
+        stage: 'enriching',
+        message: initMsg,
+        progress: 40,
+        limitCount: limit,
+        stateJson: JSON.stringify(state),
+        createdAt: nowIso,
+        updatedAt: nowIso,
       });
 
-    try {
-      c.executionCtx?.waitUntil(runPromise);
-    } catch {
-      // Non-Workers environment (e.g. Node/Vitest) runs the promise in the background
+      return c.json({
+        success: true,
+        async: true,
+        jobId,
+        status: 'running',
+        stage: 'enriching',
+        message: initMsg,
+        progress: 40,
+      });
+    } catch (error) {
+      console.error('Error initializing async scout:', error);
+      return c.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to start scout',
+        },
+        500
+      );
     }
-
-    return c.json({
-      success: true,
-      async: true,
-      jobId,
-      status: 'running',
-      stage: job.stage,
-      message: job.message,
-      progress: job.progress,
-    });
   }
 
   try {
-    const result = await runIngestPipeline(c.env, user, customQuery, limit);
+    const db = getDb(c.env.DB);
+    const state = await prepareScoutState(c.env, user, customQuery, limit);
+    while (state.nextIndex < state.winners.length && state.ingestedSignals.length < state.limit) {
+      await processWinnerArticle(db, c.env, user, state, state.winners[state.nextIndex]);
+      state.nextIndex += 1;
+    }
+    const result = await finalizeScoutState(db, user, state);
     return c.json(result);
   } catch (error) {
     console.error('Error during signal ingestion pipeline:', error);
@@ -571,13 +715,12 @@ signalsRouter.post('/ingest', async (c) => {
   }
 });
 
-async function runIngestPipeline(
+async function prepareScoutState(
   env: Bindings,
   user: typeof schema.users.$inferSelect,
   customQuery: string,
-  limit: number,
-  onProgress?: (stage: string, message: string, progress: number) => void
-) {
+  limit: number
+): Promise<PersistedScoutState> {
   const db = getDb(env.DB);
 
     // 0. Resolve targeting from the active campaign (falls back to the user profile).
@@ -614,8 +757,6 @@ async function runIngestPipeline(
     const productsOffered = asList(target.productsOffered || user.productsOffered);
     const companyDescription = target.companyDescription || user.companyDescription || '';
     const savedIcpQuery = (target.icpQuery || user.icpQuery || '').trim();
-
-    onProgress?.('searching', 'Searching Google News for matching triggers...', 25);
 
     const plan = generateAlgorithmicQueryPlan({
       location,
@@ -781,8 +922,6 @@ async function runIngestPipeline(
     const existingUrls = new Set(existingRows.map((row) => row.sourceUrl));
     const fresh = pool.filter((article) => !existingUrls.has(article.url));
 
-    onProgress?.('triaging', `Triaging ${fresh.length} fresh articles...`, 45);
-
     // 2. Fast batch headline/snippet triage BEFORE any Firecrawl spend.
     const triageCap = Math.min(12, Math.max(limit * 3, 8));
     const triage = await triageCandidates(
@@ -833,45 +972,102 @@ async function runIngestPipeline(
       ingestedCount: 0,
     };
 
-    const ingestedSignals = [];
+    const ingestedSignals: Array<any> = [];
     const auditLog: AuditLogEntry[] = [];
     const now = new Date().toISOString();
 
-    onProgress?.('enriching', `Scoring and enriching ${winners.length} candidate leads...`, 65);
+    return {
+      nextIndex: 0,
+      limit,
+      activeCampaignId: activeCampaign?.id || null,
+      activeCampaignOrg: activeCampaign?.organization || null,
+      activeCampaignLoc: activeCampaign?.targetLocation || null,
+      activeCampaignServiceArea: activeCampaign?.serviceArea || null,
+      location,
+      userIntent,
+      userMission,
+      valueProp,
+      companyDescription,
+      servicesOffered,
+      targetIndustries,
+      targetTriggers,
+      buyerIndustries,
+      buyerRoles,
+      serviceArea,
+      locationLock,
+      gl: plan.geographicFocus.gl,
+      queryLabel,
+      selectedQueries,
+      queryStats: Object.fromEntries(queryStatsMap.entries()),
+      winners,
+      fresh,
+      existingPoolUrls: pool.filter((article) => existingUrls.has(article.url)),
+      triageReasoning: triage.reasoning,
+      telemetry,
+      ingestedSignals,
+      auditLog,
+      now,
+    };
+}
 
-    // 3. Only triage winners reach Firecrawl, full enrichment, and Apollo.
-    for (const article of winners) {
-      if (ingestedSignals.length >= limit) break;
-      // 3a. Firecrawl Scrape / Crawl
+async function processWinnerArticle(
+  db: ReturnType<typeof getDb>,
+  env: Bindings,
+  user: typeof schema.users.$inferSelect,
+  state: PersistedScoutState,
+  article: any
+): Promise<void> {
+  const {
+    location,
+    userIntent,
+    userMission,
+    valueProp,
+    companyDescription,
+    servicesOffered,
+    targetIndustries,
+    targetTriggers,
+    buyerIndustries,
+    buyerRoles,
+    serviceArea,
+    locationLock,
+    gl,
+    telemetry,
+    auditLog,
+    ingestedSignals,
+    now,
+  } = state;
+
+      // 3a. Firecrawl Scrape / Crawl (6s timeout)
       const crawled = await crawlArticle(article.url, env.FIRECRAWL_API_KEY, article.snippet);
 
-      // 3b. OpenAI (gpt-4o-mini) Enrichment
-      const enriched = await enrichSignalWithLLM(
-        article.title,
-        crawled.markdown,
-        article.publisher,
-        env.OPENAI_API_KEY,
-        [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
-        userIntent || undefined
-      );
-
-      const judgment = await judgeArticleRelevance(
-        {
-          location: location || undefined,
-          userIntent: userIntent || undefined,
-          userMission: userMission || undefined,
-          servicesOffered,
-          targetIndustries,
-          targetTriggers,
-          valueProp: valueProp || undefined,
-          companyDescription: companyDescription || undefined,
-          serviceArea,
-          allowNationalSearch: serviceArea === 'national',
-          buyerIndustries,
-        },
-        { title: article.title, publisher: article.publisher, text: `${article.snippet}\n${crawled.markdown}` },
-        env.OPENAI_API_KEY
-      );
+      // 3b. Run OpenAI Enrichment & Relevance Judge in parallel so each article takes ~2-4s
+      const [enriched, judgment] = await Promise.all([
+        enrichSignalWithLLM(
+          article.title,
+          crawled.markdown,
+          article.publisher,
+          env.OPENAI_API_KEY,
+          [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
+          userIntent || undefined
+        ),
+        judgeArticleRelevance(
+          {
+            location: location || undefined,
+            userIntent: userIntent || undefined,
+            userMission: userMission || undefined,
+            servicesOffered,
+            targetIndustries,
+            targetTriggers,
+            valueProp: valueProp || undefined,
+            companyDescription: companyDescription || undefined,
+            serviceArea,
+            allowNationalSearch: serviceArea === 'national',
+            buyerIndustries,
+          },
+          { title: article.title, publisher: article.publisher, text: `${article.snippet}\n${crawled.markdown}` },
+          env.OPENAI_API_KEY
+        ),
+      ]);
       console.log(
         `[Judge] "${article.title}" score=${judgment.fitScore} trigger=${judgment.triggerType} relevant=${judgment.relevant} local=${judgment.locationMatch} buyer=${judgment.buyerPersonaMatch} model=${judgment.modelUsed} reason="${judgment.whyMatched || judgment.relevantReason}"`
       );
@@ -887,7 +1083,7 @@ async function runIngestPipeline(
           status: 'filtered',
           reason: `Rejected (fit ${judgment.fitScore}%, trigger=${judgment.triggerType}, model=${judgment.modelUsed}): ${judgment.whyMatched || judgment.locationReason || judgment.relevantReason}`,
         });
-        continue;
+        return;
       }
       const articlePerson =
         enriched.decisionMaker?.name && !isNonBuyerRole(enriched.decisionMaker.role || '')
@@ -912,7 +1108,7 @@ async function runIngestPipeline(
             reason: `Company "${enriched.companyName}" is already active in your Lead Deck queue.`,
             companyName: enriched.companyName,
           });
-          continue;
+          return;
         }
       }
 
@@ -929,7 +1125,7 @@ async function runIngestPipeline(
             ...targetIndustries,
             ...enriched.industryTags.filter((tag) => !SIGNAL_TYPE_TAG.test(tag)),
           ],
-          locations: apolloLocations(locationLock, plan.geographicFocus.gl),
+          locations: apolloLocations(locationLock, gl),
         },
         env.APOLLO_API_KEY
       );
@@ -950,8 +1146,8 @@ async function runIngestPipeline(
 
       // Insert into D1 signals
       const articleQueryId = (article as { queryId?: string | null }).queryId || null;
-      if (articleQueryId && queryStatsMap.has(articleQueryId)) {
-        queryStatsMap.get(articleQueryId)!.relevantCount += 1;
+      if (articleQueryId && state.queryStats[articleQueryId]) {
+        state.queryStats[articleQueryId].relevantCount += 1;
       }
       await db.insert(schema.signals).values({
         id: signalId,
@@ -1031,7 +1227,7 @@ async function runIngestPipeline(
       const draft = primary
         ? adaptPitchForContact(enriched, primary, {
             publisher: article.publisher,
-            userOrganization: activeCampaign?.organization || user.organization || user.legalBusinessName || undefined,
+            userOrganization: state.activeCampaignOrg || user.organization || user.legalBusinessName || undefined,
             userName: user.name || undefined,
             userServices: servicesOffered,
             valueProp: valueProp || undefined,
@@ -1063,7 +1259,7 @@ async function runIngestPipeline(
         publishedAt: article.publishedAt,
         sourceTier: article.sourceTier,
         status: 'ingested',
-        reason: triage.reasoning[article.index] || 'Qualified commercial trigger in target geography',
+        reason: state.triageReasoning[article.index] || 'Qualified commercial trigger in target geography',
         companyName: enriched.companyName,
         contact: primary
           ? {
@@ -1087,13 +1283,29 @@ async function runIngestPipeline(
           ? { name: primary.name, title: primary.title, company: primary.company, email: primary.email }
           : null,
         draft: draft ? { subject: draft.subject } : null,
-        triageReason: triage.reasoning[article.index] || null,
+        triageReason: state.triageReasoning[article.index] || null,
       });
-    }
+}
+
+async function finalizeScoutState(
+  db: ReturnType<typeof getDb>,
+  user: typeof schema.users.$inferSelect,
+  state: PersistedScoutState
+) {
+    const {
+      telemetry,
+      auditLog,
+      ingestedSignals,
+      selectedQueries,
+      queryStats,
+      locationLock,
+      queryLabel,
+      now,
+    } = state;
 
     // Capture non-winning candidate decisions for complete audit transparency
     const processedIndices = new Set(auditLog.map((item) => item.index));
-    for (const article of fresh) {
+    for (const article of state.fresh) {
       if (!processedIndices.has(article.index)) {
         auditLog.push({
           index: article.index,
@@ -1103,24 +1315,22 @@ async function runIngestPipeline(
           publishedAt: article.publishedAt,
           sourceTier: article.sourceTier,
           status: 'filtered',
-          reason: triage.reasoning[article.index] || hardRejectReason(article) || 'Ranked below batch triage cutoff (general commercial news)',
+          reason: state.triageReasoning[article.index] || hardRejectReason(article) || 'Ranked below batch triage cutoff (general commercial news)',
         });
       }
     }
 
-    for (const article of pool) {
-      if (existingUrls.has(article.url)) {
-        auditLog.push({
-          index: article.index,
-          title: article.title,
-          publisher: article.publisher,
-          url: article.url,
-          publishedAt: article.publishedAt,
-          sourceTier: article.sourceTier,
-          status: 'filtered',
-          reason: 'Already ingested into your deck in a previous scout session.',
-        });
-      }
+    for (const article of state.existingPoolUrls) {
+      auditLog.push({
+        index: article.index,
+        title: article.title,
+        publisher: article.publisher,
+        url: article.url,
+        publishedAt: article.publishedAt,
+        sourceTier: article.sourceTier,
+        status: 'filtered',
+        reason: 'Already ingested into your deck in a previous scout session.',
+      });
     }
 
     telemetry.ingestedCount = ingestedSignals.length;
@@ -1134,7 +1344,7 @@ async function runIngestPipeline(
     LAST_PIPELINE_TRACE[user.id] = {
       timestamp: now,
       query: queryLabel,
-      queries: wideNet.queries,
+      queries: telemetry.queries || [],
       location: locationLock.enforced ? [locationLock.city, locationLock.region].filter(Boolean).join(' / ') : 'National',
       telemetry: fullTelemetry,
       auditLog,
@@ -1147,18 +1357,23 @@ async function runIngestPipeline(
     // Update per-query stats & retire/replace zero-hit queries
     const queryBreakdown: Array<{ query: string; returned: number; relevant: number }> = [];
     for (const sq of selectedQueries) {
-      const st = sq.id ? queryStatsMap.get(sq.id) : null;
+      const st = sq.id ? queryStats[sq.id] : null;
       queryBreakdown.push({
         query: sq.queryText,
-        returned: st?.articlesReturned ?? wideNet.candidates.length,
+        returned: st?.articlesReturned ?? telemetry.fetchedCount,
         relevant: st?.relevantCount ?? ingestedSignals.length,
       });
       if (sq.id && st) {
         await recordQueryRun(db, sq.id, st.articlesReturned, st.relevantCount);
       }
     }
-    if (activeCampaign) {
-      await retireAndReplaceQueries(db, activeCampaign);
+    if (state.activeCampaignId) {
+      await retireAndReplaceQueries(db, {
+        id: state.activeCampaignId,
+        userId: user.id,
+        targetLocation: state.activeCampaignLoc,
+        serviceArea: state.activeCampaignServiceArea,
+      });
     }
 
     const querySummary = queryBreakdown

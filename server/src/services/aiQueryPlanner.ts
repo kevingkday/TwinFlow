@@ -347,11 +347,11 @@ You must respond with valid JSON adhering to this schema:
 
 Generate the structured JSON query plan using the Goldilocks rule, ensuring the query targets buyer companies experiencing market triggers who need the specific services and products listed above.`;
 
-      // Try current flagship gpt-4.1 first with a 10s timeout
+      // Try fast gpt-4.1-mini first with a 12s timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
       let response: Response;
-      let modelUsed = 'gpt-4.1';
+      let modelUsed = 'gpt-4.1-mini';
       try {
         response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -360,7 +360,7 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'gpt-4.1',
+            model: 'gpt-4.1-mini',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
@@ -374,26 +374,33 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
         clearTimeout(timeoutId);
       }
 
-      // Fallback to gpt-4o if gpt-4.1 has quota or model permission issues
+      // Fallback to gpt-4o-mini if gpt-4.1-mini has quota or model permission issues
       if (!response.ok) {
-        console.warn(`[AI Query Planner] gpt-4.1 returned ${response.status}, falling back to gpt-4o`);
-        response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${cleanKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            response_format: { type: 'json_object' },
-            temperature: 0.2,
-          }),
-        });
-        modelUsed = 'gpt-4o';
+        console.warn(`[AI Query Planner] gpt-4.1-mini returned ${response.status}, falling back to gpt-4o-mini`);
+        const fbController = new AbortController();
+        const fbTimer = setTimeout(() => fbController.abort(), 12000);
+        try {
+          response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${cleanKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+              ],
+              response_format: { type: 'json_object' },
+              temperature: 0.2,
+            }),
+            signal: fbController.signal,
+          });
+        } finally {
+          clearTimeout(fbTimer);
+        }
+        modelUsed = 'gpt-4o-mini';
       }
 
       if (response.ok) {
@@ -758,7 +765,7 @@ Location: ${input.location || 'Unspecified'}`;
 
   const callModel = async (model: string) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), 14000);
     try {
       return await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -783,9 +790,18 @@ Location: ${input.location || 'Unspecified'}`;
   };
 
   try {
-    let res = await callModel('gpt-5');
-    if (!res.ok) res = await callModel('gpt-4.1');
-    if (!res.ok) res = await callModel('gpt-4o');
+    let res = await callModel('gpt-4.1-mini');
+    let usedModel = 'gpt-4.1-mini';
+    if (!res.ok) {
+      console.warn(`[Candidate Queries] gpt-4.1-mini returned ${res.status}, trying gpt-4o-mini`);
+      res = await callModel('gpt-4o-mini');
+      usedModel = 'gpt-4o-mini';
+    }
+    if (!res.ok) {
+      console.warn(`[Candidate Queries] gpt-4o-mini returned ${res.status}, trying gpt-5-mini`);
+      res = await callModel('gpt-5-mini');
+      usedModel = 'gpt-5-mini';
+    }
     if (res.ok) {
       const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
       const content = json.choices?.[0]?.message?.content;
@@ -798,12 +814,18 @@ Location: ${input.location || 'Unspecified'}`;
             tier: (q.tier === 'broad' ? 'broad' : 'specific') as 'specific' | 'broad',
           }))
           .slice(0, 10);
-        if (valid.length >= 4) return valid;
+        if (valid.length >= 4) {
+          console.log(`[Candidate Queries] generated ${valid.length} queries via ${usedModel}`);
+          return valid;
+        }
       }
+    } else {
+      console.warn(`[Candidate Queries] OpenAI models failed (last status ${res.status}); using algorithmic fallback`);
     }
   } catch (err) {
-    console.warn('[Candidate Queries] OpenAI generation failed, using algorithmic fallback:', err);
+    console.warn('[Candidate Queries] OpenAI generation failed/timed out, using algorithmic fallback:', err);
   }
 
+  console.log(`[Candidate Queries] returning ${fallback.length} algorithmic fallback queries`);
   return fallback;
 }

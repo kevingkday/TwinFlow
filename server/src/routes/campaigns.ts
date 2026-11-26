@@ -118,6 +118,55 @@ campaignsRouter.get('/', async (c) => {
   });
 });
 
+// POST /api/campaigns/preview-queries - Generate candidate queries for the wizard preview
+campaignsRouter.post('/preview-queries', async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+  const body = await c.req
+    .json<{
+      targetLocation?: string;
+      userIntent?: string;
+      userMission?: string;
+      companyDescription?: string;
+      servicesOffered?: string[];
+      productsOffered?: string[];
+      targetIndustries?: string[];
+      targetTriggers?: string[];
+      serviceArea?: 'local' | 'national';
+    }>()
+    .catch((): Record<string, never> => ({}));
+
+  const buyer = deriveBuyerProfile({
+    location: (body.targetLocation || '').trim(),
+    userIntent: body.userIntent || 'sales_client_acquisition',
+    userMission: body.userMission || '',
+    companyDescription: body.companyDescription || body.userMission || '',
+    servicesOffered: Array.isArray(body.servicesOffered) ? body.servicesOffered : [],
+    productsOffered: Array.isArray(body.productsOffered) ? body.productsOffered : [],
+    targetIndustries: Array.isArray(body.targetIndustries) ? body.targetIndustries : [],
+    targetTriggers: Array.isArray(body.targetTriggers) ? body.targetTriggers : [],
+    serviceArea: body.serviceArea,
+  });
+
+  const queries = await generateCandidateQueries(
+    {
+      location: (body.targetLocation || '').trim(),
+      userIntent: body.userIntent || 'sales_client_acquisition',
+      userMission: body.userMission || '',
+      companyDescription: body.companyDescription || body.userMission || '',
+      servicesOffered: Array.isArray(body.servicesOffered) ? body.servicesOffered : [],
+      productsOffered: Array.isArray(body.productsOffered) ? body.productsOffered : [],
+      targetIndustries: Array.isArray(body.targetIndustries) ? body.targetIndustries : [],
+      targetTriggers: Array.isArray(body.targetTriggers) ? body.targetTriggers : [],
+      ...buyer,
+    },
+    c.env?.OPENAI_API_KEY
+  );
+
+  return c.json({ success: true, queries });
+});
+
 // POST /api/campaigns - Create a new campaign
 campaignsRouter.post('/', async (c) => {
   if (!c.env?.DB) {
@@ -141,6 +190,7 @@ campaignsRouter.post('/', async (c) => {
     servicesOffered?: string[];
     productsOffered?: string[];
     icpQuery?: string;
+    queries?: Array<{ queryText: string; tier?: 'specific' | 'broad' }>;
     targetIndustries?: string[];
     targetTriggers?: string[];
     targetRoles?: string[];
@@ -159,8 +209,12 @@ campaignsRouter.post('/', async (c) => {
     return c.json({ success: false, error: 'Invalid JSON body' }, 400);
   }
 
-  const organization = (body.organization || '').trim();
-  const website = (body.website || '').trim();
+  const existingCampaigns = await db.query.campaigns.findMany({
+    where: and(eq(schema.campaigns.userId, user.id), eq(schema.campaigns.status, 'active')),
+  });
+  const isFirstCampaign = existingCampaigns.length === 0;
+  const organization = (body.organization || (isFirstCampaign ? user.organization : '') || '').trim();
+  const website = (body.website || (isFirstCampaign ? user.website : '') || '').trim();
   const targetLocation = (body.targetLocation || '').trim();
   const userIntent = (body.userIntent || 'sales_client_acquisition').trim();
   const userMission = (body.userMission || '').trim();
@@ -206,9 +260,20 @@ campaignsRouter.post('/', async (c) => {
     ...buyer,
   };
 
+  const providedQueries = Array.isArray(body.queries)
+    ? body.queries
+        .filter((q) => typeof q?.queryText === 'string' && q.queryText.trim().length >= 3)
+        .map((q) => ({
+          queryText: q.queryText.trim(),
+          tier: (q.tier === 'broad' ? 'broad' : 'specific') as 'specific' | 'broad',
+        }))
+    : [];
+
   const [queryPlan, candidateQueries] = await Promise.all([
     planNewsQueryWithAI(plannerInput, c.env.OPENAI_API_KEY),
-    generateCandidateQueries(plannerInput, c.env.OPENAI_API_KEY),
+    providedQueries.length > 0
+      ? Promise.resolve(providedQueries)
+      : generateCandidateQueries(plannerInput, c.env.OPENAI_API_KEY),
   ]);
   const finalIcpQuery = (body.icpQuery || '').trim() || candidateQueries[0]?.queryText || queryPlan.primaryQuery;
 
@@ -405,6 +470,7 @@ campaignsRouter.patch('/:id', async (c) => {
     servicesOffered?: string[];
     productsOffered?: string[];
     icpQuery?: string;
+    queries?: Array<{ queryText: string; tier?: 'specific' | 'broad' }>;
     targetIndustries?: string[];
     targetTriggers?: string[];
     targetRoles?: string[];

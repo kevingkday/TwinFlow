@@ -144,7 +144,14 @@ async function requestNews(
     num: String(num),
   });
   if (tbs) params.set('tbs', tbs);
-  const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  let response: Response;
+  try {
+    response = await fetch(`https://serpapi.com/search.json?${params.toString()}`, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!response.ok) throw new Error(`SerpAPI error status: ${response.status}`);
   const json = (await response.json()) as { news_results?: NewsHit[] };
   return json.news_results || [];
