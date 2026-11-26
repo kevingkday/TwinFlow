@@ -165,15 +165,20 @@ export function keywordTriageCandidates(
   for (const candidate of candidates) {
     if (hardRejectReason(candidate)) continue;
     const text = `${candidate.title} ${candidate.snippet}`;
+    const lower = text.toLowerCase();
     const type = classifyArticleType(candidate.title, candidate.snippet);
-    if (!TRIGGER_TYPES.includes(type)) continue;
+    const hasServiceTrigger = /\b(breach|ransomware|cyber|cyberattack|malware|phishing|ai rollout|artificial intelligence|ai policy|ai governance|data privacy|ciso|cto|compliance|clinic|law firm|managed it|cloud)\b/i.test(lower);
+    if (!TRIGGER_TYPES.includes(type) && !hasServiceTrigger) continue;
 
     const place = mentionsLockedPlace(text, lock);
     if (lock.enforced && !place.city && !place.region) continue;
 
-    const lower = text.toLowerCase();
     const topicHits = topic.filter((term) => lower.includes(term)).length;
-    const score = (TRIGGER_WEIGHT[type] || 1) + Math.min(topicHits, 4) * 2 + (place.city ? 2 : place.region ? 1 : 0);
+    const score =
+      (TRIGGER_TYPES.includes(type) ? TRIGGER_WEIGHT[type] || 1 : 2) +
+      (hasServiceTrigger ? 4 : 0) +
+      Math.min(topicHits, 4) * 2 +
+      (place.city ? 2 : place.region ? 1 : 0);
     const where = place.city ? lock.city : place.region ? lock.region : 'no location constraint';
     scored.push({
       index: candidate.index,

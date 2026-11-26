@@ -240,11 +240,12 @@ ${article.text.slice(0, 18000)}`;
       clearTimeout(timer);
     }
     if (!response.ok) {
-      console.warn(`[Relevance] gpt-4o-mini returned ${response.status}`);
+      const errText = await response.text().catch(() => '');
+      console.warn(`[Relevance] gpt-4o-mini returned ${response.status}: ${errText.slice(0, 120)}`);
       return {
         relevant: false,
         fitScore: 0,
-        whyMatched: 'Unscored (judge unavailable).',
+        whyMatched: `Unscored (judge HTTP ${response.status}).`,
         triggerType: 'none',
         triggerSentence: '',
         relevantReason: `Judge HTTP ${response.status}`,

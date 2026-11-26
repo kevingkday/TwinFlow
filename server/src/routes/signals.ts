@@ -695,6 +695,7 @@ async function runIngestPipeline(
         keywords: sq.queryText,
         poolSize: Math.min(20, MAX_ARTICLES_JUDGED_PER_SCOUT),
         maxQueries: 1,
+        skipPrWire: true,
         allowSampleFallback: !env.SERP_API_KEY,
       });
       if (wideNet.source !== 'none') searchSource = wideNet.source;

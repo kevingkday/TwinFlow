@@ -329,6 +329,8 @@ export interface WideNetSearchParams {
   minPool?: number;
   /** Hard cap on SerpAPI queries (credits). Default 3. */
   maxQueries?: number;
+  /** Skip the generic PR wire query when running targeted adaptive queries. */
+  skipPrWire?: boolean;
   /** Built-in sample headlines when no live key exists. Production callers leave this false. */
   allowSampleFallback?: boolean;
 }
@@ -404,9 +406,9 @@ export async function fetchWideNetCandidates(params: WideNetSearchParams): Promi
   const maxQueries = Math.max(1, params.maxQueries ?? 3);
   const lock = params.locationLock || (params.ladder ? resolveLocationLock(params.ladder) : null);
 
-  const prWireQuery = buildPrWireQuery(
-    lock || { enforced: false, city: '', region: '', clause: '' }
-  );
+  const prWireQuery = params.skipPrWire
+    ? ''
+    : buildPrWireQuery(lock || { enforced: false, city: '', region: '', clause: '' });
 
   const planned: string[] = [];
   if (params.keywords?.trim()) planned.push(lockedQuery(params.keywords, lock));
