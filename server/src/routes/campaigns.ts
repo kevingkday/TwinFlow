@@ -4,15 +4,9 @@ import { getDb, schema } from '../db';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import { getSessionUser } from './auth';
 import { getUserProfileData } from './user';
-import { planNewsQueryWithAI } from '../services/aiQueryPlanner';
-import { isLowYieldArticle, isNonBuyerRole, isRecentPublished, isSportsArticle, usableCompanyDomain } from '../services/signalQuality';
-import { judgeArticleRelevance } from '../services/relevanceJudge';
-import { deriveBuyerProfile, validateSignalEvidence } from '../services/buyerProfile';
-import { parsePublishedAtOrNull } from '../services/publishedAt';
-import { fetchSerpNews } from '../services/serpNews';
-import { crawlArticle } from '../services/firecrawl';
-import { adaptPitchForContact, enrichSignalWithLLM } from '../services/llmEnricher';
-import { findApolloContact } from '../services/apollo';
+import { generateCandidateQueries, planNewsQueryWithAI } from '../services/aiQueryPlanner';
+import { deriveBuyerProfile } from '../services/buyerProfile';
+import { seedCampaignQueries } from '../services/queryOptimizer';
 
 export const campaignsRouter = new Hono<{ Bindings: Bindings }>();
 
@@ -39,49 +33,8 @@ async function ensureDefaultCampaign(
     return existing;
   }
 
-  // Create starter campaign from user's profile or default
-  const campaignId = `cmp_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-  const now = new Date().toISOString();
-  const location = user.targetLocation || 'Pacific Northwest & Canada';
-  const industries = user.targetIndustries
-    ? JSON.parse(user.targetIndustries)
-    : ['General Contracting & Construction', 'Commercial Real Estate', 'B2B SaaS'];
-  const triggers = user.targetTriggers
-    ? JSON.parse(user.targetTriggers)
-    : ['Facility / Branch Opening', 'RFP & Contract Awards', 'Series A Funding'];
-  const roles = user.targetRoles ? JSON.parse(user.targetRoles) : ['CEO', 'Managing Director', 'VP Procurement'];
-
-  const initialName = `${location.split(',')[0]} - ${industries[0] || 'Target Pipeline'}`;
-
-  const newCampaign: typeof schema.campaigns.$inferInsert = {
-    id: campaignId,
-    userId: user.id,
-    name: initialName,
-    targetLocation: location,
-    userIntent: user.userIntent || 'sales_client_acquisition',
-    userMission: user.userMission || 'Deliver high-impact workflow intelligence and strategic enterprise solutions',
-    targetIndustries: JSON.stringify(industries),
-    targetTriggers: JSON.stringify(triggers),
-    targetRoles: JSON.stringify(roles),
-    valueProp: user.valueProp || 'Partnering with scaling firms to protect and accelerate growth during expansion.',
-    icpQuery: user.icpQuery || `${location.split(',')[0]} commercial expansion RFP contract award`,
-    isDefault: true,
-    status: 'active',
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  await db.insert(schema.campaigns).values(newCampaign);
-  await db
-    .update(schema.users)
-    .set({
-      activeCampaignId: campaignId,
-      onboardingCompleted: true,
-    })
-    .where(eq(schema.users.id, user.id));
-
-  user.activeCampaignId = campaignId;
-  return [newCampaign as typeof schema.campaigns.$inferSelect];
+  // Do not auto-seed a leftover "Pacific Northwest & Canada – General Contracting" campaign for fresh accounts.
+  return existing;
 }
 
 // GET /api/campaigns - List all campaigns for the current user
@@ -135,6 +88,8 @@ campaignsRouter.get('/', async (c) => {
         targetLocation: cmp.targetLocation || '',
         userIntent: cmp.userIntent || 'sales_client_acquisition',
         userMission: cmp.userMission || '',
+        organization: cmp.organization || '',
+        website: cmp.website || '',
         companyDescription: cmp.companyDescription || '',
         servicesOffered: cmp.servicesOffered ? JSON.parse(cmp.servicesOffered) : [],
         productsOffered: cmp.productsOffered ? JSON.parse(cmp.productsOffered) : [],
@@ -177,6 +132,8 @@ campaignsRouter.post('/', async (c) => {
 
   let body: {
     name?: string;
+    organization?: string;
+    website?: string;
     targetLocation?: string;
     userIntent?: string;
     userMission?: string;
@@ -202,6 +159,8 @@ campaignsRouter.post('/', async (c) => {
     return c.json({ success: false, error: 'Invalid JSON body' }, 400);
   }
 
+  const organization = (body.organization || user.organization || '').trim();
+  const website = (body.website || user.website || '').trim();
   const targetLocation = (body.targetLocation || '').trim();
   const userIntent = (body.userIntent || 'sales_client_acquisition').trim();
   const userMission = (body.userMission || '').trim();
@@ -233,23 +192,25 @@ campaignsRouter.post('/', async (c) => {
     serviceArea: body.serviceArea,
   });
 
-  const queryPlan = await planNewsQueryWithAI(
-    {
-      location: targetLocation,
-      userIntent,
-      userMission,
-      companyDescription,
-      servicesOffered,
-      productsOffered,
-      targetIndustries,
-      targetTriggers,
-      targetRoles,
-      valueProp,
-      ...buyer,
-    },
-    c.env.OPENAI_API_KEY
-  );
-  const finalIcpQuery = (body.icpQuery || '').trim() || queryPlan.primaryQuery;
+  const plannerInput = {
+    location: targetLocation,
+    userIntent,
+    userMission,
+    companyDescription,
+    servicesOffered,
+    productsOffered,
+    targetIndustries,
+    targetTriggers,
+    targetRoles,
+    valueProp,
+    ...buyer,
+  };
+
+  const [queryPlan, candidateQueries] = await Promise.all([
+    planNewsQueryWithAI(plannerInput, c.env.OPENAI_API_KEY),
+    generateCandidateQueries(plannerInput, c.env.OPENAI_API_KEY),
+  ]);
+  const finalIcpQuery = (body.icpQuery || '').trim() || candidateQueries[0]?.queryText || queryPlan.primaryQuery;
 
   const campaignId = `cmp_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
@@ -262,6 +223,8 @@ campaignsRouter.post('/', async (c) => {
     id: campaignId,
     userId: user.id,
     name: generatedName,
+    organization: organization || null,
+    website: website || null,
     targetLocation: targetLocation || null,
     userIntent,
     userMission: userMission || null,
@@ -285,6 +248,7 @@ campaignsRouter.post('/', async (c) => {
   };
 
   await db.insert(schema.campaigns).values(newCampaign);
+  const seededQueries = await seedCampaignQueries(db, campaignId, user.id, candidateQueries);
 
   const makeActive = body.makeActive !== false;
   if (makeActive) {
@@ -292,6 +256,8 @@ campaignsRouter.post('/', async (c) => {
       .update(schema.users)
       .set({
         activeCampaignId: campaignId,
+        organization: organization || null,
+        website: website || null,
         targetLocation: targetLocation || null,
         userIntent,
         userMission: userMission || null,
@@ -314,162 +280,17 @@ campaignsRouter.post('/', async (c) => {
       .where(eq(schema.users.id, user.id));
   }
 
-  let ingestedCount = 0;
-
-  // Attempt non-blocking initial signal scout for this new campaign
-  try {
-    const newsArticles = await fetchSerpNews(
-      queryPlan.primaryQuery,
-      c.env.SERP_API_KEY,
-      8,
-      queryPlan.geographicFocus?.gl,
-      queryPlan.fallbackQueries,
-      { searchTiers: queryPlan.searchTiers, queryLadder: queryPlan.queryLadder }
-    );
-
-    const seenEvents = new Set<string>();
-    for (const art of newsArticles) {
-      try {
-        if (isLowYieldArticle(art.title, art.publisher, art.url) || isSportsArticle(art.title, art.publisher)) continue;
-        const crawl = await crawlArticle(art.url, c.env.FIRECRAWL_API_KEY, art.snippet);
-        const sourceDate = parsePublishedAtOrNull(crawl.publishedAt);
-        if (sourceDate && !isRecentPublished(sourceDate)) continue;
-        const judgment = await judgeArticleRelevance(
-          {
-            location: targetLocation,
-            userIntent,
-            userMission,
-            targetIndustries,
-            targetTriggers,
-            targetRoles,
-            valueProp,
-            ...buyer,
-          },
-          { title: art.title, publisher: art.publisher, text: `${art.snippet}\n${crawl.markdown}` },
-          c.env.OPENAI_API_KEY
-        );
-        if (!judgment.relevant) {
-          console.log(`[Relevance] rejected "${art.title}" from "${art.query || ''}": ${judgment.relevantReason}`);
-          continue;
-        }
-        const enriched = await enrichSignalWithLLM(
-          art.title,
-          crawl.markdown,
-          art.publisher || 'Google News',
-          c.env.OPENAI_API_KEY,
-          queryPlan.recommendedPitchAngle || valueProp,
-          userIntent
-        );
-
-        if (!enriched.decisionMaker?.name || isNonBuyerRole(enriched.decisionMaker.role || '')) continue;
-        const evidence = validateSignalEvidence({
-          sourceText: `${art.title}\n${art.snippet}\n${crawl.markdown}`,
-          buyerCompany: judgment.buyerCompany || enriched.companyName,
-          namedPerson: judgment.namedPerson || enriched.decisionMaker.name,
-          personEmployer: enriched.decisionMaker.company || enriched.companyName,
-          personRole: enriched.decisionMaker.role || '',
-          quotes: judgment.evidenceQuotes || [],
-          location: targetLocation,
-          allowNationalSearch: buyer.allowNationalSearch,
-          extractedName: enriched.decisionMaker.name,
-          extractedEmployer: enriched.decisionMaker.company || enriched.companyName,
-        });
-        if (!evidence.ok) {
-          console.log(`[Evidence] rejected "${art.title}": ${evidence.reason}`);
-          continue;
-        }
-        const eventKey = `${(judgment.buyerCompany || enriched.companyName).toLowerCase()}|${(judgment.triggerEvent || art.title).toLowerCase().slice(0, 80)}`;
-        if (seenEvents.has(eventKey)) continue;
-        seenEvents.add(eventKey);
-        const domain = usableCompanyDomain(enriched.companyDomain);
-        const apollo = domain
-          ? await findApolloContact(enriched.decisionMaker.name, enriched.decisionMaker.role, domain, c.env.APOLLO_API_KEY)
-          : { matched: false, status: 'fallback' as const, email: undefined, linkedinUrl: undefined };
-
-        const sigId = `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        const cntId = `cnt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        const drfId = `drf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-
-        await db.insert(schema.signals).values({
-          id: sigId,
-          userId: user.id,
-          campaignId,
-          parentSignalId: null,
-          title: art.title,
-          sourceUrl: art.url,
-          publishedAt: art.publishedAt || new Date().toISOString(),
-          summaryBullets: JSON.stringify(enriched.summaryBullets),
-          articleSummary: enriched.articleSummary || null,
-          companyName: enriched.companyName,
-          signalType: enriched.signalType,
-          industryTags: JSON.stringify(enriched.industryTags || targetIndustries),
-          fitScore: judgment.fitScore,
-          whyMatched: judgment.whyMatched,
-          status: 'queued',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-
-        await db.insert(schema.contacts).values({
-          id: cntId,
-          signalId: sigId,
-          name: enriched.decisionMaker.name,
-          title: enriched.decisionMaker.role,
-          email: apollo.email || null,
-          linkedinUrl: apollo.linkedinUrl || null,
-          avatarUrl: apollo.avatarUrl || null,
-          ghlContactId: null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-
-        const adapted = adaptPitchForContact(
-          enriched,
-          {
-            name: enriched.decisionMaker.name,
-            title: enriched.decisionMaker.role,
-            company: enriched.companyName,
-            source: 'article',
-          },
-          {
-            publisher: art.publisher,
-            userOrganization: user.organization || user.legalBusinessName || undefined,
-            userName: user.name || undefined,
-            userServices: servicesOffered,
-            valueProp: valueProp || undefined,
-            userMission: userMission || undefined,
-            userIntent,
-            city: targetLocation.split(',')[0]?.trim() || undefined,
-          }
-        );
-
-        await db.insert(schema.outreachDrafts).values({
-          id: drfId,
-          signalId: sigId,
-          contactId: cntId,
-          subject: adapted.subject,
-          body: adapted.body,
-          status: 'draft',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-        ingestedCount++;
-      } catch {
-        // Individual article error ignored
-      }
-    }
-  } catch {
-    // Ingestion network error non-fatal
-  }
-
   const freshUser = (await db.query.users.findFirst({ where: eq(schema.users.id, user.id) })) || user;
 
   return c.json({
     success: true,
     user: await getUserProfileData(db, freshUser, c.env),
+    queries: seededQueries,
     campaign: {
       id: campaignId,
       name: generatedName,
+      organization,
+      website,
       targetLocation,
       userIntent,
       userMission,
@@ -483,7 +304,7 @@ campaignsRouter.post('/', async (c) => {
       icpQuery: finalIcpQuery,
       isDefault: false,
       isActive: makeActive,
-      leadsCount: ingestedCount,
+      leadsCount: 0,
       createdAt: now,
       updatedAt: now,
     },
@@ -519,6 +340,8 @@ campaignsRouter.post('/:id/activate', async (c) => {
     .update(schema.users)
     .set({
       activeCampaignId: campaignId,
+      organization: campaign.organization,
+      website: campaign.website,
       targetLocation: campaign.targetLocation,
       userIntent: campaign.userIntent,
       userMission: campaign.userMission,
@@ -778,4 +601,146 @@ campaignsRouter.delete('/:id', async (c) => {
   }
 
   return c.json({ success: true, message: 'Campaign archived successfully' });
+});
+
+// GET /api/campaigns/:id/queries - List adaptive queries & hit rates for a campaign
+campaignsRouter.get('/:id/queries', async (c) => {
+  if (!c.env?.DB) return c.json({ success: false, error: 'Database unavailable' }, 500);
+  const db = getDb(c.env.DB);
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+  const campaignId = c.req.param('id');
+  const campaign = await db.query.campaigns.findFirst({
+    where: and(eq(schema.campaigns.id, campaignId), eq(schema.campaigns.userId, user.id)),
+  });
+  if (!campaign) return c.json({ success: false, error: 'Campaign not found' }, 404);
+
+  const queries = await db.query.campaignQueries.findMany({
+    where: and(eq(schema.campaignQueries.campaignId, campaignId), eq(schema.campaignQueries.userId, user.id)),
+    orderBy: [desc(schema.campaignQueries.pinned), desc(schema.campaignQueries.relevantCount)],
+  });
+
+  return c.json({ success: true, queries });
+});
+
+// POST /api/campaigns/:id/queries - Add a manual query or regenerate candidate queries
+campaignsRouter.post('/:id/queries', async (c) => {
+  if (!c.env?.DB) return c.json({ success: false, error: 'Database unavailable' }, 500);
+  const db = getDb(c.env.DB);
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+  const campaignId = c.req.param('id');
+  const campaign = await db.query.campaigns.findFirst({
+    where: and(eq(schema.campaigns.id, campaignId), eq(schema.campaigns.userId, user.id)),
+  });
+  if (!campaign) return c.json({ success: false, error: 'Campaign not found' }, 404);
+
+  const body = await c.req
+    .json<{ queryText?: string; pinned?: boolean; regenerate?: boolean }>()
+    .catch((): { queryText?: string; pinned?: boolean; regenerate?: boolean } => ({}));
+
+  if (body.regenerate) {
+    const parseArr = (v?: string | null) => {
+      try { return v ? JSON.parse(v) : []; } catch { return []; }
+    };
+    const specs = await generateCandidateQueries(
+      {
+        location: campaign.targetLocation || '',
+        userIntent: campaign.userIntent || 'sales_client_acquisition',
+        userMission: campaign.userMission || '',
+        companyDescription: campaign.companyDescription || '',
+        servicesOffered: parseArr(campaign.servicesOffered),
+        productsOffered: parseArr(campaign.productsOffered),
+        targetIndustries: parseArr(campaign.targetIndustries),
+        targetTriggers: parseArr(campaign.targetTriggers),
+        valueProp: campaign.valueProp || '',
+        serviceArea: campaign.serviceArea === 'national' ? 'national' : 'local',
+      },
+      c.env.OPENAI_API_KEY
+    );
+    const seeded = await seedCampaignQueries(db, campaignId, user.id, specs);
+    return c.json({ success: true, queries: seeded });
+  }
+
+  const text = (body.queryText || '').trim();
+  if (!text) return c.json({ success: false, error: 'queryText is required' }, 400);
+
+  const now = new Date().toISOString();
+  const row = {
+    id: `cq_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`,
+    campaignId,
+    userId: user.id,
+    queryText: text,
+    tier: 'manual' as const,
+    pinned: Boolean(body.pinned),
+    status: 'active' as const,
+    runs: 0,
+    articlesReturned: 0,
+    relevantCount: 0,
+    savedCount: 0,
+    rejectedCount: 0,
+    lastRunAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.insert(schema.campaignQueries).values(row);
+  return c.json({ success: true, query: row });
+});
+
+// PATCH /api/campaigns/:id/queries/:queryId - Pin/unpin or restore a query
+campaignsRouter.patch('/:id/queries/:queryId', async (c) => {
+  if (!c.env?.DB) return c.json({ success: false, error: 'Database unavailable' }, 500);
+  const db = getDb(c.env.DB);
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+  const campaignId = c.req.param('id');
+  const queryId = c.req.param('queryId');
+  const existing = await db.query.campaignQueries.findFirst({
+    where: and(
+      eq(schema.campaignQueries.id, queryId),
+      eq(schema.campaignQueries.campaignId, campaignId),
+      eq(schema.campaignQueries.userId, user.id)
+    ),
+  });
+  if (!existing) return c.json({ success: false, error: 'Query not found' }, 404);
+
+  const body = await c.req
+    .json<{ pinned?: boolean; status?: 'active' | 'retired' }>()
+    .catch((): { pinned?: boolean; status?: 'active' | 'retired' } => ({}));
+  await db
+    .update(schema.campaignQueries)
+    .set({
+      pinned: body.pinned !== undefined ? body.pinned : existing.pinned,
+      status: body.status || existing.status,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(schema.campaignQueries.id, queryId));
+
+  const updated = await db.query.campaignQueries.findFirst({ where: eq(schema.campaignQueries.id, queryId) });
+  return c.json({ success: true, query: updated });
+});
+
+// DELETE /api/campaigns/:id/queries/:queryId - Delete a campaign query
+campaignsRouter.delete('/:id/queries/:queryId', async (c) => {
+  if (!c.env?.DB) return c.json({ success: false, error: 'Database unavailable' }, 500);
+  const db = getDb(c.env.DB);
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+  const campaignId = c.req.param('id');
+  const queryId = c.req.param('queryId');
+  await db
+    .delete(schema.campaignQueries)
+    .where(
+      and(
+        eq(schema.campaignQueries.id, queryId),
+        eq(schema.campaignQueries.campaignId, campaignId),
+        eq(schema.campaignQueries.userId, user.id)
+      )
+    );
+
+  return c.json({ success: true });
 });

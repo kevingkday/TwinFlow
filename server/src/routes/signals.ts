@@ -12,7 +12,16 @@ import {
   adaptPitchForContact,
   hardRejectReason,
 } from '../services/llmEnricher';
-import { generateAlgorithmicQueryPlan, inferGoogleCountry, type LocationLock } from '../services/aiQueryPlanner';
+import { generateAlgorithmicQueryPlan, generateCandidateQueries, inferGoogleCountry, type LocationLock } from '../services/aiQueryPlanner';
+import {
+  MAX_ARTICLES_JUDGED_PER_SCOUT,
+  MAX_QUERIES_PER_SCOUT,
+  recordQueryRun,
+  recordQuerySignalOutcome,
+  retireAndReplaceQueries,
+  seedCampaignQueries,
+  selectQueriesForScout,
+} from '../services/queryOptimizer';
 import { findApolloContact, resolveSignalContacts } from '../services/apollo';
 import { upsertContact, createNote, createOpportunity, listAgencySubaccounts } from '../services/ghl';
 import { resolveUserGhlCredentials } from '../services/ghlOAuth';
@@ -329,6 +338,7 @@ signalsRouter.get('/deck', async (c) => {
         industryTags: sig.industryTags ? (JSON.parse(sig.industryTags) as string[]) : [],
         fitScore: typeof sig.fitScore === 'number' ? sig.fitScore : null,
         whyMatched: sig.whyMatched || null,
+        triggerSentence: sig.triggerSentence || null,
         status: sig.status,
         contacts: allContacts,
         contact: primaryContact
@@ -623,18 +633,97 @@ async function runIngestPipeline(
       buyerCompanySize,
     });
     const locationLock = plan.locationLock;
-    const queryLabel = customQuery || savedIcpQuery || plan.primaryQuery;
 
-    // 1. Wide-net SerpAPI pull (~30-40 candidates, location lock on every query).
-    const wideNet = await fetchWideNetCandidates({
-      apiKey: env.SERP_API_KEY,
-      gl: plan.geographicFocus.gl,
-      ladder: plan.queryLadder,
-      locationLock,
-      keywords: customQuery || savedIcpQuery || undefined,
-      poolSize: WIDE_NET_POOL_SIZE,
-      allowSampleFallback: !env.SERP_API_KEY,
-    });
+    // 1. Adaptive multi-query selection from campaign_queries (capped at MAX_QUERIES_PER_SCOUT = 4)
+    let selectedQueries: Array<{ id: string | null; queryText: string }> = [];
+    if (customQuery) {
+      selectedQueries = [{ id: null, queryText: customQuery }];
+    } else if (activeCampaign) {
+      let allCampaignQueries = await db.query.campaignQueries.findMany({
+        where: and(eq(schema.campaignQueries.campaignId, activeCampaign.id), eq(schema.campaignQueries.status, 'active')),
+      });
+      if (allCampaignQueries.length === 0) {
+        const candidateSpecs = await generateCandidateQueries(
+          {
+            location,
+            userIntent,
+            userMission,
+            companyDescription,
+            servicesOffered,
+            productsOffered,
+            targetIndustries,
+            targetTriggers,
+            valueProp,
+            serviceArea,
+            buyerIndustries,
+          },
+          env.OPENAI_API_KEY
+        );
+        allCampaignQueries = await seedCampaignQueries(db, activeCampaign.id, user.id, candidateSpecs);
+      }
+      selectedQueries = selectQueriesForScout(allCampaignQueries, MAX_QUERIES_PER_SCOUT).map((q) => ({
+        id: q.id,
+        queryText: q.queryText,
+      }));
+    }
+    if (selectedQueries.length === 0) {
+      selectedQueries = [{ id: null, queryText: savedIcpQuery || plan.primaryQuery }];
+    }
+
+    const queryLabel = selectedQueries.map((q) => q.queryText).join(' | ');
+    const queryStatsMap = new Map<string, { articlesReturned: number; relevantCount: number }>();
+    for (const q of selectedQueries) {
+      if (q.id) queryStatsMap.set(q.id, { articlesReturned: 0, relevantCount: 0 });
+    }
+
+    // 1b. Run up to 4 queries, deduplicating by URL and normalized title, capped at MAX_ARTICLES_JUDGED_PER_SCOUT (40)
+    const combinedCandidates: Array<Awaited<ReturnType<typeof fetchWideNetCandidates>>['candidates'][number] & { queryId: string | null }> = [];
+    const seenCandidateUrls = new Set<string>();
+    const seenCandidateTitles = new Set<string>();
+    const executedQueries: string[] = [];
+    let rawCountTotal = 0;
+    let searchSource: 'serpapi' | 'sample' | 'none' = 'none';
+
+    for (const sq of selectedQueries) {
+      if (combinedCandidates.length >= MAX_ARTICLES_JUDGED_PER_SCOUT) break;
+      const wideNet = await fetchWideNetCandidates({
+        apiKey: env.SERP_API_KEY,
+        gl: plan.geographicFocus.gl,
+        ladder: plan.queryLadder,
+        locationLock,
+        keywords: sq.queryText,
+        poolSize: Math.min(20, MAX_ARTICLES_JUDGED_PER_SCOUT),
+        maxQueries: 1,
+        allowSampleFallback: !env.SERP_API_KEY,
+      });
+      if (wideNet.source !== 'none') searchSource = wideNet.source;
+      rawCountTotal += wideNet.rawCount;
+      executedQueries.push(...wideNet.queries);
+      if (sq.id) {
+        const st = queryStatsMap.get(sq.id)!;
+        st.articlesReturned += wideNet.candidates.length;
+      }
+      for (const cand of wideNet.candidates) {
+        if (combinedCandidates.length >= MAX_ARTICLES_JUDGED_PER_SCOUT) break;
+        const normUrl = cand.url.trim().toLowerCase().replace(/\/+$/, '');
+        const normTitle = cand.title.trim().toLowerCase().replace(/\s+/g, ' ');
+        if (seenCandidateUrls.has(normUrl) || seenCandidateTitles.has(normTitle)) continue;
+        seenCandidateUrls.add(normUrl);
+        seenCandidateTitles.add(normTitle);
+        combinedCandidates.push({
+          ...cand,
+          index: combinedCandidates.length,
+          queryId: sq.id,
+        });
+      }
+    }
+
+    const wideNet = {
+      candidates: combinedCandidates,
+      queries: executedQueries,
+      rawCount: rawCountTotal,
+      source: searchSource,
+    };
     const pool = wideNet.candidates.filter(
       (article) => !isLowYieldArticle(article.title, article.publisher, article.url) && !isSportsArticle(article.title, article.publisher)
     );
@@ -811,6 +900,10 @@ async function runIngestPipeline(
       const sourceSnapshot = crawled.markdown ? crawled.markdown.trim().slice(0, 6000) : null;
 
       // Insert into D1 signals
+      const articleQueryId = (article as { queryId?: string | null }).queryId || null;
+      if (articleQueryId && queryStatsMap.has(articleQueryId)) {
+        queryStatsMap.get(articleQueryId)!.relevantCount += 1;
+      }
       await db.insert(schema.signals).values({
         id: signalId,
         userId: user.id,
@@ -828,6 +921,8 @@ async function runIngestPipeline(
         industryTags: JSON.stringify(enriched.industryTags),
         fitScore: judgment.fitScore,
         whyMatched: judgment.whyMatched,
+        queryId: articleQueryId,
+        triggerSentence: judgment.triggerSentence || null,
         status: 'queued',
         createdAt: now,
         updatedAt: now,
@@ -887,13 +982,15 @@ async function runIngestPipeline(
       const draft = primary
         ? adaptPitchForContact(enriched, primary, {
             publisher: article.publisher,
-            userOrganization: user.organization || user.legalBusinessName || undefined,
+            userOrganization: activeCampaign?.organization || user.organization || user.legalBusinessName || undefined,
             userName: user.name || undefined,
             userServices: servicesOffered,
             valueProp: valueProp || undefined,
             userMission: userMission || undefined,
             userIntent,
             city: locationLock.city || user.city || undefined,
+            triggerSentence: judgment.triggerSentence || undefined,
+            whyMatched: judgment.whyMatched || undefined,
           })
         : null;
       if (primaryContactId && draft) {
@@ -998,34 +1095,45 @@ async function runIngestPipeline(
       ? `(${telemetry.fetchedCount} articles scouted, ${telemetry.alreadyIngestedCount} already seen, ${telemetry.triagedWinnerCount} AI triaged)`
       : '';
 
-    // Deduct scout run credits and record transaction
-    const newCreditBalance = Math.max(0, user.creditBalance - SCOUT_RUN_CREDIT_COST);
-    await db
-      .update(schema.users)
-      .set({ creditBalance: newCreditBalance, updatedAt: new Date().toISOString() })
-      .where(eq(schema.users.id, user.id));
-    await db.insert(schema.creditTransactions).values({
-      id: `tx_scout_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      userId: user.id,
-      amount: -SCOUT_RUN_CREDIT_COST,
-      balanceAfter: newCreditBalance,
-      type: 'scout_run',
-      referenceId: user.activeCampaignId || null,
-      description: `AI Scout run (${ingestedSignals.length} new leads) (-${SCOUT_RUN_CREDIT_COST} credits)`,
-      createdAt: new Date().toISOString(),
-    });
+    // Update per-query stats & retire/replace zero-hit queries
+    for (const [qId, stats] of queryStatsMap.entries()) {
+      await recordQueryRun(db, qId, stats.articlesReturned, stats.relevantCount);
+    }
+    if (activeCampaign) {
+      await retireAndReplaceQueries(db, activeCampaign);
+    }
+
+    // Deduct scout run credits ONLY when at least 1 lead was returned (A.5)
+    const creditsDeducted = ingestedSignals.length > 0 ? SCOUT_RUN_CREDIT_COST : 0;
+    const newCreditBalance = Math.max(0, user.creditBalance - creditsDeducted);
+    if (creditsDeducted > 0) {
+      await db
+        .update(schema.users)
+        .set({ creditBalance: newCreditBalance, updatedAt: new Date().toISOString() })
+        .where(eq(schema.users.id, user.id));
+      await db.insert(schema.creditTransactions).values({
+        id: `tx_scout_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        userId: user.id,
+        amount: -creditsDeducted,
+        balanceAfter: newCreditBalance,
+        type: 'scout_run',
+        referenceId: user.activeCampaignId || null,
+        description: `AI Scout run (${ingestedSignals.length} new leads) (-${creditsDeducted} credits)`,
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     return {
       success: true,
       ingestedCount: ingestedSignals.length,
-      creditsDeducted: SCOUT_RUN_CREDIT_COST,
+      creditsDeducted,
       creditBalance: newCreditBalance,
       signals: ingestedSignals,
       telemetry: fullTelemetry,
       message:
         ingestedSignals.length > 0
-          ? `Found ${ingestedSignals.length} new lead${ingestedSignals.length === 1 ? '' : 's'} from "${queryLabel}". ${summaryDetail}`.trim()
-          : `No new unread articles matched "${queryLabel}"${locationLock.enforced ? ` in ${[locationLock.city, locationLock.region].filter(Boolean).join(' / ')}` : ''} right now. ${summaryDetail}`.trim(),
+          ? `Found ${ingestedSignals.length} new lead${ingestedSignals.length === 1 ? '' : 's'} across ${selectedQueries.length} queries. ${summaryDetail}`.trim()
+          : `No relevant leads found (0 credits charged). ${summaryDetail}`.trim(),
     };
 }
 
@@ -1094,7 +1202,7 @@ signalsRouter.post('/:id/enrich-contact', async (c) => {
     }
 
     const contactName = (body.name || signal.contacts?.[0]?.name || 'Executive').trim();
-    const contactTitle = (body.title || signal.contacts?.[0]?.title || 'Decision Maker').trim();
+    const contactTitle = (body.title || signal.contacts?.[0]?.title || '').trim();
     const cleanDomain = `${signal.companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
 
     // 1. Apollo Search
@@ -1394,6 +1502,7 @@ ${finalBody}`;
         .update(schema.signals)
         .set({ status: 'approved', updatedAt: now })
         .where(eq(schema.signals.id, signalId));
+      await recordQuerySignalOutcome(db, existingSignal.queryId, 'saved');
 
       // 6. Update outreach_drafts.status to 'queued'
       if (existingSignal.outreachDrafts && existingSignal.outreachDrafts.length > 0) {
@@ -1467,6 +1576,7 @@ ${finalBody}`;
         .update(schema.signals)
         .set({ status: 'dismissed', updatedAt: now })
         .where(eq(schema.signals.id, signalId));
+      await recordQuerySignalOutcome(db, existingSignal.queryId, 'rejected');
 
       // 2. Reset streak to 0, credits and points remain unchanged
       await db

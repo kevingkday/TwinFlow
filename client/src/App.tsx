@@ -47,11 +47,15 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
   const bodyWords = item.outreachDraft?.body ? item.outreachDraft.body.split(/\s+/).length : 50;
   const readSeconds = Math.max(25, Math.ceil((bodyWords / 180) * 60));
 
+  const cleanCompany = (item.companyName || '')
+    .replace(/^(?:news|press\s*release|media\s*release|release|update|announcement)\s*[|:\-\u2013\u2014]\s*/i, '')
+    .trim() || item.companyName;
+
   const primaryContact: DecisionMaker = {
     id: item.contact?.id || `dm-${item.id}`,
-    name: item.contact?.name || 'Verified Executive',
-    title: item.contact?.title || 'Decision Maker',
-    company: item.companyName,
+    name: item.contact?.name || '',
+    title: item.contact?.title || '',
+    company: cleanCompany,
     email: item.contact?.email || undefined,
     linkedinUrl: item.contact?.linkedinUrl || undefined,
     avatarUrl: item.contact?.avatarUrl || undefined,
@@ -79,7 +83,7 @@ function mapApiSignalToLead(item: ApiSignalItem): LeadCardData {
     id: item.id,
     parentSignalId: item.parentSignalId || null,
     headline: item.title,
-    companyName: item.companyName,
+    companyName: cleanCompany,
     source: hostname,
     sourceUrl: item.sourceUrl,
     publishedAgo: item.parentSignalId ? 'Branched Lead' : formatPublishedAgo(item.publishedAt),

@@ -258,11 +258,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [campaignName, setCampaignName] = useState(campaign?.name || '');
-  const [targetLocation, setTargetLocation] = useState(campaign?.targetLocation || user?.targetLocation || 'Vancouver, BC');
-  const [userIntent, setUserIntent] = useState(campaign?.userIntent || user?.userIntent || 'sales_client_acquisition');
-  const [userMission, setUserMission] = useState(
-    campaign?.userMission || user?.userMission || ''
-  );
+  const [targetLocation, setTargetLocation] = useState(campaign?.targetLocation || '');
+  const [userIntent, setUserIntent] = useState(campaign?.userIntent || 'sales_client_acquisition');
+  const [userMission, setUserMission] = useState(campaign?.userMission || '');
 
   const [activeSectorTab, setActiveSectorTab] = useState<string>('popular');
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
@@ -308,20 +306,30 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       if (campaign.buyerRoles?.length) setBuyerRolesText(ensureArray(campaign.buyerRoles).join(', '));
       if (campaign.buyerCompanySize) setBuyerCompanySize(campaign.buyerCompanySize);
       if (campaign.serviceArea) setServiceArea(campaign.serviceArea);
-    } else if (user) {
+    } else {
+      // New campaign starts completely blank (never pre-fills previous campaign's sectors/location)
       setCampaignName('');
-      if (user.targetLocation) setTargetLocation(user.targetLocation);
-      if (user.userIntent) setUserIntent(user.userIntent);
-      setUserMission(user.userMission || '');
-      if (user.targetIndustries) {
-        const arr = ensureArray(user.targetIndustries);
-        if (arr.length > 0) setSelectedIndustries(arr);
-      }
+      setTargetLocation('');
+      setUserIntent('sales_client_acquisition');
+      setUserMission('');
+      setSelectedIndustries([]);
+      setSelectedTriggers([
+        'New Location or Facility Opening',
+        'Major Contract or RFP Awarded',
+        'New Managing Partner / Executive Hire',
+      ]);
+      setSelectedRoles([
+        'Owner / Founder / Principal',
+        'President / General Manager (GM)',
+        'VP of Sales / Business Development',
+      ]);
     }
+    setSubmitError(null);
   }, [campaign, user, isOpen]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [progressStatus, setProgressStatus] = useState<string>('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -346,7 +354,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
   const handleFinish = async () => {
     setIsSubmitting(true);
-    setProgressStatus('AI analyzing your mission, intent, and target location...');
+    setSubmitError(null);
+    setProgressStatus('AI generating 6–10 targeted search queries from your profile...');
     playSound('approve');
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('twinflow_session_token') : null;
@@ -358,6 +367,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     }
 
     const finalCampaignName = campaignName.trim() || `${targetLocation.split(',')[0] || 'Regional'} Market Growth`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
       let res: Response;
@@ -365,13 +376,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         res = await fetch(`/api/campaigns/${campaign.id}`, {
           method: 'PATCH',
           headers,
+          signal: controller.signal,
           body: JSON.stringify({
             name: finalCampaignName,
             targetLocation,
             userIntent,
             userMission,
             companyDescription: userMission,
-            servicesOffered: ensureArray(user?.servicesOffered, []),
+            servicesOffered: ensureArray(campaign?.servicesOffered, []),
             targetIndustries: selectedIndustries,
             targetTriggers: selectedTriggers,
             targetRoles: selectedRoles,
@@ -386,13 +398,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         res = await fetch('/api/campaigns', {
           method: 'POST',
           headers,
+          signal: controller.signal,
           body: JSON.stringify({
             name: finalCampaignName,
             targetLocation,
             userIntent,
             userMission,
             companyDescription: userMission,
-            servicesOffered: ensureArray(user?.servicesOffered, []),
+            servicesOffered: [],
             targetIndustries: selectedIndustries,
             targetTriggers: selectedTriggers,
             targetRoles: selectedRoles,
@@ -408,18 +421,25 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setProgressStatus('Calibrated query & seeded campaign signals...');
+        setProgressStatus('Saved campaign and generated adaptive queries!');
         playSound('streak');
         setTimeout(() => {
+          setIsSubmitting(false);
           onComplete(data.user || user, data.campaign);
-        }, 1000);
+        }, 400);
       } else {
         setIsSubmitting(false);
-        alert(data.error || 'Failed to save campaign. Please try again.');
+        setSubmitError(data.error || 'Failed to save campaign. Please try again.');
       }
     } catch (err: unknown) {
       setIsSubmitting(false);
-      alert(err instanceof Error ? err.message : 'Network error during setup.');
+      if (err instanceof Error && err.name === 'AbortError') {
+        setSubmitError('Campaign setup timed out after 25 seconds. Please try again.');
+      } else {
+        setSubmitError(err instanceof Error ? err.message : 'Network error during setup.');
+      }
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
@@ -882,16 +902,28 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Single words are too broad; full sentences return 0 news results. Our AI synthesizes the optimal query:
+                      TwinFlow generates 6–10 candidate queries from what you sell, your buyer sectors, buying triggers, and location, then ranks them by relevant leads:
                     </p>
                     <div className="p-2.5 rounded-lg bg-white border border-slate-200 font-mono text-[11px] text-slate-800 flex items-center gap-2 overflow-x-auto shadow-2xs">
                       <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="text-blue-700 font-semibold">{targetLocation.split(',')[0]}</span>
-                      <span className="text-slate-400">+</span>
-                      <span className="text-slate-900 font-semibold">{selectedIndustries[0] || 'Commercial'}</span>
-                      <span className="text-slate-400">+</span>
-                      <span className="text-slate-700">"{selectedTriggers[0]?.split(' ')[0] || 'Expansion'}"</span>
+                      <span>
+                        {(() => {
+                          const place = serviceArea === 'national' ? '' : targetLocation.split(',')[0]?.trim();
+                          const missionLower = (userMission || '').toLowerCase();
+                          const topic = /cyber|ai risk|ai liability/.test(missionLower)
+                            ? 'cybersecurity breach'
+                            : /managed it|\bmsp\b/.test(missionLower)
+                            ? `${selectedIndustries[0]?.split(' ')[0]?.toLowerCase() || 'clinic'} IT`
+                            : buyerIndustriesText.split(',')[0]?.trim() || selectedIndustries[0] || 'business expansion';
+                          return [place, topic].filter(Boolean).join(' ') || 'Enter your business description & location';
+                        })()}
+                      </span>
                     </div>
+                    {submitError && (
+                      <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
+                        {submitError}
+                      </div>
+                    )}
                     <div className="text-[10px] text-slate-500 flex items-center justify-between pt-1">
                       <span>Targeting: <strong className="text-slate-800">{targetLocation}</strong></span>
                       <span>Intent: <strong className="text-slate-800">{userIntent.replace(/_/g, ' ')}</strong></span>

@@ -153,6 +153,78 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   );
   const [queryEditedManually, setQueryEditedManually] = useState(false);
 
+  // Adaptive Campaign Queries State (A.6)
+  interface CampaignQueryItem {
+    id: string;
+    queryText: string;
+    tier: string;
+    pinned: boolean;
+    status: string;
+    runs: number;
+    articlesReturned: number;
+    relevantCount: number;
+    savedCount: number;
+    rejectedCount: number;
+  }
+  const [campaignQueries, setCampaignQueries] = useState<CampaignQueryItem[]>([]);
+  const [newCampaignQuery, setNewCampaignQuery] = useState('');
+
+  const fetchCampaignQueries = async (campId?: string | null) => {
+    if (!campId) {
+      setCampaignQueries([]);
+      return;
+    }
+    try {
+      const res = await authFetch(`/api/campaigns/${campId}/queries`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.queries)) {
+          setCampaignQueries(data.queries);
+        }
+      }
+    } catch {
+      // non-fatal
+    }
+  };
+
+  useEffect(() => {
+    fetchCampaignQueries(activeCampaign?.id);
+  }, [activeCampaign?.id]);
+
+  const handleTogglePinQuery = async (q: CampaignQueryItem) => {
+    if (!activeCampaign?.id) return;
+    const res = await authFetch(`/api/campaigns/${activeCampaign.id}/queries/${q.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinned: !q.pinned }),
+    });
+    if (res.ok) fetchCampaignQueries(activeCampaign.id);
+  };
+
+  const handleDeleteQuery = async (queryId: string) => {
+    if (!activeCampaign?.id) return;
+    const res = await authFetch(`/api/campaigns/${activeCampaign.id}/queries/${queryId}`, {
+      method: 'DELETE',
+    });
+    if (res.ok) {
+      setCampaignQueries((prev) => prev.filter((item) => item.id !== queryId));
+    }
+  };
+
+  const handleAddCampaignQuery = async () => {
+    const clean = newCampaignQuery.trim();
+    if (!clean || !activeCampaign?.id) return;
+    const res = await authFetch(`/api/campaigns/${activeCampaign.id}/queries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ queryText: clean, pinned: true }),
+    });
+    if (res.ok) {
+      setNewCampaignQuery('');
+      fetchCampaignQueries(activeCampaign.id);
+    }
+  };
+
   // Sync state if active campaign changes
   useEffect(() => {
     if (activeCampaign) {
@@ -482,7 +554,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSave} className="space-y-6 pb-28">
+        <form onSubmit={handleSave} className="space-y-6 pb-36">
           {/* Active Campaign Switcher & Creator */}
           {campaigns.length > 0 && (
             <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -559,6 +631,88 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Active Adaptive Queries & Hit Rates */}
+            {activeCampaign && (
+              <div className="mt-4 pt-4 border-t border-blue-200/60 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-blue-900">
+                    Active Search Queries ({campaignQueries.filter((q) => q.status === 'active').length})
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={newCampaignQuery}
+                      onChange={(e) => setNewCampaignQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCampaignQuery();
+                        }
+                      }}
+                      placeholder="Add & pin query..."
+                      className="px-2.5 py-1 rounded-lg border border-blue-200 bg-white text-[11px] text-slate-800"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCampaignQuery}
+                      className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold cursor-pointer"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+                {campaignQueries.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {campaignQueries
+                      .filter((q) => q.status === 'active')
+                      .map((q) => {
+                        const hitRate = q.runs > 0 ? Math.round((q.relevantCount / q.runs) * 100) : null;
+                        return (
+                          <div
+                            key={q.id}
+                            className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-mono font-semibold text-slate-800 truncate">{q.queryText}</div>
+                              <div className="text-[10px] text-slate-500">
+                                {q.runs} runs · {q.relevantCount} relevant · {q.savedCount} saved
+                                {hitRate !== null ? ` · ${hitRate}% hit/run` : ' · untested'}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePinQuery(q)}
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer ${
+                                  q.pinned
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                                title={q.pinned ? 'Unpin query' : 'Pin query'}
+                              >
+                                {q.pinned ? 'Pinned' : 'Pin'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteQuery(q.id)}
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 cursor-pointer"
+                                title="Delete query"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    Candidate queries will appear here after you save or run your first scout.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -254,3 +254,11 @@ export function findReachableEmail(text: string): string | null {
   }
   return null;
 }
+
+/** Strip editorial/wire prefixes such as "News | ", "Press Release | ", "Update: " from company names. */
+export function cleanCompanyName(name: string): string {
+  return (name || '')
+    .replace(/^(?:news|press\s*release|media\s*release|release|update|announcement|feature|exclusive|sponsored)\s*[|:\-\u2013\u2014]\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}

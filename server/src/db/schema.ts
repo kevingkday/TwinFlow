@@ -68,6 +68,7 @@ export const campaigns = sqliteTable('campaigns', {
   targetRoles: text('target_roles'), // JSON array string
   valueProp: text('value_prop'),
   companyDescription: text('company_description'),
+  organization: text('organization'),
   servicesOffered: text('services_offered'),
   productsOffered: text('products_offered'),
   website: text('website'),
@@ -87,6 +88,32 @@ export const campaigns = sqliteTable('campaigns', {
   allowNationalSearch: integer('allow_national_search', { mode: 'boolean' }).notNull().default(false),
   isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
   status: text('status', { enum: ['active', 'archived'] }).notNull().default('active'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+/**
+ * Campaign Queries Table
+ * Tracks adaptive multi-query candidates and their per-query relevance & conversion hit rates
+ */
+export const campaignQueries = sqliteTable('campaign_queries', {
+  id: text('id').primaryKey(),
+  campaignId: text('campaign_id')
+    .notNull()
+    .references(() => campaigns.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  queryText: text('query_text').notNull(),
+  tier: text('tier', { enum: ['specific', 'broad', 'variant', 'manual'] }).notNull().default('specific'),
+  pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+  status: text('status', { enum: ['active', 'retired'] }).notNull().default('active'),
+  runs: integer('runs').notNull().default(0),
+  articlesReturned: integer('articles_returned').notNull().default(0),
+  relevantCount: integer('relevant_count').notNull().default(0),
+  savedCount: integer('saved_count').notNull().default(0),
+  rejectedCount: integer('rejected_count').notNull().default(0),
+  lastRunAt: text('last_run_at'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -142,6 +169,8 @@ export const signals = sqliteTable('signals', {
   industryTags: text('industry_tags'), // JSON array string e.g. ["Fintech", "Series A"]
   fitScore: integer('fit_score'),
   whyMatched: text('why_matched'),
+  queryId: text('query_id'),
+  triggerSentence: text('trigger_sentence'),
   status: text('status', { enum: ['queued', 'approved', 'dismissed'] }).notNull().default('queued'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

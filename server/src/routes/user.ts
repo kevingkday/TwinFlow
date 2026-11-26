@@ -276,6 +276,7 @@ userRouter.patch('/profile', async (c) => {
   // If user has an active campaign, synchronize search parameters with it
   if (user.activeCampaignId) {
     const campaignUpdates: Partial<typeof schema.campaigns.$inferInsert> = {
+      organization: updates.organization !== undefined ? updates.organization : user.organization,
       targetLocation: finalLocation,
       userIntent: finalIntent,
       userMission: finalMission,

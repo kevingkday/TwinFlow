@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import app from '../src/index';
 import type { Bindings } from '../src/db';
 import { createTestDatabase } from './d1';
-import { planNewsQueryWithAI } from '../src/services/aiQueryPlanner';
+import { generateCandidateQueries, planNewsQueryWithAI } from '../src/services/aiQueryPlanner';
 import { judgeArticleRelevance, FIT_SCORE_THRESHOLD } from '../src/services/relevanceJudge';
 import { adaptPitchForContact, enrichSignalWithLLM } from '../src/services/llmEnricher';
 import { findApolloContact } from '../src/services/apollo';
 import { SCOUT_RUN_CREDIT_COST } from '../src/services/credits';
+import { cleanCompanyName } from '../src/services/signalQuality';
+import { getDb, schema } from '../src/db';
+import { retireAndReplaceQueries, seedCampaignQueries, recordQueryRun } from '../src/services/queryOptimizer';
 
 function createEnv() {
   const { sqlite, DB } = createTestDatabase();
@@ -205,7 +208,11 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
     expect(Array.isArray(deckBody.demoSignals)).toBe(true);
     expect(deckBody.demoSignals.length).toBeGreaterThan(0);
 
-    // Run scout (sync mode for deterministic test) and verify credits are deducted
+    // Configure Vancouver cyber/AI profile so off-topic sample articles yield 0 leads -> 0 credits charged (A.5)
+    sqlite
+      .prepare(`UPDATE users SET target_location = 'Vancouver, BC', user_mission = 'Cyber and AI risk insurance broker' WHERE id = 'user_qa'`)
+      .run();
+
     const beforeRow = sqlite.prepare(`SELECT credit_balance FROM users WHERE id = 'user_qa'`).get() as {
       credit_balance: number;
     };
@@ -220,7 +227,138 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
     );
     expect(scoutRes.status).toBe(200);
     const scoutBody = await scoutRes.json();
-    expect(scoutBody.creditsDeducted).toBe(SCOUT_RUN_CREDIT_COST);
-    expect(scoutBody.creditBalance).toBe(beforeRow.credit_balance - SCOUT_RUN_CREDIT_COST);
+    // Sample articles with no cyber/AI/location match yield 0 leads -> 0 credits charged (A.5)
+    expect(scoutBody.ingestedCount).toBe(0);
+    expect(scoutBody.creditsDeducted).toBe(0);
+    expect(scoutBody.creditBalance).toBe(beforeRow.credit_balance);
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('Part B & E: rejects apartment tower, tea merchant, and SkyTrain contract (< 40), accepts BC ransomware (> 60), strips News | prefix', async () => {
+    const cyberBrokerProfile = {
+      location: 'Vancouver, BC',
+      userMission: 'Commercial insurance broker focused on cyber and AI risk for small and mid-sized businesses in BC',
+      servicesOffered: ['Cyber Insurance', 'AI Liability Coverage'],
+      targetIndustries: ['Healthcare', 'Law Firms', 'SMB'],
+      targetTriggers: ['Data breach', 'Ransomware', 'AI rollout'],
+      allowNationalSearch: false,
+    };
+
+    const mustRejectCases = [
+      {
+        title: 'Developer breaks ground on 42-storey apartment tower in downtown Vancouver',
+        publisher: 'Storeys',
+        text: 'Construction has started on a 42-storey rental apartment tower in Vancouver with 380 residential units.',
+      },
+      {
+        title: 'DavidsTea acquires Vancouver specialty tea merchant in retail expansion',
+        publisher: 'Retail Insider',
+        text: 'The tea merchant acquisition adds six retail storefronts across Vancouver and Victoria.',
+      },
+      {
+        title: 'Contractor loses SkyTrain Broadway Extension civil works contract in Vancouver',
+        publisher: 'BIV',
+        text: 'A transit construction consortium lost its civil engineering contract on the Vancouver SkyTrain extension.',
+      },
+    ];
+
+    for (const art of mustRejectCases) {
+      const j = await judgeArticleRelevance(cyberBrokerProfile, art);
+      expect(j.relevant).toBe(false);
+      expect(j.fitScore).toBeLessThan(40);
+    }
+
+    const mustAccept = await judgeArticleRelevance(cyberBrokerProfile, {
+      title: 'Vancouver logistics firm Coastal Freight hit by ransomware attack disrupting BC operations',
+      publisher: 'BIV',
+      text: 'Vancouver-based Coastal Freight confirmed a ransomware attack encrypted its dispatch servers on Tuesday, forcing emergency incident response across British Columbia.',
+    });
+    expect(mustAccept.relevant).toBe(true);
+    expect(mustAccept.fitScore).toBeGreaterThanOrEqual(60);
+    expect(mustAccept.triggerSentence).toContain('ransomware');
+    expect(mustAccept.whyMatched).not.toMatch(/shows a .* trigger aligned with/i);
+
+    // Judge error / non-200 never defaults to a high score
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('error', { status: 503 })));
+    const errJudgment = await judgeArticleRelevance(cyberBrokerProfile, {
+      title: 'Vancouver firm hit by ransomware',
+      publisher: 'BIV',
+      text: 'Ransomware incident in Vancouver.',
+    }, 'sk-test-fake-key-123456');
+    expect(errJudgment.relevant).toBe(false);
+    expect(errJudgment.fitScore).toBe(0);
+
+    expect(cleanCompanyName('News | GWL Realty')).toBe('GWL Realty');
+  });
+
+  it('Part A & D: verifies two campaigns on one account with separate orgs, adaptive queries, and retirement after 3 zero-hit runs', async () => {
+    const { sqlite, DB, env, auth } = (() => {
+      const base = createEnv();
+      return { ...base, DB: base.env.DB };
+    })();
+
+    // Campaign (a): Vancouver BC cyber/AI broker
+    const resA = await app.request(
+      '/api/campaigns',
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          name: 'Cyber & AI Risk – BC SMBs',
+          organization: 'Pacific Risk Partners',
+          targetLocation: 'Vancouver, BC',
+          userMission: 'Commercial insurance broker focused on cyber and AI risk for small and mid-sized businesses in BC',
+          servicesOffered: ['Cyber Insurance', 'AI Liability Coverage'],
+          makeActive: true,
+        }),
+      },
+      env
+    );
+    expect(resA.status).toBe(200);
+    const bodyA = await resA.json();
+    expect(bodyA.queries.length).toBeGreaterThanOrEqual(6);
+
+    // Campaign (b): Kelowna managed-IT & cybersecurity firm
+    const resB = await app.request(
+      '/api/campaigns',
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          name: 'Kelowna Managed IT – Clinics & Law',
+          organization: 'Okanagan IT Shield',
+          targetLocation: 'Kelowna, BC',
+          userMission: 'Managed IT and cybersecurity firm in Kelowna selling to medical clinics and law firms',
+          servicesOffered: ['Managed IT Services', 'Clinic & Law Firm Cybersecurity'],
+          makeActive: true,
+        }),
+      },
+      env
+    );
+    expect(resB.status).toBe(200);
+    const bodyB = await resB.json();
+    expect(bodyB.queries.length).toBeGreaterThanOrEqual(6);
+    expect(bodyB.campaign.organization).toBe('Okanagan IT Shield');
+
+    // Switching back to Campaign A restores Pacific Risk Partners (not Okanagan IT Shield)
+    const actA = await app.request(`/api/campaigns/${bodyA.campaign.id}/activate`, { method: 'POST', headers: auth }, env);
+    const actABody = await actA.json();
+    expect(actABody.user.organization).toBe('Pacific Risk Partners');
+
+    // Verify 3 zero-hit runs retire query and generate a replacement variant
+    const db = getDb(DB);
+    const firstQueryId = bodyA.queries[0].id;
+    await recordQueryRun(db, firstQueryId, 10, 0);
+    await recordQueryRun(db, firstQueryId, 10, 0);
+    await recordQueryRun(db, firstQueryId, 10, 0);
+    const retiredRes = await retireAndReplaceQueries(db, {
+      id: bodyA.campaign.id,
+      userId: 'user_qa',
+      targetLocation: 'Vancouver, BC',
+      serviceArea: 'local',
+    });
+    expect(retiredRes.retiredCount).toBe(1);
+    expect(retiredRes.addedCount).toBe(1);
   });
 });

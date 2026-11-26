@@ -1,5 +1,6 @@
 import {
   classifyArticleType,
+  cleanCompanyName,
   extractNamedPeople,
   isLowYieldArticle,
   isNonBuyerRole,
@@ -652,7 +653,7 @@ export function generateHeuristicEnrichment(
   publisher: string,
   operatorValueProp?: string
 ): EnrichedSignalData {
-  const company = extractCompanyFromHeadline(headline);
+  const company = cleanCompanyName(extractCompanyFromHeadline(headline));
   const cleanDomain = '';
 
   // Detect signal type
@@ -724,6 +725,8 @@ export interface AdaptPitchContext {
   valueProp?: string;
   userIntent?: string;
   city?: string;
+  triggerSentence?: string;
+  whyMatched?: string;
 }
 
 export function adaptPitchForContact(
@@ -736,7 +739,7 @@ export function adaptPitchForContact(
     rawFirst && !/^(verified|executive|decision|target|unknown|contact)$/i.test(rawFirst)
       ? rawFirst
       : 'there';
-  const targetCompany = contact.company || enriched.companyName || 'your team';
+  const targetCompany = cleanCompanyName(contact.company || enriched.companyName || '') || 'your team';
   const senderOrg = (context.userOrganization || '').replace(/\s*-\s*TwinFlow/i, '').trim();
   const senderName = (context.userName && context.userName !== 'Operator' ? context.userName : '').trim();
 
@@ -749,9 +752,11 @@ export function adaptPitchForContact(
     context.offering ||
     '';
 
-  const articleEvent =
-    (enriched.coldIntroHook || '').trim() ||
-    `I saw the recent news about ${targetCompany} (${enriched.signalType.toLowerCase()}).`;
+  const triggerText = (context.triggerSentence || '').trim();
+  const articleEvent = triggerText
+    ? `I noticed the recent report noting that "${triggerText.replace(/["]+/g, "'")}".`
+    : (enriched.coldIntroHook || '').trim() ||
+      `I saw the recent news about ${targetCompany} (${enriched.signalType.toLowerCase()}).`;
 
   const signatureLines = [senderName, senderOrg].filter(Boolean);
   const signature = signatureLines.length > 0 ? `\n\nBest regards,\n${signatureLines.join('\n')}` : '\n\nBest regards,';
@@ -760,11 +765,19 @@ export function adaptPitchForContact(
     ? `${offeringText.slice(0, 38)} for ${targetCompany}`
     : `${targetCompany} — ${enriched.signalType}`;
 
-  const serviceSentence = offeringText
-    ? `We specialize in ${offeringText}${context.city ? ` in ${context.city}` : ''}, and this kind of milestone often creates immediate needs around it.`
-    : `Given what we do${context.city ? ` in ${context.city}` : ''}, I wanted to see if we could be helpful as this moves forward.`;
+  const blob = `${offeringText} ${context.userMission || ''} ${triggerText}`.toLowerCase();
+  let serviceSentence: string;
+  if (/cyber|ai risk|ai liability|ransomware|breach/.test(blob)) {
+    serviceSentence = `We broker ${offeringText || 'cyber and AI risk insurance'}${context.city ? ` in ${context.city}` : ''}, helping businesses structure coverage for ransomware response, breach liability, and AI-error claims before an incident hits.`;
+  } else if (/managed it|\bmsp\b|it support|clinic|law firm/.test(blob)) {
+    serviceSentence = `We provide ${offeringText || 'managed IT and cybersecurity'}${context.city ? ` in ${context.city}` : ''}, keeping clinic and law-firm systems compliant, patched, and protected against downtime.`;
+  } else if (offeringText) {
+    serviceSentence = `We specialize in ${offeringText}${context.city ? ` in ${context.city}` : ''}, and this exact event creates immediate exposure and operational requirements we help teams handle.`;
+  } else {
+    serviceSentence = `I wanted to share a quick perspective on how teams handle this type of transition${context.city ? ` in ${context.city}` : ''}.`;
+  }
 
-  const body = `Hi ${firstName},\n\n${articleEvent} ${serviceSentence}\n\nWould you have 10 minutes this week for a quick intro?${signature}`;
+  const body = `Hi ${firstName},\n\n${articleEvent}\n\n${serviceSentence}\n\nWould you be open to a brief 10-minute call this week?${signature}`;
 
   return { subject: subjectCore, body };
 }

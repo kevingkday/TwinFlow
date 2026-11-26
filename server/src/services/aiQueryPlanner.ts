@@ -347,28 +347,12 @@ You must respond with valid JSON adhering to this schema:
 
 Generate the structured JSON query plan using the Goldilocks rule, ensuring the query targets buyer companies experiencing market triggers who need the specific services and products listed above.`;
 
-      // Try flagship gpt-4o first
-      let response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${cleanKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.2,
-        }),
-      });
-
-      // Fallback to gpt-4o-mini if gpt-4o has quota or model permission issues
-      let modelUsed = 'gpt-4o';
-      if (!response.ok) {
-        console.warn(`[AI Query Planner] gpt-4o returned ${response.status}, falling back to gpt-4o-mini`);
+      // Try current flagship gpt-4.1 first with a 10s timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let response: Response;
+      let modelUsed = 'gpt-4.1';
+      try {
         response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -376,7 +360,31 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: 'gpt-4.1',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.2,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      // Fallback to gpt-4o if gpt-4.1 has quota or model permission issues
+      if (!response.ok) {
+        console.warn(`[AI Query Planner] gpt-4.1 returned ${response.status}, falling back to gpt-4o`);
+        response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${cleanKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
@@ -385,7 +393,7 @@ Generate the structured JSON query plan using the Goldilocks rule, ensuring the 
             temperature: 0.2,
           }),
         });
-        modelUsed = 'gpt-4o-mini';
+        modelUsed = 'gpt-4o';
       }
 
       if (response.ok) {
@@ -633,4 +641,168 @@ export function generateAlgorithmicQueryPlan(params: {
         : 'Align your solution directly to their expansion milestone to relieve scaling bottlenecks.',
     modelUsed: 'algorithmic_fallback',
   };
+}
+
+export interface CandidateQuerySpec {
+  queryText: string;
+  tier: 'specific' | 'broad';
+}
+
+function algorithmicCandidateQueries(input: QueryPlannerInput): CandidateQuerySpec[] {
+  const buyer = deriveBuyerProfile(input);
+  const placeObj = parseCityRegion(input.location || '');
+  const city = placeObj.city;
+  const region = placeObj.region;
+  const place = buyer.serviceArea === 'national' ? '' : city || region;
+  const widerPlace = buyer.serviceArea === 'national' ? '' : region || city;
+
+  const blob = [
+    ...(input.servicesOffered || []),
+    input.userMission || '',
+    input.valueProp || '',
+    input.companyDescription || '',
+    ...(input.targetIndustries || []),
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  const out: CandidateQuerySpec[] = [];
+  const push = (q: string, tier: 'specific' | 'broad') => {
+    const clean = q.replace(/\s+/g, ' ').trim();
+    if (clean && !out.some((item) => item.queryText.toLowerCase() === clean.toLowerCase())) {
+      out.push({ queryText: clean, tier });
+    }
+  };
+
+  if (/managed it|\bmsp\b|managed services|it support/.test(blob)) {
+    const p = place || 'Kelowna';
+    const w = widerPlace || 'British Columbia';
+    push(`${p} medical clinic IT`, 'specific');
+    push(`${p} law firm cybersecurity`, 'specific');
+    push(`${p} clinic expansion`, 'specific');
+    push(`${p} ransomware breach`, 'specific');
+    push(`${p} law firm new office`, 'specific');
+    push(`${w} clinic data breach`, 'broad');
+    push(`${p} business IT upgrade`, 'broad');
+    push(`${w} managed IT compliance`, 'broad');
+    return out.slice(0, 8);
+  }
+
+  if (/cyber|ai risk|ai liability|cyber insurance/.test(blob)) {
+    const p = place || 'Vancouver';
+    const w = widerPlace || 'British Columbia';
+    push(`${p} cybersecurity breach`, 'specific');
+    push(`${p} ransomware attack`, 'specific');
+    push(`${w} AI rollout`, 'specific');
+    push(`${p} law firm ransomware`, 'specific');
+    push(`${w} data breach`, 'specific');
+    push(`${w} AI policy regulation`, 'broad');
+    push(`${p} CISO CTO hire`, 'specific');
+    push(`${w} company cybersecurity`, 'broad');
+    return out.slice(0, 8);
+  }
+
+  const offering = extractOfferingSearchTerm({
+    servicesOffered: input.servicesOffered,
+    productsOffered: input.productsOffered,
+    userMission: input.userMission,
+    valueProp: input.valueProp,
+    companyDescription: input.companyDescription,
+    buyerIndustries: buyer.buyerIndustries,
+  });
+  const sectors = buyer.buyerIndustries.slice(0, 3);
+  const triggers = ['breach', 'AI rollout', 'funding', 'expansion', 'new location', 'regulation'];
+  for (const sec of sectors) {
+    for (const trig of triggers.slice(0, 2)) {
+      push([place, sec, trig].filter(Boolean).join(' '), 'specific');
+    }
+  }
+  push([place, offering, 'expansion'].filter(Boolean).join(' '), 'broad');
+  push([widerPlace || place, offering, 'funding'].filter(Boolean).join(' '), 'broad');
+  return out.slice(0, 8);
+}
+
+/**
+ * Generate 6-10 candidate Google News queries from the campaign profile using
+ * current OpenAI model (`gpt-4.1`, falling back to `gpt-4o`), mixing specific
+ * trigger queries with a few broader ones.
+ */
+export async function generateCandidateQueries(
+  input: QueryPlannerInput,
+  openAiApiKey?: string
+): Promise<CandidateQuerySpec[]> {
+  const cleanKey = (openAiApiKey || '').trim();
+  const fallback = algorithmicCandidateQueries(input);
+  if (!cleanKey || !cleanKey.startsWith('sk-') || cleanKey.includes('your_')) {
+    return fallback;
+  }
+
+  const buyer = deriveBuyerProfile(input);
+  const placeObj = parseCityRegion(input.location || '');
+  const geoRule =
+    buyer.serviceArea === 'national'
+      ? 'Software/agency business: search anywhere (no city/province required).'
+      : `Local/licensed business: every query MUST include "${placeObj.city || input.location || ''}" or "${placeObj.region || ''}". Never widen beyond province/state.`;
+
+  const systemPrompt = `You generate 6 to 10 short Google News search queries (2-4 words each, no OR operators, no quotes) for a B2B lead scout.
+Each query must combine: what the business sells (or its buyer sector) + a concrete buying trigger (data breach, ransomware, new AI rollout, AI policy or regulation, funding round, acquisition, new location, new CTO/CISO hire) + the place (when local).
+Mix 5-7 specific queries (e.g. "Vancouver law firm ransomware", "BC company AI rollout") with 2-3 broader ones.
+${geoRule}
+Respond with JSON only: { "queries": [ { "queryText": "...", "tier": "specific" | "broad" } ] }`;
+
+  const userPrompt = `Business sells: ${(input.servicesOffered || []).join(', ') || input.userMission || input.valueProp || 'B2B services'}
+Description: ${input.companyDescription || input.userMission || ''}
+Buyer sectors: ${buyer.buyerIndustries.join(', ')}
+Target triggers: ${(input.targetTriggers || []).join(', ') || 'breach, AI rollout, funding, expansion, new location'}
+Location: ${input.location || 'Unspecified'}`;
+
+  const callModel = async (model: string) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      return await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${cleanKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.3,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  try {
+    let res = await callModel('gpt-4.1');
+    if (!res.ok) res = await callModel('gpt-4o');
+    if (res.ok) {
+      const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      const content = json.choices?.[0]?.message?.content;
+      if (content) {
+        const parsed = JSON.parse(content) as { queries?: Array<{ queryText?: string; tier?: string }> };
+        const valid = (parsed.queries || [])
+          .filter((q) => typeof q.queryText === 'string' && q.queryText.trim().length >= 3)
+          .map((q) => ({
+            queryText: q.queryText!.replace(/\s+-\w+/g, '').replace(/\s+/g, ' ').trim(),
+            tier: (q.tier === 'broad' ? 'broad' : 'specific') as 'specific' | 'broad',
+          }))
+          .slice(0, 10);
+        if (valid.length >= 4) return valid;
+      }
+    }
+  } catch (err) {
+    console.warn('[Candidate Queries] OpenAI generation failed, using algorithmic fallback:', err);
+  }
+
+  return fallback;
 }
