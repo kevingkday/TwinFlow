@@ -159,8 +159,8 @@ campaignsRouter.post('/', async (c) => {
     return c.json({ success: false, error: 'Invalid JSON body' }, 400);
   }
 
-  const organization = (body.organization || user.organization || '').trim();
-  const website = (body.website || user.website || '').trim();
+  const organization = (body.organization || '').trim();
+  const website = (body.website || '').trim();
   const targetLocation = (body.targetLocation || '').trim();
   const userIntent = (body.userIntent || 'sales_client_acquisition').trim();
   const userMission = (body.userMission || '').trim();

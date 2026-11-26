@@ -1,6 +1,8 @@
 export interface Campaign {
   id: string;
   name: string;
+  organization?: string;
+  website?: string;
   targetLocation: string;
   userIntent: string;
   userMission: string;

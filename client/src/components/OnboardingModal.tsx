@@ -258,6 +258,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [campaignName, setCampaignName] = useState(campaign?.name || '');
+  const [organization, setOrganization] = useState(campaign?.organization || '');
+  const [website, setWebsite] = useState(campaign?.website || '');
   const [targetLocation, setTargetLocation] = useState(campaign?.targetLocation || '');
   const [userIntent, setUserIntent] = useState(campaign?.userIntent || 'sales_client_acquisition');
   const [userMission, setUserMission] = useState(campaign?.userMission || '');
@@ -287,6 +289,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     }
     if (campaign) {
       setCampaignName(campaign.name || '');
+      setOrganization(campaign.organization || '');
+      setWebsite(campaign.website || '');
       if (campaign.targetLocation) setTargetLocation(campaign.targetLocation);
       if (campaign.userIntent) setUserIntent(campaign.userIntent);
       if (campaign.userMission) setUserMission(campaign.userMission);
@@ -307,8 +311,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       if (campaign.buyerCompanySize) setBuyerCompanySize(campaign.buyerCompanySize);
       if (campaign.serviceArea) setServiceArea(campaign.serviceArea);
     } else {
-      // New campaign starts completely blank (never pre-fills previous campaign's sectors/location)
+      // New campaign starts completely blank (never pre-fills previous campaign's sectors/location/org)
       setCampaignName('');
+      setOrganization('');
+      setWebsite('');
       setTargetLocation('');
       setUserIntent('sales_client_acquisition');
       setUserMission('');
@@ -379,6 +385,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           signal: controller.signal,
           body: JSON.stringify({
             name: finalCampaignName,
+            organization: organization.trim(),
+            website: website.trim(),
             targetLocation,
             userIntent,
             userMission,
@@ -401,6 +409,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           signal: controller.signal,
           body: JSON.stringify({
             name: finalCampaignName,
+            organization: organization.trim(),
+            website: website.trim(),
             targetLocation,
             userIntent,
             userMission,
@@ -558,8 +568,35 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                       value={campaignName}
                       onChange={(e) => setCampaignName(e.target.value)}
                       placeholder="e.g. Pacific Northwest Commercial Expansion"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-xs transition-colors"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Company Name (for email sign-off)
+                      </label>
+                      <input
+                        type="text"
+                        value={organization}
+                        onChange={(e) => setOrganization(e.target.value)}
+                        placeholder="e.g. Pacific Risk Partners"
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Company Website
+                      </label>
+                      <input
+                        type="text"
+                        value={website}
+                        onChange={(e) => setWebsite(e.target.value)}
+                        placeholder="https://yourcompany.com"
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                    </div>
                   </div>
 
                   {/* Intent Selection Cards */}
@@ -902,22 +939,52 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-                      TwinFlow generates 6–10 candidate queries from what you sell, your buyer sectors, buying triggers, and location, then ranks them by relevant leads:
+                      TwinFlow generates 6–8 candidate queries from what you sell, your buyer sectors, buying triggers, and location, then ranks them by relevant leads:
                     </p>
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-200 font-mono text-[11px] text-slate-800 flex items-center gap-2 overflow-x-auto shadow-2xs">
-                      <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>
-                        {(() => {
-                          const place = serviceArea === 'national' ? '' : targetLocation.split(',')[0]?.trim();
-                          const missionLower = (userMission || '').toLowerCase();
-                          const topic = /cyber|ai risk|ai liability/.test(missionLower)
-                            ? 'cybersecurity breach'
-                            : /managed it|\bmsp\b/.test(missionLower)
-                            ? `${selectedIndustries[0]?.split(' ')[0]?.toLowerCase() || 'clinic'} IT`
-                            : buyerIndustriesText.split(',')[0]?.trim() || selectedIndustries[0] || 'business expansion';
-                          return [place, topic].filter(Boolean).join(' ') || 'Enter your business description & location';
-                        })()}
-                      </span>
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-200 font-mono text-[11px] text-slate-800 space-y-1.5 shadow-2xs">
+                      {(() => {
+                        const place = serviceArea === 'national' ? '' : targetLocation.split(',')[0]?.trim();
+                        const region = serviceArea === 'national' ? '' : targetLocation.split(',')[1]?.trim() || place;
+                        const blob = `${userMission} ${selectedIndustries.join(' ')}`.toLowerCase();
+                        let previewQueries: string[] = [];
+                        if (/managed it|\bmsp\b|managed services|it support/.test(blob)) {
+                          const p = place || 'City';
+                          const w = region || p;
+                          previewQueries = [
+                            `${p} medical clinic IT`,
+                            `${p} law firm cybersecurity`,
+                            `${p} clinic expansion`,
+                            `${p} ransomware breach`,
+                            `${p} law firm new office`,
+                            `${w} clinic data breach`,
+                          ];
+                        } else if (/cyber|ai risk|ai liability|cyber insurance/.test(blob)) {
+                          const p = place || 'City';
+                          const w = region || p;
+                          previewQueries = [
+                            `${p} cybersecurity breach`,
+                            `${p} ransomware attack`,
+                            `${w} AI rollout`,
+                            `${p} law firm ransomware`,
+                            `${w} data breach`,
+                            `${w} AI policy regulation`,
+                          ];
+                        } else {
+                          const sec = buyerIndustriesText.split(',')[0]?.trim() || selectedIndustries[0] || 'business';
+                          previewQueries = [
+                            [place, sec, 'expansion'].filter(Boolean).join(' '),
+                            [place, sec, 'funding'].filter(Boolean).join(' '),
+                            [place, sec, 'new location'].filter(Boolean).join(' '),
+                            [region || place, sec, 'regulation'].filter(Boolean).join(' '),
+                          ];
+                        }
+                        return previewQueries.map((q) => (
+                          <div key={q} className="flex items-center gap-2">
+                            <Search className="w-3 h-3 text-blue-500 shrink-0" />
+                            <span>{q}</span>
+                          </div>
+                        ));
+                      })()}
                     </div>
                     {submitError && (
                       <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">

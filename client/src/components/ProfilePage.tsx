@@ -229,6 +229,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   useEffect(() => {
     if (activeCampaign) {
       setCampaignName(activeCampaign.name || '');
+      setOrganization(activeCampaign.organization || '');
+      setWebsite(activeCampaign.website || '');
+      setTargetLocation(activeCampaign.targetLocation || '');
+      setUserIntent(activeCampaign.userIntent || 'sales_client_acquisition');
+      setUserMission(activeCampaign.userMission || '');
+      setCompanyDescription(activeCampaign.companyDescription || activeCampaign.userMission || '');
+      setValueProp(activeCampaign.valueProp || '');
+      setServicesOffered(ensureArray(activeCampaign.servicesOffered, []));
+      setProductsOffered(ensureArray(activeCampaign.productsOffered, []));
+      setTargetRoles(ensureArray(activeCampaign.targetRoles, []));
+      setCalibratedQuery(stripNegativeTerms(activeCampaign.icpQuery || ''));
+      setQueryEditedManually(false);
     }
   }, [activeCampaign]);
 

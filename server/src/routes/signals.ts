@@ -636,7 +636,8 @@ async function runIngestPipeline(
 
     // 1. Adaptive multi-query selection from campaign_queries (capped at MAX_QUERIES_PER_SCOUT = 4)
     let selectedQueries: Array<{ id: string | null; queryText: string }> = [];
-    if (customQuery) {
+    const isAdHocOverride = Boolean(customQuery) && customQuery !== savedIcpQuery;
+    if (isAdHocOverride) {
       selectedQueries = [{ id: null, queryText: customQuery }];
     } else if (activeCampaign) {
       let allCampaignQueries = await db.query.campaignQueries.findMany({
@@ -699,6 +700,7 @@ async function runIngestPipeline(
       if (wideNet.source !== 'none') searchSource = wideNet.source;
       rawCountTotal += wideNet.rawCount;
       executedQueries.push(...wideNet.queries);
+      console.log(`[Scout] query="${sq.queryText}" raw=${wideNet.rawCount} candidates=${wideNet.candidates.length}`);
       if (sq.id) {
         const st = queryStatsMap.get(sq.id)!;
         st.articlesReturned += wideNet.candidates.length;
@@ -742,6 +744,7 @@ async function runIngestPipeline(
     onProgress?.('triaging', `Triaging ${fresh.length} fresh articles...`, 45);
 
     // 2. Fast batch headline/snippet triage BEFORE any Firecrawl spend.
+    const triageCap = Math.min(12, Math.max(limit * 3, 8));
     const triage = await triageCandidates(
       fresh.map(({ index, title, snippet, publisher, url, publishedAt }) => ({ index, title, snippet, publisher, url, publishedAt })),
       {
@@ -754,7 +757,7 @@ async function runIngestPipeline(
         location,
         locationLock,
       },
-      limit,
+      triageCap,
       {
         apiKey: env.TYPESAFE_AI_API_KEY || env.TYPESAFE_API_KEY,
         model: env.TYPESAFE_MODEL,
@@ -795,6 +798,7 @@ async function runIngestPipeline(
 
     // 3. Only triage winners reach Firecrawl, full enrichment, and Apollo.
     for (const article of winners) {
+      if (ingestedSignals.length >= limit) break;
       // 3a. Firecrawl Scrape / Crawl
       const crawled = await crawlArticle(article.url, env.FIRECRAWL_API_KEY, article.snippet);
 
@@ -825,6 +829,9 @@ async function runIngestPipeline(
         { title: article.title, publisher: article.publisher, text: `${article.snippet}\n${crawled.markdown}` },
         env.OPENAI_API_KEY
       );
+      console.log(
+        `[Judge] "${article.title}" score=${judgment.fitScore} trigger=${judgment.triggerType} relevant=${judgment.relevant} local=${judgment.locationMatch} buyer=${judgment.buyerPersonaMatch} model=${judgment.modelUsed} reason="${judgment.whyMatched || judgment.relevantReason}"`
+      );
       if (!judgment.relevant) {
         telemetry.rejectedByJudge += 1;
         auditLog.push({
@@ -835,9 +842,8 @@ async function runIngestPipeline(
           publishedAt: article.publishedAt,
           sourceTier: article.sourceTier,
           status: 'filtered',
-          reason: `Rejected (fit ${judgment.fitScore}%): ${judgment.whyMatched || judgment.locationReason || judgment.relevantReason}`,
+          reason: `Rejected (fit ${judgment.fitScore}%, trigger=${judgment.triggerType}, model=${judgment.modelUsed}): ${judgment.whyMatched || judgment.locationReason || judgment.relevantReason}`,
         });
-        console.log(`[Ingest] dropped low-fit article "${article.title}" (${judgment.fitScore}%): ${judgment.relevantReason}`);
         continue;
       }
       const articlePerson =
@@ -1096,12 +1102,25 @@ async function runIngestPipeline(
       : '';
 
     // Update per-query stats & retire/replace zero-hit queries
-    for (const [qId, stats] of queryStatsMap.entries()) {
-      await recordQueryRun(db, qId, stats.articlesReturned, stats.relevantCount);
+    const queryBreakdown: Array<{ query: string; returned: number; relevant: number }> = [];
+    for (const sq of selectedQueries) {
+      const st = sq.id ? queryStatsMap.get(sq.id) : null;
+      queryBreakdown.push({
+        query: sq.queryText,
+        returned: st?.articlesReturned ?? wideNet.candidates.length,
+        relevant: st?.relevantCount ?? ingestedSignals.length,
+      });
+      if (sq.id && st) {
+        await recordQueryRun(db, sq.id, st.articlesReturned, st.relevantCount);
+      }
     }
     if (activeCampaign) {
       await retireAndReplaceQueries(db, activeCampaign);
     }
+
+    const querySummary = queryBreakdown
+      .map((qb) => `"${qb.query}" (${qb.returned} hits, ${qb.relevant} kept)`)
+      .join(', ');
 
     // Deduct scout run credits ONLY when at least 1 lead was returned (A.5)
     const creditsDeducted = ingestedSignals.length > 0 ? SCOUT_RUN_CREDIT_COST : 0;
@@ -1128,12 +1147,13 @@ async function runIngestPipeline(
       ingestedCount: ingestedSignals.length,
       creditsDeducted,
       creditBalance: newCreditBalance,
+      queryBreakdown,
       signals: ingestedSignals,
-      telemetry: fullTelemetry,
+      telemetry: { ...fullTelemetry, queryBreakdown },
       message:
         ingestedSignals.length > 0
-          ? `Found ${ingestedSignals.length} new lead${ingestedSignals.length === 1 ? '' : 's'} across ${selectedQueries.length} queries. ${summaryDetail}`.trim()
-          : `No relevant leads found (0 credits charged). ${summaryDetail}`.trim(),
+          ? `Found ${ingestedSignals.length} new lead${ingestedSignals.length === 1 ? '' : 's'} — ${querySummary}. ${summaryDetail}`.trim()
+          : `No relevant leads found (0 credits charged) — ${querySummary}. ${summaryDetail}`.trim(),
     };
 }
 

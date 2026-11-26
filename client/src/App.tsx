@@ -443,7 +443,6 @@ export const App: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: activeQuery,
           limit,
           async: true,
         }),
