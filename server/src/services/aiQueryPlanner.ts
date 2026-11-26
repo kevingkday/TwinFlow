@@ -783,7 +783,8 @@ Location: ${input.location || 'Unspecified'}`;
   };
 
   try {
-    let res = await callModel('gpt-4.1');
+    let res = await callModel('gpt-5');
+    if (!res.ok) res = await callModel('gpt-4.1');
     if (!res.ok) res = await callModel('gpt-4o');
     if (res.ok) {
       const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };

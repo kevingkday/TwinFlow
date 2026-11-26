@@ -203,26 +203,27 @@ export const JEV_TRIAGE_CHUNK_SIZE = 8;
 export const JEV_TRIAGE_THRESHOLDS = { trigger: 0.35, fit: 0.35, local: 0.4, noise: 0.6 };
 
 const TRIGGER_EVENT_TEXT =
-  'a leadership appointment, funding raise, acquisition, expansion or new facility, groundbreaking, contract award, or lease / headquarters move';
+  'a data breach, ransomware or cyberattack, AI rollout or AI regulation, leadership/CTO/CISO hire, funding raise, acquisition, expansion, new location/clinic/office, or compliance shift';
 
 function jevQuestionsFor(index: number, profile: TriageBuyerProfile, lock: LocationLock): Record<string, JevQuestion> {
   const ref = `the article with key "${index}" in state.articles`;
   const area = [lock.city, lock.region].filter(Boolean).join(' / ');
+  const offeringDesc = profile.offering || 'B2B services';
   const questions: Record<string, JevQuestion> = {
     [`a${index}_trigger`]: {
       type: 'noul',
-      instructions: `Does ${ref} report ${TRIGGER_EVENT_TEXT} at one identifiable operating company?`,
+      instructions: `Does ${ref} report ${TRIGGER_EVENT_TEXT} at one identifiable operating company or organization?`,
       criteria: {
-        true: 'A named operating company (not a government, charity, sports team, or index) had a concrete trigger event.',
-        false: 'No identifiable operating company, or no concrete trigger event.',
+        true: 'A named operating company or organization had a concrete trigger event relevant to B2B buying.',
+        false: 'No identifiable operating company/organization, or no concrete trigger event.',
       },
     },
     [`a${index}_fit`]: {
       type: 'noul',
-      instructions: `Is the company in ${ref} a commercial operating company or enterprise that could buy commercial services (e.g. insurance, legal, accounting, IT, consulting) or enter B2B partnerships?`,
+      instructions: `Would the company or organization in ${ref} specifically need to buy what the seller offers (${offeringDesc}) based on the event in the article?`,
       criteria: {
-        true: 'A commercial operating company, business, agency, manufacturer, contractor, or enterprise.',
-        false: 'A government department, school board, sports league, or consumer charity.',
+        true: 'The event creates a direct need for the seller’s specific services or products.',
+        false: 'Unrelated industry or event with no need for the seller’s specific offering (e.g. apartment construction or transit civil works for a cyber insurance broker).',
       },
     },
     [`a${index}_noise`]: {
