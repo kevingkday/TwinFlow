@@ -16,6 +16,7 @@ import { generateAlgorithmicQueryPlan, generateCandidateQueries, inferGoogleCoun
 import {
   MAX_ARTICLES_JUDGED_PER_SCOUT,
   MAX_QUERIES_PER_SCOUT,
+  buildQueryVariant,
   recordQueryRun,
   recordQuerySignalOutcome,
   retireAndReplaceQueries,
@@ -721,6 +722,44 @@ async function runIngestPipeline(
       }
     }
 
+    // 1c. If fewer than 5 candidates came back, widen 1 step (city -> region or drop 1 term) on the first query
+    if (combinedCandidates.length < 5 && selectedQueries.length > 0 && !isAdHocOverride) {
+      const existingSet = new Set(selectedQueries.map((q) => q.queryText.toLowerCase()));
+      const widenedText = buildQueryVariant(selectedQueries[0].queryText, location, serviceArea, existingSet);
+      if (widenedText) {
+        const wideNet = await fetchWideNetCandidates({
+          apiKey: env.SERP_API_KEY,
+          gl: plan.geographicFocus.gl,
+          ladder: plan.queryLadder,
+          locationLock,
+          keywords: widenedText,
+          poolSize: 15,
+          maxQueries: 1,
+          skipPrWire: true,
+          allowSampleFallback: !env.SERP_API_KEY,
+        });
+        rawCountTotal += wideNet.rawCount;
+        executedQueries.push(...wideNet.queries);
+        console.log(`[Scout] widened="${widenedText}" raw=${wideNet.rawCount} candidates=${wideNet.candidates.length}`);
+        for (const cand of wideNet.candidates) {
+          if (combinedCandidates.length >= MAX_ARTICLES_JUDGED_PER_SCOUT) break;
+          const normUrl = cand.url.trim().toLowerCase().replace(/\/+$/, '');
+          const normTitle = cand.title.trim().toLowerCase().replace(/\s+/g, ' ');
+          if (seenCandidateUrls.has(normUrl) || seenCandidateTitles.has(normTitle)) continue;
+          seenCandidateUrls.add(normUrl);
+          seenCandidateTitles.add(normTitle);
+          combinedCandidates.push({
+            ...cand,
+            index: combinedCandidates.length,
+            queryId: selectedQueries[0].id,
+          });
+        }
+        if (selectedQueries[0].id && queryStatsMap.has(selectedQueries[0].id)) {
+          queryStatsMap.get(selectedQueries[0].id)!.articlesReturned += wideNet.candidates.length;
+        }
+      }
+    }
+
     const wideNet = {
       candidates: combinedCandidates,
       queries: executedQueries,
@@ -766,9 +805,12 @@ async function runIngestPipeline(
       }
     );
     const freshByIndex = new Map(fresh.map((article) => [article.index, article]));
-    const winners = triage.selectedIndices
+    let winners = triage.selectedIndices
       .map((index) => freshByIndex.get(index))
       .filter((article): article is (typeof fresh)[number] => Boolean(article));
+    if (winners.length === 0 && fresh.length > 0) {
+      winners = fresh.slice(0, Math.min(6, fresh.length));
+    }
 
     const telemetry = {
       fetchedCount: wideNet.candidates.length,
