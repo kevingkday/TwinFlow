@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   X,
   Link2,
-  Mail,
   Smartphone,
   Bookmark,
   Copy,
@@ -196,7 +195,7 @@ export const AddArticleModal: React.FC<AddArticleModalProps> = ({
             }`}
           >
             <Smartphone className="w-3.5 h-3.5" />
-            Phone Share, Email &amp; Bookmarklet
+            Phone Share &amp; Bookmarklet
           </button>
         </div>
 
@@ -297,10 +296,22 @@ export const AddArticleModal: React.FC<AddArticleModalProps> = ({
               <p className="text-slate-600 leading-relaxed">
                 <strong>iPhone (Apple Shortcut):</strong> Create a 2-step Shortcut (&ldquo;Receive URLs from Share Sheet&rdquo; &rarr; &ldquo;Get Contents of URL&rdquo; POST JSON <code>{`{"url": Shortcut Input}`}</code>) to your personal Quick-Add URL:
               </p>
-              <div className="flex items-center gap-2 pt-1">
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] font-semibold text-slate-700">Personal Quick-Add URL</span>
+                <button
+                  type="button"
+                  onClick={handleRotate}
+                  disabled={isRotating}
+                  className="text-[11px] text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isRotating ? 'animate-spin' : ''}`} />
+                  Rotate Token
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
                 <input
                   readOnly
-                  value={quickAddUrl || 'Loading...'}
+                  value={quickAddUrl || (ingestToken ? `https://twinflow.co/api/signals/quick-add?token=${ingestToken}` : 'Loading...')}
                   className="flex-1 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 font-mono text-[11px] text-slate-700"
                 />
                 <button
@@ -314,47 +325,11 @@ export const AddArticleModal: React.FC<AddArticleModalProps> = ({
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-900 flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-blue-600" />
-                  2. Save-Once Forwarding Email
-                </span>
-                <button
-                  type="button"
-                  onClick={handleRotate}
-                  disabled={isRotating}
-                  className="text-[11px] text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isRotating ? 'animate-spin' : ''}`} />
-                  Rotate
-                </button>
-              </div>
-              <p className="text-slate-600">
-                Save this address once in your Contacts as <strong>TwinFlow</strong>, then Share &rarr; Mail or forward any newsletter to it (no account ID needed):
-              </p>
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  readOnly
-                  value={forwardingEmail || (ingestToken ? `leads+${ingestToken}@twinflow.co` : 'Loading...')}
-                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 font-mono text-[11px] text-slate-700"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleCopy('email', forwardingEmail)}
-                  className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 font-semibold text-slate-700 flex items-center gap-1 cursor-pointer"
-                >
-                  {copiedField === 'email' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                  Copy
-                </button>
-              </div>
-            </div>
-
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
               <div>
                 <div className="font-bold text-slate-900 flex items-center gap-1.5">
                   <Bookmark className="w-3.5 h-3.5 text-blue-600" />
-                  3. Desktop 1-Click Bookmarklet
+                  2. Desktop 1-Click Bookmarklet
                 </div>
                 <p className="text-slate-600 mt-0.5">
                   Drag this button to your bookmarks bar to send any open article in 1 click.
