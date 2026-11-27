@@ -2882,6 +2882,7 @@ export async function ingestManualArticleForUser(
   // Manually added articles bypass Jev & relevance judge since the user already selected them.
   // Extract ALL prospects from the article (1 for standard articles, N for lists/backgrounders like 44-company announcements).
   const extractedProspects = await extractProspectsFromArticle(articleTitle, articleBody, publisher, env.OPENAI_API_KEY);
+  console.log(`[QuickAdd] url=${cleanUrl} bodyLen=${articleBody.length} extracted=${extractedProspects.length}`);
 
   const plan = generateAlgorithmicQueryPlan({
     location,
@@ -3124,11 +3125,12 @@ export async function ingestManualArticleForUser(
 
   return {
     success: true,
+    totalCount: 1,
     signalId,
     companyName,
     title: articleTitle,
     fitScore: 100,
-    message: `Added "${companyName}" to your Lead Deck.`,
+    message: `Added "${companyName}" to your Lead Deck. (bodyLen=${articleBody.length}, extracted=${extractedProspects.length})`,
   };
 }
 
@@ -3159,16 +3161,22 @@ signalsRouter.post('/quick-add', async (c) => {
   const title = (body.title || c.req.query('title') || '').trim();
   const text = (body.text || c.req.query('text') || '').trim();
 
-  const result = await ingestManualArticleForUser(db, c.env, user, {
-    url,
-    title,
-    text,
-    campaignId: body.campaignId,
-    sourceLabel: body.sourceLabel || 'Manual Add',
-  });
+  try {
+    const result = await ingestManualArticleForUser(db, c.env, user, {
+      url,
+      title,
+      text,
+      campaignId: body.campaignId,
+      sourceLabel: body.sourceLabel || 'Manual Add',
+    });
 
-  if (!result.success) {
-    return c.json(result, 400);
+    if (!result.success) {
+      return c.json(result, 400);
+    }
+    return c.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[QuickAdd] unhandled error:', message, err);
+    return c.json({ success: false, error: message, message }, 500);
   }
-  return c.json(result);
 });
