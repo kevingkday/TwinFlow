@@ -2679,9 +2679,9 @@ async function enrichManualProspectItem(
       articlePerson,
       companyName: item.companyName,
       companyDomain: item.companyDomain || '',
-      buyerTitles: ctx.buyerRoles.length ? ctx.buyerRoles : undefined,
+      buyerTitles: ctx.buyerRoles.length ? ctx.buyerRoles : ['CEO', 'Founder', 'President', 'Owner', 'CFO', 'COO'],
       industries: [...ctx.buyerIndustries, ...ctx.targetIndustries, ...(item.industry ? [item.industry] : [])],
-      locations: ctx.apolloLocations,
+      locations: undefined,
     },
     env.APOLLO_API_KEY
   );
