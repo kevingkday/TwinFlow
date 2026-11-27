@@ -3130,7 +3130,7 @@ export async function ingestManualArticleForUser(
     companyName,
     title: articleTitle,
     fitScore: 100,
-    message: `Added "${companyName}" to your Lead Deck. (bodyLen=${articleBody.length}, extracted=${extractedProspects.length})`,
+    message: `Added "${companyName}" to your Lead Deck.`,
   };
 }
 

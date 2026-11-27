@@ -857,80 +857,108 @@ export async function extractProspectsFromArticle(
   apiKey?: string
 ): Promise<ExtractedProspectItem[]> {
   const cleanKey = (apiKey || '').trim();
+  const body = (articleMarkdown || '').slice(0, 32000);
+
   if (cleanKey && cleanKey.startsWith('sk-') && !cleanKey.includes('your_')) {
-    const models = ['gpt-4.1-mini', 'gpt-4o-mini'];
-    for (const modelName of models) {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 25000);
-        let res: Response;
-        try {
-          res = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${cleanKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: modelName,
-              temperature: 0.1,
-              max_tokens: 4500,
-              response_format: { type: 'json_object' },
-              messages: [
-                {
-                  role: 'system',
-                  content: `Extract EVERY distinct operating company that is a prospect, recipient, winner, or subject in the article.
-If the article lists 10, 20, or 44 companies, you MUST return ALL of them — never stop early. Do NOT include government agencies, publishers, or partners unless they are listed as recipients.
-Use compact keys for speed:
-{ "prospects": [ { "c": "Company Name", "l": "City, Prov/State or empty", "i": "Industry or empty", "s": "1 short sentence summary" } ] }`,
-                },
-                {
-                  role: 'user',
-                  content: `Headline: ${headline}\nPublisher: ${publisher}\n\nArticle:\n${(articleMarkdown || '').slice(0, 32000)}`,
-                },
-              ],
-            }),
-            signal: controller.signal,
-          });
-        } finally {
-          clearTimeout(timer);
+    // Split long articles into ~5,500-char line-aligned chunks and extract in parallel so
+    // 40+ company backgrounders complete in ~3-5s without hitting output token or timeout limits.
+    const chunks: string[] = [];
+    if (body.length <= 6500) {
+      chunks.push(body);
+    } else {
+      const lines = body.split('\n');
+      let current = '';
+      for (const line of lines) {
+        if (current.length + line.length + 1 > 5500 && current.length > 500) {
+          chunks.push(current);
+          current = line;
+        } else {
+          current = current ? `${current}\n${line}` : line;
         }
-        if (!res.ok) continue;
+      }
+      if (current) chunks.push(current);
+    }
+
+    const extractChunk = async (chunkText: string): Promise<ExtractedProspectItem[]> => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 14000);
+      try {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${cleanKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            temperature: 0.1,
+            max_tokens: 3000,
+            response_format: { type: 'json_object' },
+            messages: [
+              {
+                role: 'system',
+                content: `Extract EVERY distinct operating company that is a prospect, recipient, winner, or subject in this text.
+Return ALL companies present — never skip or summarize. Do NOT include government agencies, publishers, or partners unless they are recipients.
+Respond with JSON: { "prospects": [ { "c": "Company Name", "l": "City, Prov/State or empty", "i": "Industry or empty", "s": "1 short sentence summary" } ] }`,
+              },
+              {
+                role: 'user',
+                content: `Headline: ${headline}\nPublisher: ${publisher}\n\nText:\n${chunkText}`,
+              },
+            ],
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          console.warn(`[ExtractProspects] gpt-4o-mini HTTP ${res.status}`);
+          return [];
+        }
         const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
         const raw = json.choices?.[0]?.message?.content;
-        if (!raw) continue;
+        if (!raw) return [];
         const parsed = JSON.parse(raw) as {
           prospects?: Array<{ c?: string; l?: string; i?: string; s?: string; companyName?: string; location?: string; industry?: string; triggerSummary?: string }>;
         };
-        const deduped: ExtractedProspectItem[] = [];
-        const seen = new Set<string>();
-        for (const item of parsed.prospects || []) {
-          const name = cleanCompanyName(String(item.c || item.companyName || '').trim());
-          if (!name || name.length < 2) continue;
-          const key = name.toLowerCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          deduped.push({
-            companyName: name,
+        return (parsed.prospects || [])
+          .map((item) => ({
+            companyName: cleanCompanyName(String(item.c || item.companyName || '').trim()),
             location: (item.l || item.location || '').trim(),
             industry: (item.i || item.industry || '').trim(),
             domain: '',
             triggerSummary: String(item.s || item.triggerSummary || headline).trim(),
             signalType: 'Funding & Expansion',
-          });
-        }
-        if (deduped.length > 0) {
-          console.log(`[ExtractProspects] ${modelName} extracted ${deduped.length} prospects from "${headline.slice(0, 60)}"`);
-          return deduped;
-        }
+          }))
+          .filter((item) => item.companyName.length >= 2);
       } catch (err) {
-        console.warn(`[ExtractProspects] ${modelName} failed:`, err instanceof Error ? err.message : String(err));
+        console.warn('[ExtractProspects] chunk failed:', err instanceof Error ? err.message : String(err));
+        return [];
+      } finally {
+        clearTimeout(timer);
       }
+    };
+
+    const chunkResults = await Promise.all(chunks.slice(0, 6).map(extractChunk));
+    const deduped: ExtractedProspectItem[] = [];
+    const seen = new Set<string>();
+    for (const list of chunkResults) {
+      for (const item of list) {
+        const key = item.companyName.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(item);
+      }
+    }
+    if (deduped.length > 0) {
+      console.log(`[ExtractProspects] extracted ${deduped.length} prospects across ${chunks.length} chunk(s)`);
+      return deduped;
     }
   }
 
-  // Heuristic fallback when OpenAI key is absent: detect multiple corporate entity lines if present
-  const corpMatches = (articleMarkdown || '').match(/^[ \t]*(?:[-*•]\s*)?([A-Z][A-Za-z0-9&'.\- ]{1,60}\b(?:Inc\.?|Corp\.?|Ltd\.?|LLC|LLP|Technologies|Labs|Analytics|AI|Group))\b/gm) || [];
+  // Heuristic fallback when OpenAI key is absent: detect multiple corporate entity lines or markdown table cells
+  const corpMatches =
+    (articleMarkdown || '').match(
+      /(?:^|\|\s*|[-*•]\s*)([A-Z][A-Za-z0-9&'.\- ]{1,60}\b(?:Inc|Corp|Ltd|LLC|LLP|Technologies|Labs|Analytics|AI|Group))\.?\b/gm
+    ) || [];
   const uniqueCorps: ExtractedProspectItem[] = [];
   const seen = new Set<string>();
   for (const m of corpMatches) {
