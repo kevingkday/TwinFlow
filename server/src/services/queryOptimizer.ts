@@ -26,10 +26,44 @@ export function selectQueriesForScout(
   queries: CampaignQueryRow[],
   maxQueries = MAX_QUERIES_PER_SCOUT
 ): CampaignQueryRow[] {
-  const ranked = rankCampaignQueries(queries);
-  const pinned = ranked.filter((q) => q.pinned);
-  const unpinned = ranked.filter((q) => !q.pinned);
-  return [...pinned, ...unpinned].slice(0, maxQueries);
+  const active = queries.filter((q) => q.status === 'active');
+  if (active.length <= maxQueries) return rankCampaignQueries(active);
+
+  const selected: CampaignQueryRow[] = [];
+  const usedIds = new Set<string>();
+  const add = (q: CampaignQueryRow) => {
+    if (selected.length >= maxQueries || usedIds.has(q.id)) return;
+    usedIds.add(q.id);
+    selected.push(q);
+  };
+
+  // 1. Pinned queries always run
+  for (const q of active.filter((item) => item.pinned)) {
+    add(q);
+  }
+
+  // 2. Top 2 by hit rate among queries that have already run
+  const testedByHitRate = active
+    .filter((q) => !usedIds.has(q.id) && q.runs > 0)
+    .sort((a, b) => scoreCampaignQuery(b) - scoreCampaignQuery(a));
+  for (const q of testedByHitRate.slice(0, 2)) {
+    add(q);
+  }
+
+  // 3. 2 least-run / untested queries (rotation so untested queries always get explored)
+  const leastRun = active
+    .filter((q) => !usedIds.has(q.id))
+    .sort((a, b) => a.runs - b.runs || scoreCampaignQuery(b) - scoreCampaignQuery(a));
+  for (const q of leastRun.slice(0, 2)) {
+    add(q);
+  }
+
+  // 4. Fill any remaining slots (e.g. when < 2 tested queries exist yet) with least-run/ranked
+  for (const q of leastRun) {
+    add(q);
+  }
+
+  return selected;
 }
 
 export async function seedCampaignQueries(

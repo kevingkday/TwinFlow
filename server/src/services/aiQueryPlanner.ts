@@ -701,10 +701,10 @@ function algorithmicCandidateQueries(input: QueryPlannerInput): CandidateQuerySp
     push(`${p} cybersecurity breach`, 'specific');
     push(`${p} ransomware attack`, 'specific');
     push(`${w} AI rollout`, 'specific');
-    push(`${p} law firm ransomware`, 'specific');
-    push(`${w} data breach`, 'specific');
-    push(`${w} AI policy regulation`, 'broad');
-    push(`${p} CISO CTO hire`, 'specific');
+    push(`${p} data breach`, 'specific');
+    push(`${w} AI policy`, 'broad');
+    push(`${p} CISO hire`, 'specific');
+    push(`${w} cyber insurance`, 'broad');
     push(`${w} company cybersecurity`, 'broad');
     return out.slice(0, 8);
   }
@@ -751,9 +751,11 @@ export async function generateCandidateQueries(
       ? 'Software/agency business: search anywhere (no city/province required).'
       : `Local/licensed business: every query MUST include "${placeObj.city || input.location || ''}" or "${placeObj.region || ''}". Never widen beyond province/state.`;
 
-  const systemPrompt = `You generate 6 to 10 short Google News search queries (2-4 words each, no OR operators, no quotes) for a B2B lead scout.
-Each query must combine: what the business sells (or its buyer sector) + a concrete buying trigger (data breach, ransomware, new AI rollout, AI policy or regulation, funding round, acquisition, new location, new CTO/CISO hire) + the place (when local).
-Mix 5-7 specific queries (e.g. "Vancouver law firm ransomware", "BC company AI rollout") with 2-3 broader ones.
+  const systemPrompt = `You generate 6 to 9 short Google News search queries (strictly 2-3 words/terms each, no OR operators, no quotes) for a B2B lead scout.
+CRITICAL:
+- Every single query MUST pair the place (when local) with what the business sells or a service-specific buying trigger (e.g., for cyber/AI insurance: cybersecurity, data breach, ransomware, AI rollout, AI policy, cyber insurance, AI liability; for managed IT/MSP: clinic IT, law firm cybersecurity, ransomware, IT upgrade, cloud migration).
+- NEVER generate generic queries unrelated to the seller's offering (for example, do NOT output "Vancouver medical clinic new location" or "BC law firm new managing partner" for a cyber/AI insurance broker unless it includes a cyber/AI/breach term).
+- Keep each query concise (2-3 terms, e.g. "Vancouver cybersecurity breach", "BC AI rollout", "Vancouver ransomware", "Kelowna clinic IT", "Kelowna law cybersecurity").
 ${geoRule}
 Respond with JSON only: { "queries": [ { "queryText": "...", "tier": "specific" | "broad" } ] }`;
 

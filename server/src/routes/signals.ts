@@ -8,6 +8,7 @@ import {
   enrichSignalWithLLM,
   generateHeuristicCompetitors,
   generateHeuristicPeerRoles,
+  rankCandidatesForJudge,
   triageCandidates,
   adaptPitchForContact,
   hardRejectReason,
@@ -907,9 +908,18 @@ async function prepareScoutState(
       rawCount: rawCountTotal,
       source: searchSource,
     };
-    const pool = wideNet.candidates.filter(
-      (article) => !isLowYieldArticle(article.title, article.publisher, article.url) && !isSportsArticle(article.title, article.publisher)
-    );
+    const pool: typeof wideNet.candidates = [];
+    for (const article of wideNet.candidates) {
+      if (isSportsArticle(article.title, article.publisher)) {
+        console.log(`[PreFilter] dropped sports "${article.title}" (${article.publisher})`);
+        continue;
+      }
+      if (isLowYieldArticle(article.title, article.publisher, article.url)) {
+        console.log(`[PreFilter] dropped low-yield "${article.title}" (${article.publisher})`);
+        continue;
+      }
+      pool.push(article);
+    }
 
     // Deduplicate the pool against URLs this user already has in D1 (one query).
     const poolUrls = [...new Set(pool.map((article) => article.url))];
@@ -922,10 +932,11 @@ async function prepareScoutState(
     const existingUrls = new Set(existingRows.map((row) => row.sourceUrl));
     const fresh = pool.filter((article) => !existingUrls.has(article.url));
 
-    // 2. Fast batch headline/snippet triage BEFORE any Firecrawl spend.
-    const triageCap = Math.min(12, Math.max(limit * 3, 8));
+    // 2. Send up to 20 fresh, deduped articles to Jev batch triage, using keywords only to sort (never drop).
+    const triageBatch = fresh.slice(0, 20);
+    const triageCap = Math.min(20, Math.max(limit * 4, 12));
     const triage = await triageCandidates(
-      fresh.map(({ index, title, snippet, publisher, url, publishedAt }) => ({ index, title, snippet, publisher, url, publishedAt })),
+      triageBatch.map(({ index, title, snippet, publisher, url, publishedAt }) => ({ index, title, snippet, publisher, url, publishedAt })),
       {
         offering: [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
         targetIndustries,
@@ -943,12 +954,45 @@ async function prepareScoutState(
         baseUrl: env.TYPESAFE_BASE_URL,
       }
     );
-    const freshByIndex = new Map(fresh.map((article) => [article.index, article]));
-    let winners = triage.selectedIndices
+    const freshByIndex = new Map(triageBatch.map((article) => [article.index, article]));
+    const selectedSet = new Set<number>(triage.selectedIndices);
+    const mergedReasoning: Record<number, string> = { ...triage.reasoning };
+
+    // Top up with sort-only keyword ranking so Jev never starves the judge
+    const minForJudge = Math.min(triageBatch.length, Math.max(limit * 2, 6));
+    if (selectedSet.size < minForJudge) {
+      const sorted = rankCandidatesForJudge(
+        triageBatch.map(({ index, title, snippet, publisher, url, publishedAt }) => ({ index, title, snippet, publisher, url, publishedAt })),
+        {
+          offering: [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
+          targetIndustries,
+          buyerIndustries: buyerIndustries.length ? buyerIndustries : [plan.queryLadder.sector],
+          targetTriggers,
+          userIntent,
+          serviceArea,
+          location,
+          locationLock,
+        },
+        triageCap
+      );
+      for (const idx of sorted.selectedIndices) {
+        if (selectedSet.size >= minForJudge) break;
+        if (!selectedSet.has(idx)) {
+          selectedSet.add(idx);
+          mergedReasoning[idx] = sorted.reasoning[idx];
+        }
+      }
+    }
+
+    const winners = [...selectedSet]
       .map((index) => freshByIndex.get(index))
       .filter((article): article is (typeof fresh)[number] => Boolean(article));
-    if (winners.length === 0 && fresh.length > 0) {
-      winners = fresh.slice(0, Math.min(6, fresh.length));
+
+    for (const art of triageBatch) {
+      if (!selectedSet.has(art.index)) {
+        const dropReason = hardRejectReason(art) || 'Ranked below triage cutoff';
+        console.log(`[Triage] dropped before judge "${art.title}": ${dropReason}`);
+      }
     }
 
     const telemetry = {
@@ -1002,7 +1046,7 @@ async function prepareScoutState(
       winners,
       fresh,
       existingPoolUrls: pool.filter((article) => existingUrls.has(article.url)),
-      triageReasoning: triage.reasoning,
+      triageReasoning: mergedReasoning,
       telemetry,
       ingestedSignals,
       auditLog,

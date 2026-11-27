@@ -9,7 +9,8 @@ import { findApolloContact } from '../src/services/apollo';
 import { SCOUT_RUN_CREDIT_COST } from '../src/services/credits';
 import { cleanCompanyName } from '../src/services/signalQuality';
 import { getDb, schema } from '../src/db';
-import { retireAndReplaceQueries, seedCampaignQueries, recordQueryRun } from '../src/services/queryOptimizer';
+import { retireAndReplaceQueries, seedCampaignQueries, recordQueryRun, selectQueriesForScout } from '../src/services/queryOptimizer';
+import { rankCandidatesForJudge } from '../src/services/llmEnricher';
 
 function createEnv() {
   const { sqlite, DB } = createTestDatabase();
@@ -360,5 +361,22 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
     });
     expect(retiredRes.retiredCount).toBe(1);
     expect(retiredRes.addedCount).toBe(1);
+
+    // Verify 2 best by hit rate + 2 least-run/untested rotation
+    const allQ = await db.query.campaignQueries.findMany();
+    const rotated = selectQueriesForScout(allQ, 4);
+    expect(rotated).toHaveLength(4);
+    expect(rotated.some((q) => q.runs === 0)).toBe(true);
+
+    // Verify rankCandidatesForJudge never drops on keyword/location gates
+    const ranked = rankCandidatesForJudge(
+      [
+        { index: 0, title: 'General business update', snippet: 'Company expands.', publisher: 'News' },
+        { index: 1, title: 'Vancouver firm hit by ransomware', snippet: 'BC breach response.', publisher: 'BIV' },
+      ],
+      { offering: 'Cyber Insurance', location: 'Vancouver, BC', serviceArea: 'local' },
+      10
+    );
+    expect(ranked.selectedIndices).toEqual([1, 0]);
   });
 });

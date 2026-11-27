@@ -196,6 +196,53 @@ export function keywordTriageCandidates(
   };
 }
 
+/**
+ * Sort-only candidate ranker for the judge: never drops articles on keyword or
+ * location gates (only skips deterministic hardRejectReason like sports/listicles).
+ * Used to ensure fresh articles reach Jev/judge instead of being starved by pre-filters.
+ */
+export function rankCandidatesForJudge(
+  candidates: TriageCandidate[],
+  profile: TriageBuyerProfile,
+  maxWinners = 20
+): TriageResult {
+  const lock = triageLock(profile);
+  const { topic } = profileTerms({
+    targetIndustries: [...(profile.targetIndustries || []), ...(profile.buyerIndustries || [])],
+    targetTriggers: profile.targetTriggers,
+    userMission: profile.offering,
+  });
+  const scored: Array<{ index: number; score: number; reason: string }> = [];
+
+  for (const candidate of candidates) {
+    if (hardRejectReason(candidate)) continue;
+    const text = `${candidate.title} ${candidate.snippet}`;
+    const lower = text.toLowerCase();
+    const type = classifyArticleType(candidate.title, candidate.snippet);
+    const hasServiceTrigger = /\b(breach|ransomware|cyber|cyberattack|malware|phishing|ai rollout|artificial intelligence|ai policy|ai governance|data privacy|ciso|cto|compliance|clinic|law firm|managed it|cloud)\b/i.test(lower);
+    const place = mentionsLockedPlace(text, lock);
+    const topicHits = topic.filter((term) => lower.includes(term)).length;
+    const score =
+      (TRIGGER_TYPES.includes(type) ? TRIGGER_WEIGHT[type] || 1 : 0) +
+      (hasServiceTrigger ? 4 : 0) +
+      Math.min(topicHits, 4) * 2 +
+      (place.city ? 3 : place.region ? 2 : 0);
+    scored.push({
+      index: candidate.index,
+      score,
+      reason: `Sorted for judge (score=${score}, trigger=${hasServiceTrigger ? 'service' : type}).`,
+    });
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.index - b.index);
+  const winners = scored.slice(0, Math.max(0, maxWinners));
+  return {
+    selectedIndices: winners.map((item) => item.index),
+    reasoning: Object.fromEntries(winners.map((item) => [item.index, item.reason])),
+    modelUsed: 'keyword_fallback',
+  };
+}
+
 /** Candidates evaluated per Jev System One request (4 per-article questions each). */
 export const JEV_TRIAGE_CHUNK_SIZE = 8;
 
