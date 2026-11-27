@@ -426,6 +426,31 @@ export const App: React.FC = () => {
     fetchPipelineTrace();
   };
 
+  const pollManualMultiJob = useCallback(async (jobId: string, initialMsg: string) => {
+    setScoutToast({ message: initialMsg, type: 'info' });
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise((r) => setTimeout(r, 1200));
+      const statusRes = await authFetch(`/api/signals/ingest/status/${jobId}`);
+      if (!statusRes.ok) break;
+      const statusData = await statusRes.json();
+      const job = statusData?.job;
+      if (!job) break;
+      if (job.status === 'completed') {
+        await fetchDeck();
+        setScoutToast({ message: job.message || 'All prospects added with contacts!', type: 'success' });
+        return;
+      }
+      if (job.status === 'failed') {
+        setScoutToast({ message: job.error || 'Contact enrichment failed.', type: 'error' });
+        return;
+      }
+      if (job.message) {
+        setScoutToast({ message: job.message, type: 'info' });
+      }
+    }
+    await fetchDeck();
+  }, [fetchDeck]);
+
   // Handle PWA Web Share Target (?share=1&url=...&title=...&text=...) and Bookmarklet (?addUrl=...)
   useEffect(() => {
     if (typeof window === 'undefined' || !userProfile) return;
@@ -457,7 +482,11 @@ export const App: React.FC = () => {
       .then(async (data) => {
         if (data?.success) {
           await fetchDeck();
-          setScoutToast({ message: data.message || 'Added shared prospect!', type: data.duplicate ? 'info' : 'success' });
+          if (data.async && data.jobId) {
+            await pollManualMultiJob(data.jobId, data.message);
+          } else {
+            setScoutToast({ message: data.message || 'Added shared prospect!', type: data.duplicate ? 'info' : 'success' });
+          }
         } else {
           setScoutToast({ message: data?.message || data?.error || 'Could not add shared article.', type: 'error' });
         }
@@ -1507,10 +1536,14 @@ export const App: React.FC = () => {
         onAdded={async (res) => {
           await fetchDeck();
           setCurrentView('deck');
-          setScoutToast({
-            message: res.message,
-            type: res.duplicate ? 'info' : 'success',
-          });
+          if (res.async && res.jobId) {
+            void pollManualMultiJob(res.jobId, res.message);
+          } else {
+            setScoutToast({
+              message: res.message,
+              type: res.duplicate ? 'info' : 'success',
+            });
+          }
         }}
       />
     </div>

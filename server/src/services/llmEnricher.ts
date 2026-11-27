@@ -835,3 +835,145 @@ export function adaptPitchForContact(
   return { subject: subjectCore, body };
 }
 
+export interface ExtractedProspectItem {
+  companyName: string;
+  location?: string;
+  industry?: string;
+  domain?: string;
+  triggerSummary: string;
+  signalType: string;
+  decisionMakerName?: string;
+  decisionMakerRole?: string;
+}
+
+/**
+ * Extracts ALL operating companies listed as prospects/recipients/subjects in an
+ * article (handles both single-company stories and 40+ company backgrounders/lists).
+ */
+export async function extractProspectsFromArticle(
+  headline: string,
+  articleMarkdown: string,
+  publisher: string,
+  apiKey?: string
+): Promise<ExtractedProspectItem[]> {
+  const cleanKey = (apiKey || '').trim();
+  if (cleanKey && cleanKey.startsWith('sk-') && !cleanKey.includes('your_')) {
+    const models = ['gpt-4.1-mini', 'gpt-4o-mini'];
+    for (const modelName of models) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 18000);
+        let res: Response;
+        try {
+          res = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${cleanKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: modelName,
+              temperature: 0.1,
+              max_tokens: 4000,
+              response_format: { type: 'json_object' },
+              messages: [
+                {
+                  role: 'system',
+                  content: `You extract EVERY distinct operating company or organization that is a prospect, funding recipient, award winner, or subject in the article.
+CRITICAL:
+- If the article is a backgrounder, list, or roundup naming multiple companies (e.g. 10, 20, or 44 companies), you MUST return EVERY SINGLE ONE of them — do NOT summarize or stop early.
+- Do NOT include government agencies, publishers, or big tech partners unless they are listed as one of the recipients/subjects.
+- Keep triggerSummary to 1 concise sentence per company.
+Respond with JSON only:
+{
+  "prospects": [
+    {
+      "companyName": "Exact company name",
+      "location": "City, Province/State or empty string",
+      "industry": "Industry/sector or empty string",
+      "domain": "Website domain if explicitly stated, else empty string",
+      "triggerSummary": "1 concise sentence explaining why this company is featured",
+      "signalType": "Funding | Expansion | Award | Acquisition | Contract | Partnership | Operational Milestone",
+      "decisionMakerName": "Full name of a person at this company if printed verbatim, else empty string",
+      "decisionMakerRole": "Role/title if printed verbatim, else empty string"
+    }
+  ]
+}`,
+                },
+                {
+                  role: 'user',
+                  content: `Headline: ${headline}\nPublisher: ${publisher}\n\nArticle Content:\n${(articleMarkdown || '').slice(0, 32000)}`,
+                },
+              ],
+            }),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+        if (!res.ok) continue;
+        const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+        const raw = json.choices?.[0]?.message?.content;
+        if (!raw) continue;
+        const parsed = JSON.parse(raw) as { prospects?: ExtractedProspectItem[] };
+        const deduped: ExtractedProspectItem[] = [];
+        const seen = new Set<string>();
+        for (const item of parsed.prospects || []) {
+          const name = cleanCompanyName(String(item.companyName || '').trim());
+          if (!name || name.length < 2) continue;
+          const key = name.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          deduped.push({
+            companyName: name,
+            location: item.location ? String(item.location).trim() : '',
+            industry: item.industry ? String(item.industry).trim() : '',
+            domain: usableCompanyDomain(item.domain),
+            triggerSummary: String(item.triggerSummary || headline).trim(),
+            signalType: String(item.signalType || 'Operational Milestone').trim(),
+            decisionMakerName: item.decisionMakerName ? String(item.decisionMakerName).trim() : '',
+            decisionMakerRole: item.decisionMakerRole ? String(item.decisionMakerRole).trim() : '',
+          });
+        }
+        if (deduped.length > 0) {
+          console.log(`[ExtractProspects] ${modelName} extracted ${deduped.length} prospects from "${headline.slice(0, 60)}"`);
+          return deduped;
+        }
+      } catch (err) {
+        console.warn(`[ExtractProspects] ${modelName} failed:`, err instanceof Error ? err.message : String(err));
+      }
+    }
+  }
+
+  // Heuristic fallback when OpenAI key is absent: detect multiple corporate entity lines if present
+  const corpMatches = (articleMarkdown || '').match(/^[ \t]*(?:[-*•]\s*)?([A-Z][A-Za-z0-9&'.\- ]{1,60}\b(?:Inc\.?|Corp\.?|Ltd\.?|LLC|LLP|Technologies|Labs|Analytics|AI|Group))\b/gm) || [];
+  const uniqueCorps: ExtractedProspectItem[] = [];
+  const seen = new Set<string>();
+  for (const m of corpMatches) {
+    const clean = cleanCompanyName(m.replace(/^[-*•\s]+/, '').trim());
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    uniqueCorps.push({
+      companyName: clean,
+      triggerSummary: `${clean} featured in "${headline}".`,
+      signalType: 'Manual Prospect',
+    });
+  }
+  if (uniqueCorps.length > 1) {
+    return uniqueCorps;
+  }
+
+  const single = generateHeuristicEnrichment(headline, articleMarkdown, publisher);
+  return [
+    {
+      companyName: single.companyName,
+      domain: usableCompanyDomain(single.companyDomain),
+      triggerSummary: single.coldIntroHook,
+      signalType: single.signalType,
+      decisionMakerName: single.decisionMaker?.name || '',
+      decisionMakerRole: single.decisionMaker?.role || '',
+    },
+  ];
+}
+

@@ -17,7 +17,7 @@ interface AddArticleModalProps {
   onClose: () => void;
   campaigns: Campaign[];
   activeCampaignId: string;
-  onAdded: (result: { companyName?: string; message: string; duplicate?: boolean }) => Promise<void> | void;
+  onAdded: (result: { companyName?: string; message: string; duplicate?: boolean; async?: boolean; jobId?: string }) => Promise<void> | void;
 }
 
 export const AddArticleModal: React.FC<AddArticleModalProps> = ({
@@ -133,6 +133,8 @@ export const AddArticleModal: React.FC<AddArticleModalProps> = ({
         companyName: data.companyName,
         message: data.message,
         duplicate: data.duplicate,
+        async: data.async,
+        jobId: data.jobId,
       });
       onClose();
     } catch (err) {

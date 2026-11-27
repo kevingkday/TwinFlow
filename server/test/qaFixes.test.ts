@@ -552,4 +552,34 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
     );
     expect(oldFail.status).toBe(401);
   });
+
+  it('Multi-company manual article extracts ALL listed companies as separate prospects', async () => {
+    const { env, auth } = createEnv();
+    const res = await app.request(
+      '/api/signals/quick-add',
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          url: 'https://example.com/multi-recipient-test',
+          title: 'Government supports 3 AI companies',
+          text: [
+            'Spare Labs Inc.',
+            'EarthDaily Analytics Corp.',
+            'Procurify Technologies Inc.',
+          ].join('\n'),
+        }),
+      },
+      env
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.totalCount).toBe(3);
+
+    const deckRes = await app.request('/api/signals/deck', { headers: auth }, env);
+    const deck = await deckRes.json();
+    const names = deck.signals.map((s: { companyName: string }) => s.companyName);
+    expect(names).toEqual(expect.arrayContaining(['Spare Labs Inc', 'EarthDaily Analytics Corp', 'Procurify Technologies Inc']));
+  });
 });

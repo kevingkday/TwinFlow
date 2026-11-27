@@ -79,6 +79,47 @@ export async function crawlArticle(
     }
   }
 
+  // Direct HTTP fetch fallback for public HTML pages (e.g. government/news releases)
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TwinFlowBot/1.0)' },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (res.ok) {
+        const html = await res.text();
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        const text = html
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<\/(p|li|h[1-6]|tr|div)>/gi, '\n')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/[ \t]+/g, ' ')
+          .replace(/\n\s*\n+/g, '\n')
+          .trim();
+        if (text.length > 200) {
+          return {
+            markdown: text,
+            title: titleMatch ? titleMatch[1].trim() : undefined,
+            sourceUrl: url,
+            success: true,
+          };
+        }
+      }
+    } catch {
+      // fall through to snippet fallback
+    }
+  }
+
   // Graceful fallback: synthesize clean Markdown from fallback snippet
   const fallbackMarkdown = `# Article Overview\n\n**Source URL**: ${url}\n\n${
     fallbackSnippet

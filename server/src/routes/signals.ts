@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../db';
 import { getDb, schema } from '../db';
-import { eq, desc, and, sql, inArray } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray, or, like } from 'drizzle-orm';
 import { fetchSerpNews, fetchWideNetCandidates, WIDE_NET_POOL_SIZE } from '../services/serpNews';
 import { crawlArticle } from '../services/firecrawl';
 import {
   enrichSignalWithLLM,
+  extractProspectsFromArticle,
   generateHeuristicCompetitors,
   generateHeuristicPeerRoles,
   rankCandidatesForJudge,
@@ -506,9 +507,56 @@ signalsRouter.get('/ingest/status/:jobId', async (c) => {
     });
   }
 
-  // Advance 1 winner article per poll request so no single Worker call exceeds 30s
+  // Advance 1 winner article per poll request (or 5 manual multi-prospects) so no Worker call exceeds 30s
   try {
-    const state = JSON.parse(job.stateJson || '{}') as PersistedScoutState;
+    const rawState = JSON.parse(job.stateJson || '{}') as any;
+    if (rawState.mode === 'manual_multi') {
+      const items = (rawState.items || []) as ManualMultiItem[];
+      const batchEnd = Math.min(items.length, (rawState.nextIndex || 0) + 5);
+      for (let i = rawState.nextIndex || 0; i < batchEnd; i += 1) {
+        await enrichManualProspectItem(db, c.env, user, rawState.context, items[i]);
+      }
+      rawState.nextIndex = batchEnd;
+      const done = rawState.nextIndex >= items.length;
+      if (done) {
+        const finalMsg = `Added all ${items.length} prospects with contacts and drafts!`;
+        const finalResult = { success: true, ingestedCount: items.length, message: finalMsg };
+        await db
+          .update(schema.scoutJobs)
+          .set({
+            status: 'completed',
+            stage: 'done',
+            progress: 100,
+            message: finalMsg,
+            stateJson: null,
+            resultJson: JSON.stringify(finalResult),
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(schema.scoutJobs.id, job.id));
+        return c.json({
+          success: true,
+          job: { id: job.id, status: 'completed', stage: 'done', progress: 100, message: finalMsg, result: finalResult },
+        });
+      }
+      const progress = Math.min(95, 10 + Math.round((rawState.nextIndex / Math.max(1, items.length)) * 85));
+      const msg = `Pulling contacts & drafts (${rawState.nextIndex} of ${items.length} prospects)...`;
+      await db
+        .update(schema.scoutJobs)
+        .set({
+          stage: 'enriching',
+          progress,
+          message: msg,
+          stateJson: JSON.stringify(rawState),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(schema.scoutJobs.id, job.id));
+      return c.json({
+        success: true,
+        job: { id: job.id, status: 'running', stage: 'enriching', progress, message: msg },
+      });
+    }
+
+    const state = rawState as PersistedScoutState;
     if (state.nextIndex < state.winners.length && state.ingestedSignals.length < state.limit) {
       const article = state.winners[state.nextIndex];
       await processWinnerArticle(db, c.env, user, state, article);
@@ -2588,6 +2636,132 @@ export interface ManualArticleInput {
   sourceLabel?: string;
 }
 
+export interface ManualMultiItem {
+  signalId: string;
+  companyName: string;
+  companyDomain?: string;
+  location?: string;
+  industry?: string;
+  triggerSummary: string;
+  signalType: string;
+  decisionMakerName?: string;
+  decisionMakerRole?: string;
+}
+
+export interface ManualMultiContext {
+  publisher: string;
+  userOrganization?: string;
+  userServices: string[];
+  valueProp?: string;
+  userMission?: string;
+  userIntent: string;
+  city?: string;
+  buyerIndustries: string[];
+  targetIndustries: string[];
+  buyerRoles: string[];
+  apolloLocations?: string[];
+}
+
+async function enrichManualProspectItem(
+  db: ReturnType<typeof getDb>,
+  env: Bindings,
+  user: typeof schema.users.$inferSelect,
+  ctx: ManualMultiContext,
+  item: ManualMultiItem
+): Promise<void> {
+  const articlePerson =
+    item.decisionMakerName && !isNonBuyerRole(item.decisionMakerRole || '')
+      ? { name: item.decisionMakerName, role: item.decisionMakerRole || '' }
+      : null;
+
+  const resolution = await resolveSignalContacts(
+    {
+      articlePerson,
+      companyName: item.companyName,
+      companyDomain: item.companyDomain || '',
+      buyerTitles: ctx.buyerRoles.length ? ctx.buyerRoles : undefined,
+      industries: [...ctx.buyerIndustries, ...ctx.targetIndustries, ...(item.industry ? [item.industry] : [])],
+      locations: ctx.apolloLocations,
+    },
+    env.APOLLO_API_KEY
+  );
+
+  const now = new Date().toISOString();
+  const uniqueSuffix = Math.random().toString(36).substring(2, 8);
+  const draftId = `dr_${Date.now()}_${uniqueSuffix}`;
+  const primary = resolution.contacts[0];
+  let primaryContactId: string | null = null;
+  for (const [position, contact] of resolution.contacts.entries()) {
+    const contactId = `ct_${Date.now()}_${uniqueSuffix}_${position}`;
+    if (position === 0) primaryContactId = contactId;
+    await db.insert(schema.contacts).values({
+      id: contactId,
+      signalId: item.signalId,
+      name: contact.name || '',
+      title: contact.title || '',
+      email: contact.email || null,
+      linkedinUrl: contact.linkedinUrl || null,
+      avatarUrl: contact.avatarUrl || null,
+      company: contact.company || item.companyName,
+      companyDomain: contact.companyDomain || null,
+      source: contact.source,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const draft = primary
+    ? adaptPitchForContact(
+        {
+          companyName: item.companyName,
+          companyDomain: item.companyDomain || '',
+          signalType: item.signalType,
+          industryTags: item.industry ? [item.industry] : [],
+          summaryBullets: [
+            item.triggerSummary,
+            item.industry ? `Sector: ${item.industry}` : 'Identified from manual article',
+            item.location ? `Location: ${item.location}` : 'Direct prospect extraction',
+          ],
+          articleSummary: item.triggerSummary,
+          verbatimQuotes: [item.triggerSummary],
+          decisionMaker: { name: primary.name || '', role: primary.title || '', company: item.companyName },
+          detectedContacts: [],
+          coldIntroHook: item.triggerSummary,
+          pitchSubject: '',
+          pitchBody: '',
+          competitors: [],
+          suggestedPeerRoles: [],
+        },
+        primary,
+        {
+          publisher: ctx.publisher,
+          userOrganization: ctx.userOrganization,
+          userName: user.name || undefined,
+          userServices: ctx.userServices,
+          valueProp: ctx.valueProp,
+          userMission: ctx.userMission,
+          userIntent: ctx.userIntent,
+          city: ctx.city,
+          triggerSentence: item.triggerSummary,
+          whyMatched: item.triggerSummary,
+        }
+      )
+    : null;
+
+  if (primaryContactId && draft) {
+    await db.insert(schema.outreachDrafts).values({
+      id: draftId,
+      signalId: item.signalId,
+      contactId: primaryContactId,
+      subject: draft.subject,
+      body: draft.body,
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
 export async function ingestManualArticleForUser(
   db: ReturnType<typeof getDb>,
   env: Bindings,
@@ -2596,6 +2770,9 @@ export async function ingestManualArticleForUser(
 ): Promise<{
   success: boolean;
   duplicate?: boolean;
+  async?: boolean;
+  jobId?: string;
+  totalCount?: number;
   signalId?: string;
   companyName?: string;
   title?: string;
@@ -2612,7 +2789,10 @@ export async function ingestManualArticleForUser(
 
   if (cleanUrl) {
     const existing = await db.query.signals.findFirst({
-      where: and(eq(schema.signals.userId, user.id), eq(schema.signals.sourceUrl, cleanUrl)),
+      where: and(
+        eq(schema.signals.userId, user.id),
+        or(eq(schema.signals.sourceUrl, cleanUrl), like(schema.signals.sourceUrl, `${cleanUrl}#%`))
+      ),
     });
     if (existing) {
       return {
@@ -2693,21 +2873,8 @@ export async function ingestManualArticleForUser(
   const now = new Date().toISOString();
 
   // Manually added articles bypass Jev & relevance judge since the user already selected them.
-  const enriched = await enrichSignalWithLLM(
-    articleTitle,
-    articleBody,
-    publisher,
-    env.OPENAI_API_KEY,
-    [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
-    userIntent
-  );
-
-  const companyName = (enriched.companyName || '').trim() || 'Shared Prospect';
-  const companyDomain = usableCompanyDomain(enriched.companyDomain);
-  const articlePerson =
-    enriched.decisionMaker?.name && !isNonBuyerRole(enriched.decisionMaker.role || '')
-      ? { name: enriched.decisionMaker.name, role: enriched.decisionMaker.role || '' }
-      : null;
+  // Extract ALL prospects from the article (1 for standard articles, N for lists/backgrounders like 44-company announcements).
+  const extractedProspects = await extractProspectsFromArticle(articleTitle, articleBody, publisher, env.OPENAI_API_KEY);
 
   const plan = generateAlgorithmicQueryPlan({
     location,
@@ -2723,6 +2890,128 @@ export async function ingestManualArticleForUser(
     buyerIndustries,
     buyerRoles,
   });
+
+  if (extractedProspects.length > 1) {
+    const multiItems: ManualMultiItem[] = [];
+    for (let idx = 0; idx < extractedProspects.length; idx += 1) {
+      const p = extractedProspects[idx];
+      const suffix = `${idx}_${Math.random().toString(36).substring(2, 6)}`;
+      const signalId = `sig_${Date.now()}_${suffix}`;
+      const slug = p.companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || String(idx);
+      await db.insert(schema.signals).values({
+        id: signalId,
+        userId: user.id,
+        campaignId: activeCampaign?.id || null,
+        parentSignalId: null,
+        title: `${p.companyName} — ${articleTitle}`,
+        sourceUrl: resolvedUrl ? `${resolvedUrl}#${slug}` : `manual://${signalId}`,
+        publishedAt: now,
+        companyName: p.companyName,
+        signalType: p.signalType || 'Manual Prospect',
+        industryTags: JSON.stringify(p.industry ? [p.industry] : []),
+        summaryBullets: JSON.stringify([p.triggerSummary]),
+        articleSummary: p.triggerSummary,
+        sourceExcerpts: JSON.stringify([{ quote: p.triggerSummary, context: 'Article excerpt' }]),
+        sourceSnapshot: articleBody ? articleBody.trim().slice(0, 6000) : null,
+        fitScore: 100,
+        whyMatched: p.triggerSummary,
+        triggerSentence: p.triggerSummary,
+        status: 'queued',
+        createdAt: now,
+        updatedAt: now,
+      });
+      multiItems.push({
+        signalId,
+        companyName: p.companyName,
+        companyDomain: p.domain,
+        location: p.location,
+        industry: p.industry,
+        triggerSummary: p.triggerSummary,
+        signalType: p.signalType,
+        decisionMakerName: p.decisionMakerName,
+        decisionMakerRole: p.decisionMakerRole,
+      });
+    }
+
+    const ctx: ManualMultiContext = {
+      publisher,
+      userOrganization: activeCampaign?.organization || user.organization || user.legalBusinessName || undefined,
+      userServices: servicesOffered,
+      valueProp: valueProp || undefined,
+      userMission: userMission || undefined,
+      userIntent,
+      city: plan.locationLock.city || user.city || undefined,
+      buyerIndustries,
+      targetIndustries,
+      buyerRoles,
+      apolloLocations: apolloLocations(plan.locationLock, plan.geographicFocus.gl),
+    };
+
+    // Enrich first 5 immediately so initial cards have contacts right away
+    const initialBatch = Math.min(5, multiItems.length);
+    for (let i = 0; i < initialBatch; i += 1) {
+      await enrichManualProspectItem(db, env, user, ctx, multiItems[i]);
+    }
+
+    if (multiItems.length > initialBatch) {
+      const jobId = `scout_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const msg = `Extracted ${multiItems.length} prospects! Pulling contacts (${initialBatch}/${multiItems.length})...`;
+      await db.insert(schema.scoutJobs).values({
+        id: jobId,
+        userId: user.id,
+        campaignId: activeCampaign?.id || null,
+        status: 'running',
+        stage: 'enriching',
+        progress: Math.round((initialBatch / multiItems.length) * 90),
+        message: msg,
+        stateJson: JSON.stringify({
+          mode: 'manual_multi',
+          nextIndex: initialBatch,
+          items: multiItems,
+          context: ctx,
+        }),
+        createdAt: now,
+        updatedAt: now,
+      });
+      return {
+        success: true,
+        async: true,
+        jobId,
+        totalCount: multiItems.length,
+        signalId: multiItems[0].signalId,
+        companyName: multiItems[0].companyName,
+        title: articleTitle,
+        fitScore: 100,
+        message: msg,
+      };
+    }
+
+    return {
+      success: true,
+      totalCount: multiItems.length,
+      signalId: multiItems[0].signalId,
+      companyName: multiItems[0].companyName,
+      title: articleTitle,
+      fitScore: 100,
+      message: `Added ${multiItems.length} prospects with contacts and drafts!`,
+    };
+  }
+
+  const enriched = await enrichSignalWithLLM(
+    articleTitle,
+    articleBody,
+    publisher,
+    env.OPENAI_API_KEY,
+    [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
+    userIntent
+  );
+
+  const companyName = (enriched.companyName || '').trim() || 'Shared Prospect';
+  const companyDomain = usableCompanyDomain(enriched.companyDomain);
+  const articlePerson =
+    enriched.decisionMaker?.name && !isNonBuyerRole(enriched.decisionMaker.role || '')
+      ? { name: enriched.decisionMaker.name, role: enriched.decisionMaker.role || '' }
+      : null;
 
   const resolution = await resolveSignalContacts(
     {
