@@ -152,9 +152,27 @@ async function requestNews(
   } finally {
     clearTimeout(timer);
   }
-  if (!response.ok) throw new Error(`SerpAPI error status: ${response.status}`);
-  const json = (await response.json()) as { news_results?: NewsHit[] };
+  if (!response.ok) {
+    let errDetail = `status ${response.status}`;
+    try {
+      const errJson = (await response.json()) as { error?: string };
+      if (errJson?.error) errDetail = errJson.error;
+    } catch {
+      // ignore non-JSON error body
+    }
+    throw new Error(`SerpAPI error (${response.status}): ${errDetail}`);
+  }
+  const json = (await response.json()) as { news_results?: NewsHit[]; error?: string };
+  if (json.error) {
+    throw new Error(`SerpAPI error: ${json.error}`);
+  }
   return json.news_results || [];
+}
+
+export interface SerpDropStats {
+  dateRejected: number;
+  dateUnparsed: number;
+  filtered: number;
 }
 
 /**
@@ -169,7 +187,8 @@ async function runNewsQuery(
   gl: string,
   collected: SerpArticle[],
   seen: Set<string>,
-  cap: number
+  cap: number,
+  dropStats?: SerpDropStats
 ): Promise<number> {
   let hits = await requestNews(q, apiKey, gl, 'qdr:w2');
   let usedTbs = true;
@@ -223,6 +242,11 @@ async function runNewsQuery(
   console.log(
     `[SerpAPI] ${label} "${q}" raw=${hits.length} dateRejected=${dateRejected} dateUnparsed=${dateUnparsed} filtered=${filtered} kept=${kept}`
   );
+  if (dropStats) {
+    dropStats.dateRejected += dateRejected;
+    dropStats.dateUnparsed += dateUnparsed;
+    dropStats.filtered += filtered;
+  }
   return hits.length;
 }
 
@@ -347,6 +371,8 @@ export interface WideNetSearchResult {
   queries: string[];
   rawCount: number;
   source: 'serpapi' | 'sample' | 'none';
+  error?: string;
+  dropStats?: SerpDropStats;
 }
 
 function normalizeCandidateUrl(url: string): string {
@@ -446,6 +472,8 @@ export async function fetchWideNetCandidates(params: WideNetSearchParams): Promi
   const newsSeen = new Set<string>();
   const executed: string[] = [];
   let rawCount = 0;
+  let lastError: string | undefined;
+  const dropStats: SerpDropStats = { dateRejected: 0, dateUnparsed: 0, filtered: 0 };
 
   for (const q of newsQueries) {
     executed.push(q);
@@ -457,10 +485,12 @@ export async function fetchWideNetCandidates(params: WideNetSearchParams): Promi
         params.gl || 'us',
         newsCollected,
         newsSeen,
-        poolSize
+        poolSize,
+        dropStats
       );
     } catch (err) {
-      console.warn(`SerpAPI wide-net query failed for "${q}":`, err);
+      lastError = err instanceof Error ? err.message : String(err);
+      console.warn(`SerpAPI wide-net query failed for "${q}":`, lastError);
     }
     if (newsCollected.length >= minPool) break;
   }
@@ -476,13 +506,22 @@ export async function fetchWideNetCandidates(params: WideNetSearchParams): Promi
         params.gl || 'us',
         prWireCollected,
         new Set<string>(),
-        poolSize
+        poolSize,
+        dropStats
       );
     } catch (err) {
+      lastError = lastError || (err instanceof Error ? err.message : String(err));
       console.warn(`SerpAPI PR wire query failed for "${prWireQuery}":`, err);
     }
   }
 
   const candidates = blendAndDeduplicateCandidates(newsCollected, prWireCollected, poolSize);
-  return { candidates, queries: executed, rawCount, source: 'serpapi' };
+  return {
+    candidates,
+    queries: executed,
+    rawCount,
+    source: 'serpapi',
+    error: lastError,
+    dropStats,
+  };
 }

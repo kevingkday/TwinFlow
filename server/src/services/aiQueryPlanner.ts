@@ -112,10 +112,10 @@ function expandRegion(value: string): string {
   return trimmed;
 }
 
-/** Parse "City, Region, Country" (or partial forms) into a city and region. */
+/** Parse "City, Region, Country" (or "City and Region" / partial forms) into a city and region. */
 export function parseCityRegion(location: string): { city: string; region: string } {
   const parts = (location || '')
-    .split(',')
+    .split(/,|\s+and\s+|\s*[/&]\s*/i)
     .map((part) => part.trim())
     .filter((part) => part && !COUNTRY_NAMES.test(part) && !/nationwide/i.test(part));
   if (parts.length === 0) return { city: '', region: '' };
@@ -656,6 +656,84 @@ export interface CandidateQuerySpec {
   tier: 'specific' | 'broad';
 }
 
+const SINGULAR_MAP: Record<string, string> = {
+  companies: 'company',
+  businesses: 'business',
+  firms: 'firm',
+  clinics: 'clinic',
+  contractors: 'contractor',
+  manufacturers: 'manufacturer',
+  restaurants: 'restaurant',
+  bakeries: 'bakery',
+  cafes: 'cafe',
+  retailers: 'retailer',
+  offices: 'office',
+  warehouses: 'warehouse',
+  providers: 'provider',
+  facilities: 'facility',
+  practices: 'practice',
+  builders: 'builder',
+  developers: 'developer',
+  operators: 'operator',
+};
+
+function extractForbiddenOfferingTerms(input: QueryPlannerInput, model: CustomerModel): string[] {
+  const customerWordSet = new Set(
+    model.idealCustomerTypes
+      .join(' ')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 3)
+  );
+  const stop = new Set([
+    'and', 'the', 'for', 'with', 'that', 'this', 'from', 'into', 'your', 'our',
+    'small', 'mid', 'sized', 'smb', 'smbs', 'local', 'commercial', 'business',
+    'businesses', 'company', 'companies', 'firm', 'firms', 'focused', 'selling',
+    'risk', 'new', 'area', 'region',
+  ]);
+  const offeringBlob = [
+    ...(input.servicesOffered || []),
+    ...(input.productsOffered || []),
+    input.valueProp || '',
+    input.userMission || '',
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  return [...new Set(offeringBlob.split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !stop.has(w) && !customerWordSet.has(w)))];
+}
+
+function normalizeShortQuery(raw: string, forbiddenTerms: string[]): string {
+  const cleaned = raw
+    .replace(/["|()]/g, ' ')
+    .replace(/\bOR\b/g, ' ')
+    .replace(/\s+-\w+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+
+  const lower = cleaned.toLowerCase();
+  if (forbiddenTerms.some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(lower))) {
+    return '';
+  }
+
+  let words = cleaned.split(/\s+/);
+  // Drop multi-word filler nouns when > 3 words, then singularize
+  if (words.length > 3) {
+    words = words.filter((w) => !/^(companies|businesses|firms|providers|solutions|services|and|for|the|of|in)$/i.test(w));
+  }
+  words = words.map((w) => {
+    const mapped = SINGULAR_MAP[w.toLowerCase()];
+    if (!mapped) return w;
+    return w[0] === w[0].toUpperCase() ? mapped[0].toUpperCase() + mapped.slice(1) : mapped;
+  });
+  if (words.length > 3) {
+    words = words.slice(0, 3);
+  }
+  if (words.length < 2) return '';
+  return words.join(' ');
+}
+
 function algorithmicCandidateQueries(
   input: QueryPlannerInput,
   customerModel?: CustomerModel
@@ -667,41 +745,41 @@ function algorithmicCandidateQueries(
   const isNational = model.serviceArea === 'national';
   const place = isNational ? '' : city || region;
   const widerPlace = isNational ? '' : region || city;
+  const forbidden = extractForbiddenOfferingTerms(input, model);
 
   const out: CandidateQuerySpec[] = [];
   const push = (q: string, tier: 'specific' | 'broad') => {
-    const clean = q.replace(/\s+/g, ' ').trim();
-    if (!clean) return;
-    const words = clean.split(/\s+/);
-    const trimmed = words.length > 4 ? words.slice(0, 4).join(' ') : clean;
-    if (!out.some((item) => item.queryText.toLowerCase() === trimmed.toLowerCase())) {
-      out.push({ queryText: trimmed, tier });
+    const norm = normalizeShortQuery(q, forbidden);
+    if (norm && !out.some((item) => item.queryText.toLowerCase() === norm.toLowerCase())) {
+      out.push({ queryText: norm, tier });
     }
   };
 
-  const customerTypes = model.idealCustomerTypes.length ? model.idealCustomerTypes : ['business'];
-  const signals = model.buyingSignals.length ? model.buyingSignals : ['expansion', 'new location', 'growth'];
+  const customerTypes = (model.idealCustomerTypes.length ? model.idealCustomerTypes : ['company']).map((t) =>
+    t
+      .split(/\s+/)
+      .map((w) => SINGULAR_MAP[w.toLowerCase()] || w)
+      .slice(0, 2)
+      .join(' ')
+  );
+  const signals = (model.buyingSignals.length ? model.buyingSignals : ['expands', 'hiring', 'opens']).map((s) =>
+    s.split(/\s+/).slice(0, 2).join(' ')
+  );
 
+  // 1. Place + ONE short customer noun (2-3 terms)
   for (const cType of customerTypes) {
-    if (place) {
-      push(`${place} ${cType}`, 'specific');
-    } else {
-      push(`${cType} ${signals[0]}`, 'specific');
-    }
+    if (place) push(`${place} ${cType}`, 'specific');
   }
 
-  for (const cType of customerTypes) {
+  // 2. Place + ONE short verb/signal (2-3 terms)
+  if (place) {
     for (const sig of signals) {
       if (out.length >= 15) break;
-      const combo = place ? `${place} ${cType} ${sig}` : `${cType} ${sig}`;
-      if (combo.split(/\s+/).length <= 4) {
-        push(combo, 'specific');
-      } else if (place) {
-        push(`${place} ${sig}`, 'broad');
-      }
+      push(`${place} ${sig}`, 'specific');
     }
   }
 
+  // 3. Wider region + customer noun or signal (2-3 terms)
   if (!isNational && widerPlace && widerPlace !== place) {
     for (const cType of customerTypes) {
       if (out.length >= 15) break;
@@ -713,18 +791,28 @@ function algorithmicCandidateQueries(
     }
   }
 
+  // 4. Customer noun + signal (2-3 terms)
   for (const cType of customerTypes) {
     for (const sig of signals) {
-      if (out.length >= 12) break;
+      if (out.length >= 15) break;
       push(`${cType} ${sig}`, 'broad');
     }
+  }
+
+  // 5. Place + company + news action fallback so we always have 12-15 short queries
+  const newsActions = ['expands', 'opens', 'hiring', 'acquires', 'funding', 'contract', 'renovation', 'relocates'];
+  for (const act of newsActions) {
+    if (out.length >= 15) break;
+    if (place) push(`${place} company ${act}`, 'broad');
+    if (widerPlace && widerPlace !== place && out.length < 15) push(`${widerPlace} company ${act}`, 'broad');
   }
 
   return out.slice(0, 15);
 }
 
 /**
- * Generate 10-15 candidate Google News queries (2-3 terms each) from the
+ * Generate 12-15 candidate Google News queries (strictly 2-3 terms each, natural
+ * singular news wording, never including the seller's own offering) from the
  * CustomerModel using OpenAI (`gpt-4.1-mini`, falling back to `gpt-4o-mini`
  * and then the algorithmic CustomerModel generator).
  */
@@ -740,24 +828,25 @@ export async function generateCandidateQueries(
     return fallback;
   }
 
+  const forbidden = extractForbiddenOfferingTerms(input, model);
   const placeObj = parseCityRegion(input.location || '');
   const geoRule =
     model.serviceArea === 'national'
       ? 'This offering can serve customers anywhere; do NOT restrict queries to a single city.'
       : `This is a local offering (${[placeObj.city, placeObj.region].filter(Boolean).join(', ')}). Every query MUST include "${placeObj.city || input.location || ''}" or "${placeObj.region || ''}". Never widen beyond province/state.`;
 
-  const systemPrompt = `You generate 10 to 15 short Google News search queries (strictly 2-3 words/terms each, no OR operators, no quotes) for a B2B lead scout.
-Generate queries directly from the provided Customer Model:
-- Pair ideal customer types with the location (when local) or with buying signals from the Customer Model.
-- Mix specific queries (e.g. "<location> <customer type>" or "<location> <customer type> <signal>") with broader ones (e.g. "<region> <customer type>" or "<customer type> <signal>").
+  const systemPrompt = `You generate 12 to 15 short Google News search queries (STRICTLY 2 to 3 words total, no OR operators, no quotes) for a B2B lead scout.
+RULES:
+- Each query MUST be: <location> + ONE short singular buyer noun or ONE short news verb (e.g. "<city> manufacturer", "<city> restaurant opens", "<region> company expands", "<city> hiring", "<city> acquires").
+- Use singular, natural news wording (2-3 words max, NEVER 4+ words, NEVER plural concatenated phrases like "manufacturing companies funding").
+- NEVER include what the seller sells (${(input.servicesOffered || []).join(', ') || 'seller offering'}) in the query — searching the seller's own service returns competitors, not customers.
 - ${geoRule}
-- Do NOT invent industries or signals outside the Customer Model and profile.
 Respond with JSON only: { "queries": [ { "queryText": "...", "tier": "specific" | "broad" } ] }`;
 
   const userPrompt = JSON.stringify({
-    offering: (input.servicesOffered || []).join(', ') || input.userMission || input.valueProp || 'B2B services',
     location: input.location || 'Unspecified',
     customerModel: model,
+    forbiddenSellerTerms: forbidden,
   });
 
   const callModel = async (modelName: string) => {
@@ -801,29 +890,24 @@ Respond with JSON only: { "queries": [ { "queryText": "...", "tier": "specific" 
         const parsed = JSON.parse(content) as { queries?: Array<{ queryText?: string; tier?: string }> };
         const valid: CandidateQuerySpec[] = [];
         for (const q of parsed.queries || []) {
-          if (typeof q.queryText !== 'string' || q.queryText.trim().length < 3) continue;
-          const clean = q.queryText
-            .replace(/["|()]/g, ' ')
-            .replace(/\bOR\b/g, ' ')
-            .replace(/\s+-\w+/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-          if (!clean || clean.split(/\s+/).length < 2) continue;
-          if (!valid.some((item) => item.queryText.toLowerCase() === clean.toLowerCase())) {
+          if (typeof q.queryText !== 'string') continue;
+          const norm = normalizeShortQuery(q.queryText, forbidden);
+          if (!norm) continue;
+          if (!valid.some((item) => item.queryText.toLowerCase() === norm.toLowerCase())) {
             valid.push({
-              queryText: clean,
+              queryText: norm,
               tier: q.tier === 'broad' ? 'broad' : 'specific',
             });
           }
         }
         for (const fb of fallback) {
-          if (valid.length >= 12) break;
+          if (valid.length >= 15) break;
           if (!valid.some((item) => item.queryText.toLowerCase() === fb.queryText.toLowerCase())) {
             valid.push(fb);
           }
         }
         if (valid.length > 0) {
-          console.log(`[Candidate Queries] generated ${valid.length} queries via ${usedModel}`);
+          console.log(`[Candidate Queries] generated ${valid.length} 2-3 term queries via ${usedModel}`);
           return valid.slice(0, 15);
         }
       }

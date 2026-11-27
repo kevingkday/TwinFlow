@@ -854,47 +854,63 @@ async function prepareScoutState(
       if (q.id) queryStatsMap.set(q.id, { articlesReturned: 0, relevantCount: 0 });
     }
 
-    // 1b. Run up to 4 queries, deduplicating by URL and normalized title, capped at MAX_ARTICLES_JUDGED_PER_SCOUT (40)
+    // 1b. Run up to MAX_QUERIES_PER_SCOUT (15) queries in parallel batches of 5, deduplicating by URL and normalized title
     const combinedCandidates: Array<Awaited<ReturnType<typeof fetchWideNetCandidates>>['candidates'][number] & { queryId: string | null }> = [];
     const seenCandidateUrls = new Set<string>();
     const seenCandidateTitles = new Set<string>();
     const executedQueries: string[] = [];
     let rawCountTotal = 0;
     let searchSource: 'serpapi' | 'sample' | 'none' = 'none';
+    let searchError: string | undefined;
+    let staleDroppedCount = 0;
+    let lowYieldDroppedCount = 0;
 
-    for (const sq of selectedQueries) {
+    for (let i = 0; i < selectedQueries.length; i += 5) {
       if (combinedCandidates.length >= MAX_ARTICLES_JUDGED_PER_SCOUT) break;
-      const wideNet = await fetchWideNetCandidates({
-        apiKey: env.SERP_API_KEY,
-        gl: plan.geographicFocus.gl,
-        ladder: plan.queryLadder,
-        locationLock,
-        keywords: sq.queryText,
-        poolSize: Math.min(30, MAX_ARTICLES_JUDGED_PER_SCOUT),
-        maxQueries: 1,
-        skipPrWire: true,
-        allowSampleFallback: !env.SERP_API_KEY,
-      });
-      if (wideNet.source !== 'none') searchSource = wideNet.source;
-      rawCountTotal += wideNet.rawCount;
-      executedQueries.push(...wideNet.queries);
-      console.log(`[Scout] query="${sq.queryText}" raw=${wideNet.rawCount} candidates=${wideNet.candidates.length}`);
-      if (sq.id) {
-        const st = queryStatsMap.get(sq.id)!;
-        st.articlesReturned += wideNet.candidates.length;
-      }
-      for (const cand of wideNet.candidates) {
-        if (combinedCandidates.length >= MAX_ARTICLES_JUDGED_PER_SCOUT) break;
-        const normUrl = cand.url.trim().toLowerCase().replace(/\/+$/, '');
-        const normTitle = cand.title.trim().toLowerCase().replace(/\s+/g, ' ');
-        if (seenCandidateUrls.has(normUrl) || seenCandidateTitles.has(normTitle)) continue;
-        seenCandidateUrls.add(normUrl);
-        seenCandidateTitles.add(normTitle);
-        combinedCandidates.push({
-          ...cand,
-          index: combinedCandidates.length,
-          queryId: sq.id,
-        });
+      const batch = selectedQueries.slice(i, i + 5);
+      const batchResults = await Promise.all(
+        batch.map((sq) =>
+          fetchWideNetCandidates({
+            apiKey: env.SERP_API_KEY,
+            gl: plan.geographicFocus.gl,
+            ladder: plan.queryLadder,
+            locationLock,
+            keywords: sq.queryText,
+            poolSize: 20,
+            maxQueries: 1,
+            skipPrWire: true,
+            allowSampleFallback: !env.SERP_API_KEY,
+          }).then((wideNet) => ({ sq, wideNet }))
+        )
+      );
+
+      for (const { sq, wideNet } of batchResults) {
+        if (wideNet.source !== 'none') searchSource = wideNet.source;
+        if (wideNet.error && !searchError) searchError = wideNet.error;
+        if (wideNet.dropStats) {
+          staleDroppedCount += wideNet.dropStats.dateRejected + wideNet.dropStats.dateUnparsed;
+          lowYieldDroppedCount += wideNet.dropStats.filtered;
+        }
+        rawCountTotal += wideNet.rawCount;
+        executedQueries.push(...wideNet.queries);
+        console.log(`[Scout] query="${sq.queryText}" raw=${wideNet.rawCount} candidates=${wideNet.candidates.length}${wideNet.error ? ` error="${wideNet.error}"` : ''}`);
+        if (sq.id) {
+          const st = queryStatsMap.get(sq.id)!;
+          st.articlesReturned += wideNet.candidates.length;
+        }
+        for (const cand of wideNet.candidates) {
+          if (combinedCandidates.length >= MAX_ARTICLES_JUDGED_PER_SCOUT) break;
+          const normUrl = cand.url.trim().toLowerCase().replace(/\/+$/, '');
+          const normTitle = cand.title.trim().toLowerCase().replace(/\s+/g, ' ');
+          if (seenCandidateUrls.has(normUrl) || seenCandidateTitles.has(normTitle)) continue;
+          seenCandidateUrls.add(normUrl);
+          seenCandidateTitles.add(normTitle);
+          combinedCandidates.push({
+            ...cand,
+            index: combinedCandidates.length,
+            queryId: sq.id,
+          });
+        }
       }
     }
 
@@ -945,10 +961,12 @@ async function prepareScoutState(
     const pool: typeof wideNet.candidates = [];
     for (const article of wideNet.candidates) {
       if (isSportsArticle(article.title, article.publisher)) {
+        lowYieldDroppedCount += 1;
         console.log(`[PreFilter] dropped sports "${article.title}" (${article.publisher})`);
         continue;
       }
       if (isLowYieldArticle(article.title, article.publisher, article.url)) {
+        lowYieldDroppedCount += 1;
         console.log(`[PreFilter] dropped low-yield "${article.title}" (${article.publisher})`);
         continue;
       }
@@ -1034,16 +1052,23 @@ async function prepareScoutState(
     const telemetry = {
       fetchedCount: wideNet.candidates.length,
       rawCount: wideNet.rawCount,
+      searchError: searchError || null,
+      staleDroppedCount,
+      lowYieldDroppedCount,
       queries: wideNet.queries,
       serpQueries: wideNet.queries,
       prWireFetchedCount: wideNet.candidates.filter((candidate) => candidate.sourceTier === 'pr_wire').length,
       prWireSelectedCount: winners.filter((winner) => winner.sourceTier === 'pr_wire').length,
       searchSource: wideNet.source,
       alreadyIngestedCount: pool.length - fresh.length,
+      freshCount: fresh.length,
+      sentToJevCount: triageBatch.length,
+      keptByJevCount: triage.selectedIndices.length,
       triageInputCount: fresh.length,
       triagedWinnerCount: winners.length,
       triageModel: triage.modelUsed,
       locationLock: locationLock.enforced ? locationLock.clause : null,
+      judgedCount: 0,
       rejectedByJudge: 0,
       rejectedDuplicateCompany: 0,
       /** How each ingested signal got its contact: article | company | lookalike | related | none. */
@@ -1120,6 +1145,7 @@ async function processWinnerArticle(
 
       // 3a. Firecrawl Scrape / Crawl (6s timeout)
       const crawled = await crawlArticle(article.url, env.FIRECRAWL_API_KEY, article.snippet);
+      telemetry.judgedCount = (telemetry.judgedCount || 0) + 1;
 
       // 3b. Run OpenAI Enrichment & Relevance Judge in parallel so each article takes ~2-4s
       const [enriched, judgment] = await Promise.all([
@@ -1432,9 +1458,7 @@ async function finalizeScoutState(
       auditLog,
     };
 
-    const summaryDetail = telemetry.fetchedCount > 0
-      ? `(${telemetry.fetchedCount} articles scouted, ${telemetry.alreadyIngestedCount} already seen, ${telemetry.triagedWinnerCount} AI triaged)`
-      : '';
+    const summaryDetail = `(${telemetry.rawCount} raw -> ${telemetry.fetchedCount} fetched [${telemetry.staleDroppedCount || 0} stale/unparsed dropped, ${telemetry.lowYieldDroppedCount || 0} low-yield dropped], ${telemetry.freshCount ?? telemetry.triageInputCount} fresh after dedupe, ${telemetry.sentToJevCount ?? telemetry.triageInputCount} sent to Jev, ${telemetry.keptByJevCount ?? 0} kept by Jev, ${telemetry.judgedCount || 0} judged, ${ingestedSignals.length} saved)`;
 
     // Update per-query stats & retire/replace zero-hit queries
     const queryBreakdown: Array<{ query: string; returned: number; relevant: number }> = [];
@@ -1491,7 +1515,9 @@ async function finalizeScoutState(
       signals: ingestedSignals,
       telemetry: { ...fullTelemetry, queryBreakdown },
       message:
-        ingestedSignals.length > 0
+        telemetry.searchError && telemetry.fetchedCount === 0
+          ? `Search provider error: ${telemetry.searchError}`
+          : ingestedSignals.length > 0
           ? `Found ${ingestedSignals.length} new lead${ingestedSignals.length === 1 ? '' : 's'} — ${querySummary}. ${summaryDetail}`.trim()
           : `No relevant leads found (0 credits charged) — ${querySummary}. ${summaryDetail}`.trim(),
     };
