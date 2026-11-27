@@ -492,4 +492,64 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
     );
     expect(ranked.selectedIndices).toEqual([1, 0]);
   });
+
+  it('Quick-add manual article ingestion works with personal ingestToken (no session login required) and deduplicates URLs', async () => {
+    const { env, auth } = createEnv();
+
+    // Fetch personal ingest token
+    const tokRes = await app.request('/api/user/ingest-token', { headers: auth }, env);
+    expect(tokRes.status).toBe(200);
+    const tokBody = await tokRes.json();
+    expect(tokBody.ingestToken).toMatch(/^tf_[a-f0-9]+$/);
+    expect(tokBody.forwardingEmail).toBe(`leads+${tokBody.ingestToken}@twinflow.co`);
+
+    // Add an article using ONLY the ingestToken (no Authorization header)
+    const addRes = await app.request(
+      `/api/signals/quick-add?token=${tokBody.ingestToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: 'https://biv.com/news/salish-soils-expands-metro-vancouver',
+          title: 'Salish Soils expands operations into Metro Vancouver',
+          text: 'Salish Soils announced a new Metro Vancouver facility expansion with CEO Jane Doe.',
+        }),
+      },
+      env
+    );
+    expect(addRes.status).toBe(200);
+    const addBody = await addRes.json();
+    expect(addBody.success).toBe(true);
+    expect(addBody.signalId).toBeTruthy();
+
+    // Duplicate URL returns duplicate=true instead of creating a second card
+    const dupRes = await app.request(
+      `/api/signals/quick-add?token=${tokBody.ingestToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: 'https://biv.com/news/salish-soils-expands-metro-vancouver',
+        }),
+      },
+      env
+    );
+    const dupBody = await dupRes.json();
+    expect(dupBody.duplicate).toBe(true);
+
+    // Rotate token invalidates old token
+    const rotRes = await app.request('/api/user/ingest-token/rotate', { method: 'POST', headers: auth }, env);
+    const rotBody = await rotRes.json();
+    expect(rotBody.ingestToken).not.toBe(tokBody.ingestToken);
+    const oldFail = await app.request(
+      `/api/signals/quick-add?token=${tokBody.ingestToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Should fail' }),
+      },
+      env
+    );
+    expect(oldFail.status).toBe(401);
+  });
 });

@@ -2579,3 +2579,319 @@ signalsRouter.get('/', async (c) => {
   });
   return c.json({ success: true, count: all.length, signals: all });
 });
+
+export interface ManualArticleInput {
+  url?: string;
+  title?: string;
+  text?: string;
+  campaignId?: string;
+  sourceLabel?: string;
+}
+
+export async function ingestManualArticleForUser(
+  db: ReturnType<typeof getDb>,
+  env: Bindings,
+  user: typeof schema.users.$inferSelect,
+  input: ManualArticleInput
+): Promise<{
+  success: boolean;
+  duplicate?: boolean;
+  signalId?: string;
+  companyName?: string;
+  title?: string;
+  fitScore?: number;
+  message: string;
+}> {
+  const cleanUrl = (input.url || '').trim();
+  const rawTitle = (input.title || '').trim();
+  const rawText = (input.text || '').trim();
+
+  if (!cleanUrl && !rawTitle && !rawText) {
+    return { success: false, message: 'Provide an article URL, headline, or article text.' };
+  }
+
+  if (cleanUrl) {
+    const existing = await db.query.signals.findFirst({
+      where: and(eq(schema.signals.userId, user.id), eq(schema.signals.sourceUrl, cleanUrl)),
+    });
+    if (existing) {
+      return {
+        success: true,
+        duplicate: true,
+        signalId: existing.id,
+        companyName: existing.companyName,
+        title: existing.title,
+        fitScore: existing.fitScore ?? undefined,
+        message: `"${existing.companyName}" is already in your Lead Deck.`,
+      };
+    }
+  }
+
+  const targetCampaignId = input.campaignId || user.activeCampaignId || null;
+  const activeCampaign = targetCampaignId
+    ? await db.query.campaigns.findFirst({
+        where: and(eq(schema.campaigns.id, targetCampaignId), eq(schema.campaigns.userId, user.id)),
+      })
+    : null;
+  const target = activeCampaign || user;
+
+  const asList = (value?: string | null): string[] => {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const location =
+    target.targetLocation?.trim() ||
+    [target.city, target.state].map((p) => (p || '').trim()).filter(Boolean).join(', ');
+  const serviceArea: 'local' | 'national' = target.serviceArea === 'national' ? 'national' : 'local';
+  const servicesOffered = asList(target.servicesOffered || user.servicesOffered);
+  const targetIndustries = asList(target.targetIndustries);
+  const targetTriggers = asList(target.targetTriggers);
+  const buyerIndustries = asList(target.buyerIndustries);
+  const buyerRoles = asList(target.buyerRoles);
+  const userIntent = target.userIntent || user.userIntent || 'sales_client_acquisition';
+  const userMission = target.userMission || user.userMission || '';
+  const valueProp = target.valueProp || user.valueProp || '';
+  const companyDescription = target.companyDescription || user.companyDescription || '';
+
+  let customerModel: CustomerModel | undefined;
+  if (target.customerModel || user.customerModel) {
+    try {
+      customerModel = JSON.parse((target.customerModel || user.customerModel) as string) as CustomerModel;
+    } catch {
+      customerModel = undefined;
+    }
+  }
+
+  let crawledMarkdown = rawText;
+  let publisher = input.sourceLabel || 'Manual Share';
+  let resolvedUrl = cleanUrl;
+  if (cleanUrl) {
+    try {
+      const parsed = new URL(cleanUrl);
+      publisher = parsed.hostname.replace(/^www\./, '');
+    } catch {
+      // keep default publisher
+    }
+    const crawled = await crawlArticle(cleanUrl, env.FIRECRAWL_API_KEY, rawText);
+    if (crawled.markdown && crawled.markdown.trim().length > rawText.length) {
+      crawledMarkdown = crawled.markdown;
+    }
+  }
+
+  const firstHeadingLine = (crawledMarkdown || '')
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^#+\s*/, '').trim())
+    .find((l) => l.length >= 12 && l.length <= 180);
+  const articleTitle = rawTitle || firstHeadingLine || `Shared article from ${publisher}`;
+  const articleBody = crawledMarkdown || articleTitle;
+  const now = new Date().toISOString();
+
+  const [enriched, judgment] = await Promise.all([
+    enrichSignalWithLLM(
+      articleTitle,
+      articleBody,
+      publisher,
+      env.OPENAI_API_KEY,
+      [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
+      userIntent
+    ),
+    judgeArticleRelevance(
+      {
+        location: location || undefined,
+        userIntent,
+        userMission: userMission || undefined,
+        servicesOffered,
+        targetIndustries,
+        targetTriggers,
+        valueProp: valueProp || undefined,
+        companyDescription: companyDescription || undefined,
+        serviceArea,
+        allowNationalSearch: serviceArea === 'national',
+        buyerIndustries,
+      },
+      { title: articleTitle, publisher, text: `${articleTitle}\n${articleBody}` },
+      env.OPENAI_API_KEY,
+      customerModel
+    ),
+  ]);
+
+  const companyName = (judgment.buyerCompany || enriched.companyName || '').trim() || 'Shared Prospect';
+  const companyDomain = usableCompanyDomain(enriched.companyDomain);
+  const articlePerson =
+    enriched.decisionMaker?.name && !isNonBuyerRole(enriched.decisionMaker.role || '')
+      ? { name: enriched.decisionMaker.name, role: enriched.decisionMaker.role || '' }
+      : null;
+
+  const plan = generateAlgorithmicQueryPlan({
+    location,
+    userIntent,
+    userMission,
+    companyDescription,
+    servicesOffered,
+    targetIndustries,
+    targetTriggers,
+    valueProp,
+    defaultGl: inferGoogleCountry(location),
+    serviceArea,
+    buyerIndustries,
+    buyerRoles,
+  });
+
+  const resolution = await resolveSignalContacts(
+    {
+      articlePerson,
+      companyName,
+      companyDomain,
+      buyerTitles: buyerRoles.length ? buyerRoles : undefined,
+      industries: [
+        ...buyerIndustries,
+        ...targetIndustries,
+        ...enriched.industryTags.filter((tag) => !SIGNAL_TYPE_TAG.test(tag)),
+      ],
+      locations: apolloLocations(plan.locationLock, plan.geographicFocus.gl),
+    },
+    env.APOLLO_API_KEY
+  );
+
+  const uniqueSuffix = Math.random().toString(36).substring(2, 8);
+  const signalId = `sig_${Date.now()}_${uniqueSuffix}`;
+  const draftId = `dr_${Date.now()}_${uniqueSuffix}`;
+  const triggerSentence = judgment.triggerSentence || enriched.verbatimQuotes?.[0] || null;
+  const whyMatched =
+    judgment.whyMatched ||
+    enriched.coldIntroHook ||
+    `Manually added prospect (${input.sourceLabel || 'Direct'}) for ${companyName}.`;
+  const sourceExcerptsList = (enriched.verbatimQuotes || []).map((quote) => ({
+    quote,
+    context: 'Article excerpt',
+  }));
+  const sourceSnapshot = articleBody ? articleBody.trim().slice(0, 6000) : null;
+
+  await db.insert(schema.signals).values({
+    id: signalId,
+    userId: user.id,
+    campaignId: activeCampaign?.id || null,
+    parentSignalId: null,
+    title: articleTitle,
+    sourceUrl: resolvedUrl || `manual://${signalId}`,
+    publishedAt: now,
+    companyName,
+    signalType: enriched.signalType || 'Manual Prospect',
+    industryTags: JSON.stringify(enriched.industryTags || []),
+    summaryBullets: JSON.stringify(enriched.summaryBullets || []),
+    articleSummary: enriched.articleSummary || null,
+    sourceExcerpts: sourceExcerptsList.length > 0 ? JSON.stringify(sourceExcerptsList) : null,
+    sourceSnapshot,
+    fitScore: judgment.fitScore || null,
+    whyMatched,
+    triggerSentence,
+    status: 'queued',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const primary = resolution.contacts[0];
+  let primaryContactId: string | null = null;
+  for (const [position, contact] of resolution.contacts.entries()) {
+    const contactId = `ct_${Date.now()}_${uniqueSuffix}_${position}`;
+    if (position === 0) primaryContactId = contactId;
+    await db.insert(schema.contacts).values({
+      id: contactId,
+      signalId,
+      name: contact.name || '',
+      title: contact.title || '',
+      email: contact.email || null,
+      linkedinUrl: contact.linkedinUrl || null,
+      avatarUrl: contact.avatarUrl || null,
+      company: contact.company || companyName,
+      companyDomain: contact.companyDomain || null,
+      source: contact.source,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const draft = primary
+    ? adaptPitchForContact(enriched, primary, {
+        publisher,
+        userOrganization: activeCampaign?.organization || user.organization || user.legalBusinessName || undefined,
+        userName: user.name || undefined,
+        userServices: servicesOffered,
+        valueProp: valueProp || undefined,
+        userMission: userMission || undefined,
+        userIntent,
+        city: plan.locationLock.city || user.city || undefined,
+        triggerSentence: triggerSentence || undefined,
+        whyMatched,
+      })
+    : null;
+
+  if (primaryContactId && draft) {
+    await db.insert(schema.outreachDrafts).values({
+      id: draftId,
+      signalId,
+      contactId: primaryContactId,
+      subject: draft.subject,
+      body: draft.body,
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  return {
+    success: true,
+    signalId,
+    companyName,
+    title: articleTitle,
+    fitScore: judgment.fitScore,
+    message: `Added "${companyName}" to your Lead Deck.`,
+  };
+}
+
+// POST /api/signals/quick-add - Add a prospect manually via URL/text (session auth OR personal ingest token)
+signalsRouter.post('/quick-add', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'DB binding missing' }, 500);
+  }
+  const db = getDb(c.env.DB);
+
+  let body: { url?: string; title?: string; text?: string; campaignId?: string; token?: string; sourceLabel?: string } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  let user = await getSessionUser(c);
+  if (!user) {
+    const token = (c.req.query('token') || c.req.header('x-ingest-token') || body.token || '').trim();
+    if (token) {
+      user = (await db.query.users.findFirst({ where: eq(schema.users.ingestToken, token) })) || null;
+    }
+  }
+  if (!user) return authenticationRequired(c);
+
+  const url = (body.url || c.req.query('url') || '').trim();
+  const title = (body.title || c.req.query('title') || '').trim();
+  const text = (body.text || c.req.query('text') || '').trim();
+
+  const result = await ingestManualArticleForUser(db, c.env, user, {
+    url,
+    title,
+    text,
+    campaignId: body.campaignId,
+    sourceLabel: body.sourceLabel || 'Manual Add',
+  });
+
+  if (!result.success) {
+    return c.json(result, 400);
+  }
+  return c.json(result);
+});

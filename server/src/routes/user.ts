@@ -492,3 +492,66 @@ userRouter.post('/ghl-config', async (c) => {
       : `Saved, but verification warning: ${verificationResult.message}`,
   });
 });
+
+function generateIngestToken(): string {
+  const bytes = new Uint8Array(9);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `tf_${hex}`;
+}
+
+export async function ensureUserIngestToken(
+  db: Database,
+  user: typeof schema.users.$inferSelect
+): Promise<string> {
+  if (user.ingestToken && user.ingestToken.startsWith('tf_')) {
+    return user.ingestToken;
+  }
+  const token = generateIngestToken();
+  await db
+    .update(schema.users)
+    .set({ ingestToken: token, updatedAt: new Date().toISOString() })
+    .where(eq(schema.users.id, user.id));
+  return token;
+}
+
+// GET /api/user/ingest-token - Get (or lazily create) personal quick-add token & forwarding email
+userRouter.get('/ingest-token', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Database unavailable' }, 500);
+  }
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+  const db = getDb(c.env.DB);
+  const token = await ensureUserIngestToken(db, user);
+  return c.json({
+    success: true,
+    ingestToken: token,
+    forwardingEmail: `leads+${token}@twinflow.co`,
+    quickAddUrl: `https://twinflow.co/api/signals/quick-add?token=${token}`,
+  });
+});
+
+// POST /api/user/ingest-token/rotate - Rotate personal quick-add token
+userRouter.post('/ingest-token/rotate', async (c) => {
+  if (!c.env?.DB) {
+    return c.json({ success: false, error: 'Database unavailable' }, 500);
+  }
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+  const db = getDb(c.env.DB);
+  const token = generateIngestToken();
+  await db
+    .update(schema.users)
+    .set({ ingestToken: token, updatedAt: new Date().toISOString() })
+    .where(eq(schema.users.id, user.id));
+
+  return c.json({
+    success: true,
+    ingestToken: token,
+    forwardingEmail: `leads+${token}@twinflow.co`,
+    quickAddUrl: `https://twinflow.co/api/signals/quick-add?token=${token}`,
+  });
+});

@@ -34,6 +34,7 @@ import { ContactsPage } from './components/ContactsPage';
 import { EmailsPage } from './components/EmailsPage';
 import { MakeNewsModal } from './components/MakeNewsModal';
 import { PipelineInspectorModal } from './components/PipelineInspectorModal';
+import { AddArticleModal } from './components/AddArticleModal';
 import { playSound } from './utils/audio';
 import { authFetch } from './utils/api';
 import { Radio, Check, AlertCircle } from 'lucide-react';
@@ -163,6 +164,7 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [scoutToast, isScouting]);
   const [makeNewsModalOpen, setMakeNewsModalOpen] = useState(false);
+  const [addArticleOpen, setAddArticleOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [pipelineTrace, setPipelineTrace] = useState<PipelineTrace | null>(null);
   const [isLoadingTrace, setIsLoadingTrace] = useState(false);
@@ -423,6 +425,47 @@ export const App: React.FC = () => {
     setInspectorOpen(true);
     fetchPipelineTrace();
   };
+
+  // Handle PWA Web Share Target (?share=1&url=...&title=...&text=...) and Bookmarklet (?addUrl=...)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !userProfile) return;
+    const params = new URLSearchParams(window.location.search);
+    const sharedUrl = (params.get('addUrl') || params.get('url') || '').trim();
+    const sharedText = (params.get('text') || '').trim();
+    const sharedTitle = (params.get('title') || '').trim();
+    const isShare = params.get('share') === '1' || Boolean(params.get('addUrl'));
+    if (!isShare || (!sharedUrl && !sharedText && !sharedTitle)) return;
+
+    const extractedUrl = sharedUrl || (sharedText.match(/https?:\/\/\S+/)?.[0] || '');
+    const cleanSearchUrl = new URL(window.location.href);
+    ['share', 'addUrl', 'url', 'title', 'text'].forEach((k) => cleanSearchUrl.searchParams.delete(k));
+    window.history.replaceState({}, '', `${cleanSearchUrl.pathname}${cleanSearchUrl.search}${cleanSearchUrl.hash}`);
+
+    setCurrentView('deck');
+    setScoutToast({ message: 'Adding shared article to your Lead Deck...', type: 'info' });
+    authFetch('/api/signals/quick-add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: extractedUrl || undefined,
+        title: sharedTitle || undefined,
+        text: extractedUrl ? undefined : sharedText || undefined,
+        sourceLabel: params.get('addUrl') ? 'Bookmarklet' : 'Mobile Share',
+      }),
+    })
+      .then((r) => r.json())
+      .then(async (data) => {
+        if (data?.success) {
+          await fetchDeck();
+          setScoutToast({ message: data.message || 'Added shared prospect!', type: data.duplicate ? 'info' : 'success' });
+        } else {
+          setScoutToast({ message: data?.message || data?.error || 'Could not add shared article.', type: 'error' });
+        }
+      })
+      .catch(() => {
+        setScoutToast({ message: 'Network error adding shared article.', type: 'error' });
+      });
+  }, [userProfile, fetchDeck]);
 
   // Trigger real ingestion pipeline (AI Search & Enrichment)
   const handleScoutNews = async (batchLimit?: number) => {
@@ -1142,6 +1185,7 @@ export const App: React.FC = () => {
         onOpenMakeNews={() => setMakeNewsModalOpen(true)}
         isGhlConnected={userProfile?.isGhlConnected}
         onScoutNews={handleScoutNews}
+        onOpenAddArticle={() => setAddArticleOpen(true)}
         onOpenInspector={handleOpenInspector}
         isScouting={isScouting}
         serverOnline={serverOnline}
@@ -1452,6 +1496,22 @@ export const App: React.FC = () => {
         isLoading={isLoadingTrace}
         onScoutWithLimit={handleScoutNews}
         isScouting={isScouting}
+      />
+
+      {/* Manual Add Article & Mobile Share Modal */}
+      <AddArticleModal
+        isOpen={addArticleOpen}
+        onClose={() => setAddArticleOpen(false)}
+        campaigns={campaigns}
+        activeCampaignId={activeCampaignId || ''}
+        onAdded={async (res) => {
+          await fetchDeck();
+          setCurrentView('deck');
+          setScoutToast({
+            message: res.message,
+            type: res.duplicate ? 'info' : 'success',
+          });
+        }}
       />
     </div>
   </ErrorBoundary>

@@ -17,6 +17,7 @@ import {
   Building2,
   SlidersHorizontal,
   Mail,
+  Plus,
 } from 'lucide-react';
 import type { SwipeStats, UserProfile } from '../types/lead';
 import { ExecutiveAvatar } from './ExecutiveAvatar';
@@ -27,6 +28,7 @@ interface HeaderProps {
   onToggleSound: () => void;
   onOpenHelp: () => void;
   onScoutNews: () => void;
+  onOpenAddArticle?: () => void;
   onOpenInspector?: () => void;
   onOpenUpgrade?: () => void;
   onOpenGhlSettings?: () => void;
@@ -51,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleSound,
   onOpenHelp,
   onScoutNews,
+  onOpenAddArticle,
   onOpenInspector,
   onOpenUpgrade,
   onOpenGhlSettings,
@@ -238,6 +241,20 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">{isScouting ? 'Scouting AI...' : 'Scout Signals'}</span>
             <span className="inline sm:hidden">{isScouting ? 'Scout...' : 'Scout'}</span>
           </button>
+
+          {/* Manual Add Article Action */}
+          {user && onOpenAddArticle && (
+            <button
+              type="button"
+              onClick={onOpenAddArticle}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-medium shadow-xs transition-all cursor-pointer shrink-0"
+              title="Add a prospect manually from an article URL or mobile share"
+              aria-label="Add Article"
+            >
+              <Plus className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span className="hidden md:inline">Add Article</span>
+            </button>
+          )}
 
           {/* AI Radar Pipeline Inspector Action */}
           {onOpenInspector && (

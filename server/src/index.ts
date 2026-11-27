@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { eq } from 'drizzle-orm';
 import type { Bindings } from './db';
+import { getDb, schema } from './db';
 import { resolveAllowedOrigin } from './cors';
 import { healthRouter } from './routes/health';
-import { signalsRouter } from './routes/signals';
+import { signalsRouter, ingestManualArticleForUser } from './routes/signals';
 import { userRouter } from './routes/user';
 import { authRouter } from './routes/auth';
 import { onboardingRouter } from './routes/onboarding';
@@ -84,4 +86,54 @@ app.get('*', async (c) => {
   });
 });
 
-export default app;
+function extractTokenFromEmailAddress(toAddress: string): string | null {
+  const addr = (toAddress || '').trim().toLowerCase();
+  const plusMatch = addr.match(/\+(tf_[a-z0-9]+)@/i);
+  if (plusMatch) return plusMatch[1];
+  const localMatch = addr.match(/^(tf_[a-z0-9]+)@/i);
+  return localMatch ? localMatch[1] : null;
+}
+
+function extractArticleFromRawEmail(raw: string): { title: string; url: string; text: string } {
+  const subjectMatch = raw.match(/^Subject:\s*(.+)$/im);
+  const title = subjectMatch ? subjectMatch[1].replace(/^(fwd:|re:)\s*/i, '').trim() : '';
+  const urls = raw.match(/https?:\/\/[^\s<>"')]+/gi) || [];
+  const articleUrl =
+    urls.find((u) => !/unsubscribe|optout|preferences|mailto:|tracking|pixel|twinflow\.co/i.test(u)) || '';
+  const bodyIdx = raw.search(/\r?\n\r?\n/);
+  const bodyRaw = bodyIdx >= 0 ? raw.slice(bodyIdx).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
+  return { title, url: articleUrl, text: bodyRaw.slice(0, 12000) };
+}
+
+export default {
+  fetch: app.fetch,
+  request: app.request.bind(app),
+  async email(
+    message: { to: string; from: string; raw: ReadableStream<Uint8Array> },
+    env: Bindings,
+    ctx: ExecutionContext
+  ) {
+    if (!env?.DB) return;
+    const token = extractTokenFromEmailAddress(message.to);
+    if (!token) {
+      console.warn('[Email Ingest] No tf_ token found in recipient:', message.to);
+      return;
+    }
+    const db = getDb(env.DB);
+    const user = await db.query.users.findFirst({ where: eq(schema.users.ingestToken, token) });
+    if (!user) {
+      console.warn('[Email Ingest] Unknown ingest token:', token);
+      return;
+    }
+    const rawText = await new Response(message.raw).text();
+    const extracted = extractArticleFromRawEmail(rawText);
+    ctx.waitUntil(
+      ingestManualArticleForUser(db, env, user, {
+        url: extracted.url || undefined,
+        title: extracted.title || undefined,
+        text: extracted.text || undefined,
+        sourceLabel: 'Email Forward',
+      }).catch((err) => console.error('[Email Ingest] failed:', err))
+    );
+  },
+};

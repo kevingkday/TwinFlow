@@ -47,6 +47,7 @@ export const users = sqliteTable('users', {
   customerModel: text('customer_model'),
   serviceArea: text('service_area', { enum: ['local', 'national'] }).notNull().default('local'),
   allowNationalSearch: integer('allow_national_search', { mode: 'boolean' }).notNull().default(false),
+  ingestToken: text('ingest_token'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
