@@ -95,13 +95,14 @@ function extractTokenFromEmailAddress(toAddress: string): string | null {
 }
 
 function extractArticleFromRawEmail(raw: string): { title: string; url: string; text: string } {
-  const subjectMatch = raw.match(/^Subject:\s*(.+)$/im);
+  const unfolded = raw.replace(/=\r?\n/g, '').replace(/=3D/gi, '=');
+  const subjectMatch = unfolded.match(/^Subject:\s*(.+)$/im);
   const title = subjectMatch ? subjectMatch[1].replace(/^(fwd:|re:)\s*/i, '').trim() : '';
-  const urls = raw.match(/https?:\/\/[^\s<>"')]+/gi) || [];
+  const urls = unfolded.match(/https?:\/\/[^\s<>"')]+/gi) || [];
   const articleUrl =
-    urls.find((u) => !/unsubscribe|optout|preferences|mailto:|tracking|pixel|twinflow\.co/i.test(u)) || '';
-  const bodyIdx = raw.search(/\r?\n\r?\n/);
-  const bodyRaw = bodyIdx >= 0 ? raw.slice(bodyIdx).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
+    urls.find((u) => !/unsubscribe|optout|preferences|mailto:|tracking|pixel|twinflow\.co|w3\.org|schema\.org/i.test(u)) || '';
+  const bodyIdx = unfolded.search(/\r?\n\r?\n/);
+  const bodyRaw = bodyIdx >= 0 ? unfolded.slice(bodyIdx).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
   return { title, url: articleUrl, text: bodyRaw.slice(0, 12000) };
 }
 
