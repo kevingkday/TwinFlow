@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../db';
 import { getDb, schema } from '../db';
-import { eq, desc, and, sql, inArray, or, like } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 import { fetchSerpNews, fetchWideNetCandidates, WIDE_NET_POOL_SIZE } from '../services/serpNews';
 import { crawlArticle } from '../services/firecrawl';
 import {
@@ -2788,12 +2788,19 @@ export async function ingestManualArticleForUser(
   }
 
   if (cleanUrl) {
-    const existing = await db.query.signals.findFirst({
-      where: and(
-        eq(schema.signals.userId, user.id),
-        or(eq(schema.signals.sourceUrl, cleanUrl), like(schema.signals.sourceUrl, `${cleanUrl}#%`))
-      ),
-    });
+    const userSignals = await db
+      .select({
+        id: schema.signals.id,
+        companyName: schema.signals.companyName,
+        title: schema.signals.title,
+        fitScore: schema.signals.fitScore,
+        sourceUrl: schema.signals.sourceUrl,
+      })
+      .from(schema.signals)
+      .where(eq(schema.signals.userId, user.id));
+    const existing = userSignals.find(
+      (s) => s.sourceUrl === cleanUrl || s.sourceUrl.startsWith(`${cleanUrl}#`)
+    );
     if (existing) {
       return {
         success: true,
