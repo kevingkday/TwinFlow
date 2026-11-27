@@ -1,6 +1,8 @@
-import React from 'react';
-import { ArrowUpRight, CheckCircle2, Globe, Layers, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowUpRight, CheckCircle2, ChevronLeft, ChevronRight, Globe, Layers, Trash2 } from 'lucide-react';
 import type { LeadCardData } from '../types/lead';
+
+const PAGE_SIZE = 10;
 
 interface DeckQueueListProps {
   leads: LeadCardData[];
@@ -22,7 +24,13 @@ function formatSourceLabel(lead: LeadCardData): string {
 }
 
 export const DeckQueueList: React.FC<DeckQueueListProps> = ({ leads, onSelectLead, onDismissLead }) => {
+  const [page, setPage] = useState(0);
   if (leads.length === 0) return null;
+
+  const totalPages = Math.max(1, Math.ceil(leads.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const startIdx = currentPage * PAGE_SIZE;
+  const visibleLeads = leads.slice(startIdx, startIdx + PAGE_SIZE);
 
   return (
     <section className="w-full max-w-6xl mt-6 rounded-2xl bg-white border border-slate-200 shadow-xs overflow-hidden">
@@ -40,7 +48,8 @@ export const DeckQueueList: React.FC<DeckQueueListProps> = ({ leads, onSelectLea
       </div>
 
       <div className="divide-y divide-slate-100">
-        {leads.map((lead, index) => {
+        {visibleLeads.map((lead, localIndex) => {
+          const index = startIdx + localIndex;
           const isCurrent = index === 0;
           const sourceLabel = formatSourceLabel(lead);
           const company = lead.companyName || lead.decisionMaker?.company;
@@ -147,6 +156,38 @@ export const DeckQueueList: React.FC<DeckQueueListProps> = ({ leads, onSelectLea
           );
         })}
       </div>
+
+      {totalPages > 1 && (
+        <div className="px-4 sm:px-5 py-3 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between gap-3 text-xs">
+          <span className="text-slate-500">
+            Showing <strong className="text-slate-800">{startIdx + 1}–{Math.min(startIdx + PAGE_SIZE, leads.length)}</strong> of{' '}
+            <strong className="text-slate-800">{leads.length}</strong> leads
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage(Math.max(0, currentPage - 1))}
+              disabled={currentPage === 0}
+              className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              Previous
+            </button>
+            <span className="text-slate-600 font-medium px-1">
+              Page {currentPage + 1} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage(Math.min(totalPages - 1, currentPage + 1))}
+              disabled={currentPage >= totalPages - 1}
+              className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Next
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
