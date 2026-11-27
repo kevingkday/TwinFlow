@@ -161,12 +161,12 @@ describe('signal quality', () => {
     ).toBe(true);
     expect(
       validateSignalEvidence({
-        sourceText: 'Dana Cho joined Hub International in Toronto this week.',
-        buyerCompany: 'Hub International',
+        sourceText: 'Dana Cho joined BIV News in Toronto this week.',
+        buyerCompany: 'BIV News',
         namedPerson: 'Dana Cho',
-        personEmployer: 'Hub International',
-        personRole: 'broker',
-        quotes: ['Dana Cho joined Hub International'],
+        personEmployer: 'BIV News',
+        personRole: 'journalist',
+        quotes: ['Dana Cho joined BIV News'],
         location: 'Toronto, Ontario, Canada',
         allowNationalSearch: false,
       }).ok

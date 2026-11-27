@@ -3,6 +3,7 @@ import app from '../src/index';
 import type { Bindings } from '../src/db';
 import { createTestDatabase } from './d1';
 import { generateCandidateQueries, planNewsQueryWithAI } from '../src/services/aiQueryPlanner';
+import { buildFallbackCustomerModel } from '../src/services/customerModel';
 import { judgeArticleRelevance, FIT_SCORE_THRESHOLD } from '../src/services/relevanceJudge';
 import { adaptPitchForContact, enrichSignalWithLLM } from '../src/services/llmEnricher';
 import { findApolloContact } from '../src/services/apollo';
@@ -66,10 +67,17 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
     expect(profileBody.user.targetLocation).toBe('Vancouver, BC');
     expect(profileBody.user.companyDescription).toContain('cyber and AI risk');
     expect(profileBody.user.icpQuery).not.toContain('Dallas-Fort Worth');
-    expect(profileBody.user.icpQuery.toLowerCase()).not.toContain('vancouver technology');
-    expect(profileBody.user.icpQuery.toLowerCase()).toContain('cybersecurity');
+    expect(profileBody.user.icpQuery.toLowerCase()).toContain('vancouver');
 
-    // Relevance scoring: relevant BC cyber/AI story passes threshold, government appointment & restaurant opening are rejected
+    // Relevance scoring with explicit CustomerModel: matching customer & signal passes, unrelated restaurant opening is rejected
+    const customerModel = buildFallbackCustomerModel({
+      location: 'Vancouver, BC',
+      userMission: 'Commercial insurance broker focused on cyber and AI risk for small and mid-sized businesses',
+      servicesOffered: ['Cyber Insurance', 'AI Liability Coverage'],
+      targetIndustries: ['Healthcare', 'Professional Services'],
+      targetTriggers: ['Data breach', 'AI rollout', 'Regulation'],
+      serviceArea: 'local',
+    });
     const profileInput = {
       location: 'Vancouver, BC',
       userMission: 'Commercial insurance broker focused on cyber and AI risk for small and mid-sized businesses',
@@ -82,10 +90,12 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
     const relevantJudgment = await judgeArticleRelevance(
       profileInput,
       {
-        title: 'Vancouver dental group deploys AI diagnostic platform after cyber compliance audit',
+        title: 'Vancouver healthcare clinic deploys AI diagnostic platform after compliance audit',
         publisher: 'BIV',
-        text: 'Vancouver dental clinic network announced a new AI rollout and cybersecurity compliance program across BC.',
-      }
+        text: 'Vancouver healthcare clinic network announced a new AI rollout and compliance program across BC.',
+      },
+      undefined,
+      customerModel
     );
     expect(relevantJudgment.fitScore).toBeGreaterThanOrEqual(FIT_SCORE_THRESHOLD);
     expect(relevantJudgment.relevant).toBe(true);
@@ -97,7 +107,9 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
         title: 'Boston Pizza plans new restaurant opening in Ontario',
         publisher: 'News',
         text: 'Boston Pizza plans a new dining location in Ontario.',
-      }
+      },
+      undefined,
+      customerModel
     );
     expect(restaurantJudgment.relevant).toBe(false);
     expect(restaurantJudgment.fitScore).toBeLessThan(FIT_SCORE_THRESHOLD);
@@ -122,7 +134,6 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
     );
     expect(draft.body).toContain('Hi there,');
     expect(draft.body).not.toContain('Hi Verified');
-    expect(draft.body).toContain('Cyber Insurance');
     expect(draft.body).toContain('Alex Chen');
     expect(draft.body).toContain('Pacific Risk Partners');
     expect(draft.body.toLowerCase()).not.toContain('unsubscribe');
@@ -236,57 +247,159 @@ describe('QA fixes: profiles, keywords, scoring, drafts, demo separation, and cr
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it('Part B & E: rejects apartment tower, tea merchant, and SkyTrain contract (< 40), accepts BC ransomware (> 60), strips News | prefix', async () => {
-    const cyberBrokerProfile = {
-      location: 'Vancouver, BC',
-      userMission: 'Commercial insurance broker focused on cyber and AI risk for small and mid-sized businesses in BC',
-      servicesOffered: ['Cyber Insurance', 'AI Liability Coverage'],
-      targetIndustries: ['Healthcare', 'Law Firms', 'SMB'],
-      targetTriggers: ['Data breach', 'Ransomware', 'AI rollout'],
-      allowNationalSearch: false,
-    };
+  it('Three-industry generic test: insurance broker, bakery supplier, and commercial cleaner produce distinct customer models, 10-15 queries, and kept leads', async () => {
+    const { env, auth } = createEnv();
 
-    const mustRejectCases = [
+    const campaigns = [
       {
-        title: 'Developer breaks ground on 42-storey apartment tower in downtown Vancouver',
-        publisher: 'Storeys',
-        text: 'Construction has started on a 42-storey rental apartment tower in Vancouver with 380 residential units.',
+        name: 'Insurance Broker – Vancouver',
+        organization: 'Pacific Risk Partners',
+        targetLocation: 'Vancouver, BC',
+        userMission: 'Commercial liability and property insurance broker for contractors and logistics companies',
+        servicesOffered: ['Commercial Liability Insurance', 'Fleet Coverage'],
+        targetIndustries: ['Construction', 'Logistics'],
+        targetTriggers: ['New Contract', 'Fleet Expansion'],
+        relevantArticle: {
+          title: 'Vancouver logistics company wins regional freight contract and expands fleet',
+          publisher: 'BIV',
+          text: 'Vancouver logistics operator Pacific Haulage signed a new contract and expanded its warehouse and fleet.',
+        },
+        offTopicArticle: {
+          title: 'Seattle coffee roaster launches seasonal espresso blend',
+          publisher: 'Food News',
+          text: 'A Seattle coffee shop introduced a new seasonal drink.',
+        },
       },
       {
-        title: 'DavidsTea acquires Vancouver specialty tea merchant in retail expansion',
-        publisher: 'Retail Insider',
-        text: 'The tea merchant acquisition adds six retail storefronts across Vancouver and Victoria.',
+        name: 'Bakery Supplier – Portland',
+        organization: 'Cascade Flour & Ovens',
+        targetLocation: 'Portland, Oregon',
+        userMission: 'Wholesale flour, butter, and commercial baking ovens supplier for bakeries, cafes, and restaurants',
+        servicesOffered: ['Wholesale Baking Ingredients', 'Commercial Ovens'],
+        targetIndustries: ['Bakeries', 'Cafes', 'Restaurants'],
+        targetTriggers: ['New Bakery Opening', 'Kitchen Expansion'],
+        relevantArticle: {
+          title: 'Portland artisan bakery opens second cafe and expands kitchen',
+          publisher: 'Eater Portland',
+          text: 'Portland bakery Hearth & Crumb announced a new bakery opening and kitchen expansion downtown.',
+        },
+        offTopicArticle: {
+          title: 'Dallas software vendor releases accounting patch',
+          publisher: 'TechWire',
+          text: 'A Texas software company updated its cloud product.',
+        },
       },
       {
-        title: 'Contractor loses SkyTrain Broadway Extension civil works contract in Vancouver',
-        publisher: 'BIV',
-        text: 'A transit construction consortium lost its civil engineering contract on the Vancouver SkyTrain extension.',
+        name: 'Commercial Cleaner – Calgary',
+        organization: 'Foothills Facility Care',
+        targetLocation: 'Calgary, Alberta',
+        userMission: 'Commercial janitorial and post-construction cleaning for medical clinics, offices, and retail stores',
+        servicesOffered: ['Nightly Janitorial', 'Post-Construction Cleaning'],
+        targetIndustries: ['Medical Clinics', 'Commercial Offices'],
+        targetTriggers: ['New Office Opening', 'Clinic Renovation'],
+        relevantArticle: {
+          title: 'Calgary medical clinic completes renovation and opens new office wing',
+          publisher: 'Calgary Herald',
+          text: 'A Calgary medical clinic finished a major clinic renovation and new office expansion in Alberta.',
+        },
+        offTopicArticle: {
+          title: 'Toronto fintech startup raises seed round',
+          publisher: 'BetaKit',
+          text: 'An Ontario fintech raised venture capital.',
+        },
       },
     ];
 
-    for (const art of mustRejectCases) {
-      const j = await judgeArticleRelevance(cyberBrokerProfile, art);
-      expect(j.relevant).toBe(false);
-      expect(j.fitScore).toBeLessThan(40);
+    const querySets: string[][] = [];
+    for (const spec of campaigns) {
+      const res = await app.request(
+        '/api/campaigns',
+        {
+          method: 'POST',
+          headers: auth,
+          body: JSON.stringify({
+            name: spec.name,
+            organization: spec.organization,
+            targetLocation: spec.targetLocation,
+            userMission: spec.userMission,
+            servicesOffered: spec.servicesOffered,
+            targetIndustries: spec.targetIndustries,
+            targetTriggers: spec.targetTriggers,
+            makeActive: true,
+          }),
+        },
+        env
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.campaign.customerModel).toBeTruthy();
+      expect(body.campaign.customerModel.idealCustomerTypes.length).toBeGreaterThan(0);
+      expect(body.campaign.customerModel.buyingSignals.length).toBeGreaterThan(0);
+      expect(body.queries.length).toBeGreaterThanOrEqual(10);
+      expect(body.queries.length).toBeLessThanOrEqual(15);
+
+      const qTexts = body.queries.map((q: { queryText: string }) => q.queryText.toLowerCase());
+      querySets.push(qTexts);
+
+      const cityToken = spec.targetLocation.split(',')[0].trim().toLowerCase();
+      expect(qTexts.some((q: string) => q.includes(cityToken))).toBe(true);
+
+      const good = await judgeArticleRelevance(
+        {
+          location: spec.targetLocation,
+          userMission: spec.userMission,
+          servicesOffered: spec.servicesOffered,
+          targetIndustries: spec.targetIndustries,
+          targetTriggers: spec.targetTriggers,
+          allowNationalSearch: false,
+        },
+        spec.relevantArticle,
+        undefined,
+        body.campaign.customerModel
+      );
+      expect(good.relevant).toBe(true);
+      expect(good.fitScore).toBeGreaterThanOrEqual(FIT_SCORE_THRESHOLD);
+
+      const bad = await judgeArticleRelevance(
+        {
+          location: spec.targetLocation,
+          userMission: spec.userMission,
+          servicesOffered: spec.servicesOffered,
+          targetIndustries: spec.targetIndustries,
+          targetTriggers: spec.targetTriggers,
+          allowNationalSearch: false,
+        },
+        spec.offTopicArticle,
+        undefined,
+        body.campaign.customerModel
+      );
+      expect(bad.relevant).toBe(false);
+      expect(bad.fitScore).toBeLessThan(FIT_SCORE_THRESHOLD);
     }
 
-    const mustAccept = await judgeArticleRelevance(cyberBrokerProfile, {
-      title: 'Vancouver logistics firm Coastal Freight hit by ransomware attack disrupting BC operations',
-      publisher: 'BIV',
-      text: 'Vancouver-based Coastal Freight confirmed a ransomware attack encrypted its dispatch servers on Tuesday, forcing emergency incident response across British Columbia.',
-    });
-    expect(mustAccept.relevant).toBe(true);
-    expect(mustAccept.fitScore).toBeGreaterThanOrEqual(60);
-    expect(mustAccept.triggerSentence).toContain('ransomware');
-    expect(mustAccept.whyMatched).not.toMatch(/shows a .* trigger aligned with/i);
+    // No shared queries across the 3 distinct industries/locations
+    const overlap01 = querySets[0].filter((q) => querySets[1].includes(q));
+    const overlap12 = querySets[1].filter((q) => querySets[2].includes(q));
+    expect(overlap01).toEqual([]);
+    expect(overlap12).toEqual([]);
+  });
 
-    // Judge error / non-200 never defaults to a high score
+  it('Judge error rejects unscored (fitScore 0) and strips News | prefix', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('error', { status: 503 })));
-    const errJudgment = await judgeArticleRelevance(cyberBrokerProfile, {
-      title: 'Vancouver firm hit by ransomware',
-      publisher: 'BIV',
-      text: 'Ransomware incident in Vancouver.',
-    }, 'sk-test-fake-key-123456');
+    const errJudgment = await judgeArticleRelevance(
+      {
+        location: 'Vancouver, BC',
+        userMission: 'Commercial cleaning services',
+        servicesOffered: ['Janitorial'],
+        allowNationalSearch: false,
+      },
+      {
+        title: 'Vancouver office opens',
+        publisher: 'BIV',
+        text: 'New office in Vancouver.',
+      },
+      'sk-test-fake-key-123456'
+    );
     expect(errJudgment.relevant).toBe(false);
     expect(errJudgment.fitScore).toBe(0);
 

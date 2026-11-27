@@ -3,8 +3,8 @@ import type { Database } from '../db';
 import { schema } from '../db';
 import { parseCityRegion, type CandidateQuerySpec } from './aiQueryPlanner';
 
-export const MAX_QUERIES_PER_SCOUT = 4;
-export const MAX_ARTICLES_JUDGED_PER_SCOUT = 40;
+export const MAX_QUERIES_PER_SCOUT = 8;
+export const MAX_ARTICLES_JUDGED_PER_SCOUT = 200;
 export const RETIRE_AFTER_RUNS_WITH_ZERO_RELEVANT = 3;
 
 export type CampaignQueryRow = typeof schema.campaignQueries.$inferSelect;

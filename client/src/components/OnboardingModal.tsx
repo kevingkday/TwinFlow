@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import type { UserProfile } from '../types/lead';
-import type { Campaign } from '../types/campaign';
+import type { Campaign, CustomerModel } from '../types/campaign';
 import { playSound } from '../utils/audio';
 import { deriveBuyerProfile } from '../utils/buyerProfile';
 
@@ -310,6 +310,17 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       if (campaign.buyerRoles?.length) setBuyerRolesText(ensureArray(campaign.buyerRoles).join(', '));
       if (campaign.buyerCompanySize) setBuyerCompanySize(campaign.buyerCompanySize);
       if (campaign.serviceArea) setServiceArea(campaign.serviceArea);
+      if (campaign.customerModel) {
+        setCustomerModel(campaign.customerModel);
+        setIdealCustomersText((campaign.customerModel.idealCustomerTypes || []).join(', '));
+        setCustomerSizeText(campaign.customerModel.customerSize || '');
+        setBuyingSignalsText((campaign.customerModel.buyingSignals || []).join(', '));
+      } else {
+        setCustomerModel(null);
+        setIdealCustomersText('');
+        setCustomerSizeText('');
+        setBuyingSignalsText('');
+      }
     } else {
       // New campaign starts blank on sectors/location/mission; only seed org/website from sign-up for the very first campaign
       const isFirstCampaign = !user?.onboardingCompleted;
@@ -320,6 +331,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       setUserIntent('sales_client_acquisition');
       setUserMission('');
       setSelectedIndustries([]);
+      setCustomerModel(null);
+      setIdealCustomersText('');
+      setCustomerSizeText('');
+      setBuyingSignalsText('');
       setSelectedTriggers([
         'New Location or Facility Opening',
         'Major Contract or RFP Awarded',
@@ -339,6 +354,65 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [previewQueries, setPreviewQueries] = useState<Array<{ queryText: string; tier: 'specific' | 'broad' }>>([]);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [customerModel, setCustomerModel] = useState<CustomerModel | null>(campaign?.customerModel || null);
+  const [idealCustomersText, setIdealCustomersText] = useState(
+    campaign?.customerModel?.idealCustomerTypes?.join(', ') || ''
+  );
+  const [customerSizeText, setCustomerSizeText] = useState(campaign?.customerModel?.customerSize || '');
+  const [buyingSignalsText, setBuyingSignalsText] = useState(
+    campaign?.customerModel?.buyingSignals?.join(', ') || ''
+  );
+
+  const buildEditedCustomerModel = (): CustomerModel | undefined => {
+    const types = idealCustomersText.split(',').map((s) => s.trim()).filter(Boolean);
+    const signals = buyingSignalsText.split(',').map((s) => s.trim()).filter(Boolean);
+    if (types.length === 0 && signals.length === 0 && !customerSizeText.trim()) return undefined;
+    return {
+      idealCustomerTypes: types.length > 0 ? types : (customerModel?.idealCustomerTypes || ['business']),
+      customerSize: customerSizeText.trim() || customerModel?.customerSize || 'Small to mid-sized businesses',
+      buyingSignals: signals.length > 0 ? signals : (customerModel?.buyingSignals || ['expansion', 'new location']),
+      serviceArea: customerModel?.serviceArea || serviceArea,
+    };
+  };
+
+  const refreshPreviewWithModel = async (overrideModel?: CustomerModel) => {
+    setIsLoadingPreview(true);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('twinflow_session_token') : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/campaigns/preview-queries', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          targetLocation,
+          userIntent,
+          userMission,
+          companyDescription: userMission,
+          targetIndustries: selectedIndustries,
+          targetTriggers: selectedTriggers,
+          serviceArea,
+          customerModel: overrideModel,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (Array.isArray(data.queries)) setPreviewQueries(data.queries);
+          if (data.customerModel) {
+            setCustomerModel(data.customerModel);
+            setIdealCustomersText((data.customerModel.idealCustomerTypes || []).join(', '));
+            setCustomerSizeText(data.customerModel.customerSize || '');
+            setBuyingSignalsText((data.customerModel.buyingSignals || []).join(', '));
+          }
+        }
+      }
+    } catch {
+      // non-fatal; server will generate on save if preview failed
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
 
   React.useEffect(() => {
     if (!isOpen || step !== 4 || mode === 'edit') return;
@@ -366,6 +440,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           const data = await res.json();
           if (data.success && Array.isArray(data.queries)) {
             setPreviewQueries(data.queries);
+          }
+          if (data.success && data.customerModel) {
+            setCustomerModel(data.customerModel);
+            setIdealCustomersText((data.customerModel.idealCustomerTypes || []).join(', '));
+            setCustomerSizeText(data.customerModel.customerSize || '');
+            setBuyingSignalsText((data.customerModel.buyingSignals || []).join(', '));
           }
         }
       } catch {
@@ -444,6 +524,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             buyerRoles: buyerRolesText.split(',').map((item) => item.trim()).filter(Boolean),
             buyerCompanySize,
             serviceArea,
+            customerModel: buildEditedCustomerModel(),
           }),
         });
       } else {
@@ -469,6 +550,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             buyerRoles: buyerRolesText.split(',').map((item) => item.trim()).filter(Boolean),
             buyerCompanySize,
             serviceArea,
+            customerModel: buildEditedCustomerModel(),
             makeActive: true,
           }),
         });
@@ -972,19 +1054,58 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                     })}
                   </div>
 
-                  {/* AI Search Strategy & Goldilocks Rule Explainer */}
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                  {/* Customer Model & Search Query Preview */}
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                         <Flame className="w-3.5 h-3.5 text-blue-600" />
-                        AI Search Calibration (The Goldilocks Rule)
+                        Customer Model &amp; Search Queries
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono font-medium">
-                        3 to 6 words
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => refreshPreviewWithModel(buildEditedCustomerModel())}
+                        disabled={isLoadingPreview}
+                        className="text-[10px] px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-medium cursor-pointer disabled:opacity-50"
+                      >
+                        Refresh Queries
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 text-[11px]">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-0.5">Ideal Customer Types</label>
+                        <input
+                          type="text"
+                          value={idealCustomersText}
+                          onChange={(e) => setIdealCustomersText(e.target.value)}
+                          placeholder="e.g., cafes, restaurants, grocery stores"
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-800 text-[11px]"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-0.5">Customer Size</label>
+                          <input
+                            type="text"
+                            value={customerSizeText}
+                            onChange={(e) => setCustomerSizeText(e.target.value)}
+                            placeholder="e.g., Local SMBs (10-150 employees)"
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-800 text-[11px]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-0.5">Buying Signals</label>
+                          <input
+                            type="text"
+                            value={buyingSignalsText}
+                            onChange={(e) => setBuyingSignalsText(e.target.value)}
+                            placeholder="e.g., new location, expansion, renovation"
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-800 text-[11px]"
+                          />
+                        </div>
+                      </div>
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-                      TwinFlow generates 6–8 candidate queries from what you sell, your buyer sectors, buying triggers, and location, then ranks them by relevant leads:
+                      TwinFlow generates 10–15 short queries from your customer model and ranks them by relevant leads:
                     </p>
                     <div className="p-2.5 rounded-lg bg-white border border-slate-200 font-mono text-[11px] text-slate-800 space-y-1.5 shadow-2xs max-h-40 overflow-y-auto">
                       {isLoadingPreview ? (

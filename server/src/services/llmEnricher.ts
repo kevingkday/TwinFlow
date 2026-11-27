@@ -12,6 +12,7 @@ import {
 } from './signalQuality';
 import { isPolicyCommentary } from './buyerProfile';
 import { buildLocationLock, mentionsLockedPlace, type LocationLock } from './aiQueryPlanner';
+import { buildFallbackCustomerModel, type CustomerModel } from './customerModel';
 import { hasJevKey, jevSystemOne, noulOf, type JevConfig, type JevQuestion } from './jev';
 
 /**
@@ -89,6 +90,8 @@ export interface TriageBuyerProfile {
   location?: string;
   /** Explicit lock; derived from `location` + `serviceArea` when absent. */
   locationLock?: LocationLock;
+  /** Structured customer model driving triage & relevance. */
+  customerModel?: CustomerModel;
 }
 
 export interface TriageResult {
@@ -99,26 +102,6 @@ export interface TriageResult {
   /** `jev:<model>` when TypeSafe Jev decided, otherwise `keyword_fallback`. */
   modelUsed: `jev:${string}` | 'keyword_fallback';
 }
-
-const TRIGGER_TYPES: ArticleType[] = [
-  'leadership_hire',
-  'funding',
-  'expansion',
-  'contract_award',
-  'ground_breaking',
-  'lease_real_estate',
-  'acquisition',
-];
-
-const TRIGGER_WEIGHT: Partial<Record<ArticleType, number>> = {
-  leadership_hire: 3,
-  funding: 3,
-  acquisition: 3,
-  contract_award: 3,
-  ground_breaking: 3,
-  expansion: 2,
-  lease_real_estate: 2,
-};
 
 const STOCK_BLURB =
   /\b(shares? (?:rose|fell|jumped|slid|gained|dropped|up\b|down\b)|stock (?:price|rises|falls|jumps)|why\b[^.]{0,60}\b(?:stock|shares)\b[^.]{0,40}\bmoved|market wrap|daily market|pre-market movers|after-hours movers|price target|52-week|short interest|dividend declared|earnings call transcript|analyst (?:rating|upgrade|downgrade)|(?:upgraded|downgraded) to (?:buy|sell|hold|outperform|underperform))/i;
@@ -155,11 +138,20 @@ export function keywordTriageCandidates(
   maxWinners = 5
 ): TriageResult {
   const lock = triageLock(profile);
-  const { topic } = profileTerms({
-    targetIndustries: [...(profile.targetIndustries || []), ...(profile.buyerIndustries || [])],
+  const model = profile.customerModel || buildFallbackCustomerModel({
+    userMission: profile.offering,
+    targetIndustries: profile.targetIndustries,
+    buyerIndustries: profile.buyerIndustries,
     targetTriggers: profile.targetTriggers,
+    location: profile.location,
+    serviceArea: profile.serviceArea,
+  });
+  const { topic } = profileTerms({
+    targetIndustries: [...(profile.targetIndustries || []), ...(profile.buyerIndustries || []), ...model.idealCustomerTypes],
+    targetTriggers: [...(profile.targetTriggers || []), ...model.buyingSignals],
     userMission: profile.offering,
   });
+  const modelTerms = [...new Set([...model.idealCustomerTypes, ...model.buyingSignals].map((t) => t.toLowerCase()).filter((t) => t.length >= 3))];
   const scored: Array<{ index: number; score: number; reason: string }> = [];
 
   for (const candidate of candidates) {
@@ -167,23 +159,24 @@ export function keywordTriageCandidates(
     const text = `${candidate.title} ${candidate.snippet}`;
     const lower = text.toLowerCase();
     const type = classifyArticleType(candidate.title, candidate.snippet);
-    const hasServiceTrigger = /\b(breach|ransomware|cyber|cyberattack|malware|phishing|ai rollout|artificial intelligence|ai policy|ai governance|data privacy|ciso|cto|compliance|clinic|law firm|managed it|cloud)\b/i.test(lower);
-    if (!TRIGGER_TYPES.includes(type) && !hasServiceTrigger) continue;
-
     const place = mentionsLockedPlace(text, lock);
     if (lock.enforced && !place.city && !place.region) continue;
 
     const topicHits = topic.filter((term) => lower.includes(term)).length;
+    const modelHits = modelTerms.filter((term) => lower.includes(term)).length;
+    const isConcreteEvent = type !== 'other' && type !== 'listicle_roundup';
+    if (!isConcreteEvent && topicHits === 0 && modelHits === 0) continue;
+
     const score =
-      (TRIGGER_TYPES.includes(type) ? TRIGGER_WEIGHT[type] || 1 : 2) +
-      (hasServiceTrigger ? 4 : 0) +
+      (isConcreteEvent ? 3 : 0) +
+      Math.min(modelHits, 4) * 3 +
       Math.min(topicHits, 4) * 2 +
       (place.city ? 2 : place.region ? 1 : 0);
     const where = place.city ? lock.city : place.region ? lock.region : 'no location constraint';
     scored.push({
       index: candidate.index,
       score,
-      reason: `Keyword fallback: ${type.replace(/_/g, ' ')} trigger, ${topicHits} profile term match(es), location: ${where}.`,
+      reason: `Keyword fallback: ${modelHits} customer-model hit(s), ${topicHits} profile term(s), location: ${where}.`,
     });
   }
 
@@ -204,14 +197,23 @@ export function keywordTriageCandidates(
 export function rankCandidatesForJudge(
   candidates: TriageCandidate[],
   profile: TriageBuyerProfile,
-  maxWinners = 20
+  maxWinners = 40
 ): TriageResult {
   const lock = triageLock(profile);
-  const { topic } = profileTerms({
-    targetIndustries: [...(profile.targetIndustries || []), ...(profile.buyerIndustries || [])],
+  const model = profile.customerModel || buildFallbackCustomerModel({
+    userMission: profile.offering,
+    targetIndustries: profile.targetIndustries,
+    buyerIndustries: profile.buyerIndustries,
     targetTriggers: profile.targetTriggers,
+    location: profile.location,
+    serviceArea: profile.serviceArea,
+  });
+  const { topic } = profileTerms({
+    targetIndustries: [...(profile.targetIndustries || []), ...(profile.buyerIndustries || []), ...model.idealCustomerTypes],
+    targetTriggers: [...(profile.targetTriggers || []), ...model.buyingSignals],
     userMission: profile.offering,
   });
+  const modelTerms = [...new Set([...model.idealCustomerTypes, ...model.buyingSignals].map((t) => t.toLowerCase()).filter((t) => t.length >= 3))];
   const scored: Array<{ index: number; score: number; reason: string }> = [];
 
   for (const candidate of candidates) {
@@ -219,18 +221,18 @@ export function rankCandidatesForJudge(
     const text = `${candidate.title} ${candidate.snippet}`;
     const lower = text.toLowerCase();
     const type = classifyArticleType(candidate.title, candidate.snippet);
-    const hasServiceTrigger = /\b(breach|ransomware|cyber|cyberattack|malware|phishing|ai rollout|artificial intelligence|ai policy|ai governance|data privacy|ciso|cto|compliance|clinic|law firm|managed it|cloud)\b/i.test(lower);
     const place = mentionsLockedPlace(text, lock);
     const topicHits = topic.filter((term) => lower.includes(term)).length;
+    const modelHits = modelTerms.filter((term) => lower.includes(term)).length;
     const score =
-      (TRIGGER_TYPES.includes(type) ? TRIGGER_WEIGHT[type] || 1 : 0) +
-      (hasServiceTrigger ? 4 : 0) +
+      (type !== 'other' && type !== 'listicle_roundup' ? 2 : 0) +
+      Math.min(modelHits, 4) * 3 +
       Math.min(topicHits, 4) * 2 +
       (place.city ? 3 : place.region ? 2 : 0);
     scored.push({
       index: candidate.index,
       score,
-      reason: `Sorted for judge (score=${score}, trigger=${hasServiceTrigger ? 'service' : type}).`,
+      reason: `Sorted for judge (score=${score}, modelHits=${modelHits}).`,
     });
   }
 
@@ -243,34 +245,29 @@ export function rankCandidatesForJudge(
   };
 }
 
-/** Candidates evaluated per Jev System One request (4 per-article questions each). */
-export const JEV_TRIAGE_CHUNK_SIZE = 8;
+/** Candidates evaluated per Jev System One request. */
+export const JEV_TRIAGE_CHUNK_SIZE = 10;
 
 /** Jev probability thresholds. `local` is the hard geographic gate. */
-export const JEV_TRIAGE_THRESHOLDS = { trigger: 0.35, fit: 0.35, local: 0.4, noise: 0.6 };
+export const JEV_TRIAGE_THRESHOLDS = { customer: 0.4, local: 0.4, noise: 0.6 };
 
-const TRIGGER_EVENT_TEXT =
-  'a data breach, ransomware or cyberattack, AI rollout or AI regulation, leadership/CTO/CISO hire, funding raise, acquisition, expansion, new location/clinic/office, or compliance shift';
-
-function jevQuestionsFor(index: number, profile: TriageBuyerProfile, lock: LocationLock): Record<string, JevQuestion> {
+function jevQuestionsFor(
+  index: number,
+  profile: TriageBuyerProfile,
+  lock: LocationLock,
+  model: CustomerModel
+): Record<string, JevQuestion> {
   const ref = `the article with key "${index}" in state.articles`;
-  const area = [lock.city, lock.region].filter(Boolean).join(' / ');
+  const area = [lock.city, lock.region].filter(Boolean).join(' / ') || 'the target area';
   const offeringDesc = profile.offering || 'B2B services';
+  const modelDesc = `ideal customers: ${model.idealCustomerTypes.join(', ')}; size: ${model.customerSize}; buying signals: ${model.buyingSignals.join(', ')}`;
   const questions: Record<string, JevQuestion> = {
-    [`a${index}_trigger`]: {
+    [`a${index}_customer`]: {
       type: 'noul',
-      instructions: `Does ${ref} report ${TRIGGER_EVENT_TEXT} at one identifiable operating company or organization?`,
+      instructions: `Is the business in ${ref} a plausible customer for ${offeringDesc} in ${area}, per this customer model (${modelDesc})? Reject vendors of the same offering, media outlets, and organizations outside the customer model.`,
       criteria: {
-        true: 'A named operating company or organization had a concrete trigger event relevant to B2B buying.',
-        false: 'No identifiable operating company/organization, or no concrete trigger event.',
-      },
-    },
-    [`a${index}_fit`]: {
-      type: 'noul',
-      instructions: `Would the company or organization in ${ref} specifically need to buy what the seller offers (${offeringDesc}) based on the event in the article?`,
-      criteria: {
-        true: 'The event creates a direct need for the seller’s specific services or products.',
-        false: 'Unrelated industry or event with no need for the seller’s specific offering (e.g. apartment construction or transit civil works for a cyber insurance broker).',
+        true: 'Names an identifiable operating business matching the customer model with a concrete reason to reach out, and is not a competitor/vendor of the offering or a media outlet.',
+        false: 'No identifiable customer business, outside the customer model, a competitor/vendor of the same offering, or a media outlet.',
       },
     },
     [`a${index}_noise`]: {
@@ -315,14 +312,21 @@ export async function triageCandidates(
   }
 
   const lock = triageLock(buyerProfile);
+  const customerModel =
+    buyerProfile.customerModel ||
+    buildFallbackCustomerModel({
+      userMission: buyerProfile.offering,
+      targetIndustries: buyerProfile.targetIndustries,
+      buyerIndustries: buyerProfile.buyerIndustries,
+      targetTriggers: buyerProfile.targetTriggers,
+      location: buyerProfile.location,
+      serviceArea: buyerProfile.serviceArea,
+    });
   // Deterministic guard first: sports, listicles, tickers, and opinion never reach Jev.
   const eligible = candidates.filter((candidate) => !hardRejectReason(candidate));
   const seller = {
     offering: buyerProfile.offering || 'B2B commercial services',
-    buyerIndustries: buyerProfile.buyerIndustries?.length
-      ? buyerProfile.buyerIndustries
-      : ['commercial operating companies', 'enterprises', 'growing businesses'],
-    preferredTriggers: buyerProfile.targetTriggers || [],
+    customerModel,
     intent: buyerProfile.userIntent || 'sales_client_acquisition',
     serviceArea: lock.enforced ? `LOCAL: ${[lock.city, lock.region].filter(Boolean).join(', ')} only` : 'National',
   };
@@ -347,7 +351,7 @@ export async function triageCandidates(
             chunk.map((c) => [String(c.index), { title: c.title, snippet: (c.snippet || '').slice(0, 320), publisher: c.publisher }])
           ),
         },
-        Object.assign({}, ...chunk.map((c) => jevQuestionsFor(c.index, buyerProfile, lock)))
+        Object.assign({}, ...chunk.map((c) => jevQuestionsFor(c.index, buyerProfile, lock, customerModel)))
       )
     )
   );
@@ -362,17 +366,16 @@ export async function triageCandidates(
     modelName = result.value.model || modelName;
     for (const candidate of chunks[chunkIndex]) {
       const answers = result.value.answers;
-      const trigger = noulOf(answers[`a${candidate.index}_trigger`]);
-      const fit = noulOf(answers[`a${candidate.index}_fit`]);
+      const customer = noulOf(answers[`a${candidate.index}_customer`]);
       const noise = noulOf(answers[`a${candidate.index}_noise`], 1);
       const local = lock.enforced ? noulOf(answers[`a${candidate.index}_local`]) : 1;
       const t = JEV_TRIAGE_THRESHOLDS;
-      if (trigger < t.trigger || fit < t.fit || noise >= t.noise || local < t.local) continue;
+      if (customer < t.customer || noise >= t.noise || local < t.local) continue;
       const where = lock.enforced ? `, in ${[lock.city, lock.region].filter(Boolean).join('/')} ${local.toFixed(2)}` : '';
       scored.push({
         index: candidate.index,
-        score: trigger * fit * local * (1 - noise),
-        reason: `Jev: trigger ${trigger.toFixed(2)}, buyer fit ${fit.toFixed(2)}${where}.`,
+        score: customer * local * (1 - noise),
+        reason: `Jev: customer ${customer.toFixed(2)}${where}.`,
       });
     }
   });
@@ -818,14 +821,11 @@ export function adaptPitchForContact(
     ? `${offeringText.slice(0, 38)} for ${targetCompany}`
     : `${targetCompany} — ${enriched.signalType}`;
 
-  const blob = `${offeringText} ${context.userMission || ''} ${triggerText}`.toLowerCase();
   let serviceSentence: string;
-  if (/cyber|ai risk|ai liability|ransomware|breach/.test(blob)) {
-    serviceSentence = `We broker ${offeringText || 'cyber and AI risk insurance'}${context.city ? ` in ${context.city}` : ''}, helping businesses structure coverage for ransomware response, breach liability, and AI-error claims before an incident hits.`;
-  } else if (/managed it|\bmsp\b|it support|clinic|law firm/.test(blob)) {
-    serviceSentence = `We provide ${offeringText || 'managed IT and cybersecurity'}${context.city ? ` in ${context.city}` : ''}, keeping clinic and law-firm systems compliant, patched, and protected against downtime.`;
+  if (context.whyMatched && context.whyMatched.trim().length > 15) {
+    serviceSentence = context.whyMatched.trim();
   } else if (offeringText) {
-    serviceSentence = `We specialize in ${offeringText}${context.city ? ` in ${context.city}` : ''}, and this exact event creates immediate exposure and operational requirements we help teams handle.`;
+    serviceSentence = `We specialize in ${offeringText}${context.city ? ` in ${context.city}` : ''}, and this timing looks closely aligned with what we help teams with.`;
   } else {
     serviceSentence = `I wanted to share a quick perspective on how teams handle this type of transition${context.city ? ` in ${context.city}` : ''}.`;
   }

@@ -1,5 +1,6 @@
 import { withSportsExclusion } from './signalQuality';
 import { deriveBuyerProfile, type BuyerProfile } from './buyerProfile';
+import { buildFallbackCustomerModel, type CustomerModel } from './customerModel';
 
 /**
  * AI News Query Planner Service (Powered by GPT-4o)
@@ -655,117 +656,111 @@ export interface CandidateQuerySpec {
   tier: 'specific' | 'broad';
 }
 
-function algorithmicCandidateQueries(input: QueryPlannerInput): CandidateQuerySpec[] {
-  const buyer = deriveBuyerProfile(input);
+function algorithmicCandidateQueries(
+  input: QueryPlannerInput,
+  customerModel?: CustomerModel
+): CandidateQuerySpec[] {
+  const model = customerModel || buildFallbackCustomerModel(input);
   const placeObj = parseCityRegion(input.location || '');
   const city = placeObj.city;
   const region = placeObj.region;
-  const place = buyer.serviceArea === 'national' ? '' : city || region;
-  const widerPlace = buyer.serviceArea === 'national' ? '' : region || city;
-
-  const blob = [
-    ...(input.servicesOffered || []),
-    input.userMission || '',
-    input.valueProp || '',
-    input.companyDescription || '',
-    ...(input.targetIndustries || []),
-  ]
-    .join(' ')
-    .toLowerCase();
+  const isNational = model.serviceArea === 'national';
+  const place = isNational ? '' : city || region;
+  const widerPlace = isNational ? '' : region || city;
 
   const out: CandidateQuerySpec[] = [];
   const push = (q: string, tier: 'specific' | 'broad') => {
     const clean = q.replace(/\s+/g, ' ').trim();
-    if (clean && !out.some((item) => item.queryText.toLowerCase() === clean.toLowerCase())) {
-      out.push({ queryText: clean, tier });
+    if (!clean) return;
+    const words = clean.split(/\s+/);
+    const trimmed = words.length > 4 ? words.slice(0, 4).join(' ') : clean;
+    if (!out.some((item) => item.queryText.toLowerCase() === trimmed.toLowerCase())) {
+      out.push({ queryText: trimmed, tier });
     }
   };
 
-  if (/managed it|\bmsp\b|managed services|it support/.test(blob)) {
-    const p = place || 'Kelowna';
-    const w = widerPlace || 'British Columbia';
-    push(`${p} medical clinic IT`, 'specific');
-    push(`${p} law firm cybersecurity`, 'specific');
-    push(`${p} clinic expansion`, 'specific');
-    push(`${p} ransomware breach`, 'specific');
-    push(`${p} law firm new office`, 'specific');
-    push(`${w} clinic data breach`, 'broad');
-    push(`${p} business IT upgrade`, 'broad');
-    push(`${w} managed IT compliance`, 'broad');
-    return out.slice(0, 8);
-  }
+  const customerTypes = model.idealCustomerTypes.length ? model.idealCustomerTypes : ['business'];
+  const signals = model.buyingSignals.length ? model.buyingSignals : ['expansion', 'new location', 'growth'];
 
-  if (/cyber|ai risk|ai liability|cyber insurance/.test(blob)) {
-    const p = place || 'Vancouver';
-    const w = widerPlace || 'British Columbia';
-    push(`${p} cybersecurity breach`, 'specific');
-    push(`${p} ransomware attack`, 'specific');
-    push(`${w} AI rollout`, 'specific');
-    push(`${p} data breach`, 'specific');
-    push(`${w} AI policy`, 'broad');
-    push(`${p} CISO hire`, 'specific');
-    push(`${w} cyber insurance`, 'broad');
-    push(`${w} company cybersecurity`, 'broad');
-    return out.slice(0, 8);
-  }
-
-  const offering = extractOfferingSearchTerm({
-    servicesOffered: input.servicesOffered,
-    productsOffered: input.productsOffered,
-    userMission: input.userMission,
-    valueProp: input.valueProp,
-    companyDescription: input.companyDescription,
-    buyerIndustries: buyer.buyerIndustries,
-  });
-  const sectors = buyer.buyerIndustries.slice(0, 3);
-  const triggers = ['breach', 'AI rollout', 'funding', 'expansion', 'new location', 'regulation'];
-  for (const sec of sectors) {
-    for (const trig of triggers.slice(0, 2)) {
-      push([place, sec, trig].filter(Boolean).join(' '), 'specific');
+  for (const cType of customerTypes) {
+    if (place) {
+      push(`${place} ${cType}`, 'specific');
+    } else {
+      push(`${cType} ${signals[0]}`, 'specific');
     }
   }
-  push([place, offering, 'expansion'].filter(Boolean).join(' '), 'broad');
-  push([widerPlace || place, offering, 'funding'].filter(Boolean).join(' '), 'broad');
-  return out.slice(0, 8);
+
+  for (const cType of customerTypes) {
+    for (const sig of signals) {
+      if (out.length >= 15) break;
+      const combo = place ? `${place} ${cType} ${sig}` : `${cType} ${sig}`;
+      if (combo.split(/\s+/).length <= 4) {
+        push(combo, 'specific');
+      } else if (place) {
+        push(`${place} ${sig}`, 'broad');
+      }
+    }
+  }
+
+  if (!isNational && widerPlace && widerPlace !== place) {
+    for (const cType of customerTypes) {
+      if (out.length >= 15) break;
+      push(`${widerPlace} ${cType}`, 'broad');
+    }
+    for (const sig of signals) {
+      if (out.length >= 15) break;
+      push(`${widerPlace} ${sig}`, 'broad');
+    }
+  }
+
+  for (const cType of customerTypes) {
+    for (const sig of signals) {
+      if (out.length >= 12) break;
+      push(`${cType} ${sig}`, 'broad');
+    }
+  }
+
+  return out.slice(0, 15);
 }
 
 /**
- * Generate 6-10 candidate Google News queries from the campaign profile using
- * current OpenAI model (`gpt-4.1`, falling back to `gpt-4o`), mixing specific
- * trigger queries with a few broader ones.
+ * Generate 10-15 candidate Google News queries (2-3 terms each) from the
+ * CustomerModel using OpenAI (`gpt-4.1-mini`, falling back to `gpt-4o-mini`
+ * and then the algorithmic CustomerModel generator).
  */
 export async function generateCandidateQueries(
   input: QueryPlannerInput,
-  openAiApiKey?: string
+  openAiApiKey?: string,
+  customerModel?: CustomerModel
 ): Promise<CandidateQuerySpec[]> {
   const cleanKey = (openAiApiKey || '').trim();
-  const fallback = algorithmicCandidateQueries(input);
+  const model = customerModel || buildFallbackCustomerModel(input);
+  const fallback = algorithmicCandidateQueries(input, model);
   if (!cleanKey || !cleanKey.startsWith('sk-') || cleanKey.includes('your_')) {
     return fallback;
   }
 
-  const buyer = deriveBuyerProfile(input);
   const placeObj = parseCityRegion(input.location || '');
   const geoRule =
-    buyer.serviceArea === 'national'
-      ? 'Software/agency business: search anywhere (no city/province required).'
-      : `Local/licensed business: every query MUST include "${placeObj.city || input.location || ''}" or "${placeObj.region || ''}". Never widen beyond province/state.`;
+    model.serviceArea === 'national'
+      ? 'This offering can serve customers anywhere; do NOT restrict queries to a single city.'
+      : `This is a local offering (${[placeObj.city, placeObj.region].filter(Boolean).join(', ')}). Every query MUST include "${placeObj.city || input.location || ''}" or "${placeObj.region || ''}". Never widen beyond province/state.`;
 
-  const systemPrompt = `You generate 6 to 9 short Google News search queries (strictly 2-3 words/terms each, no OR operators, no quotes) for a B2B lead scout.
-CRITICAL:
-- Every single query MUST pair the place (when local) with what the business sells or a service-specific buying trigger (e.g., for cyber/AI insurance: cybersecurity, data breach, ransomware, AI rollout, AI policy, cyber insurance, AI liability; for managed IT/MSP: clinic IT, law firm cybersecurity, ransomware, IT upgrade, cloud migration).
-- NEVER generate generic queries unrelated to the seller's offering (for example, do NOT output "Vancouver medical clinic new location" or "BC law firm new managing partner" for a cyber/AI insurance broker unless it includes a cyber/AI/breach term).
-- Keep each query concise (2-3 terms, e.g. "Vancouver cybersecurity breach", "BC AI rollout", "Vancouver ransomware", "Kelowna clinic IT", "Kelowna law cybersecurity").
-${geoRule}
+  const systemPrompt = `You generate 10 to 15 short Google News search queries (strictly 2-3 words/terms each, no OR operators, no quotes) for a B2B lead scout.
+Generate queries directly from the provided Customer Model:
+- Pair ideal customer types with the location (when local) or with buying signals from the Customer Model.
+- Mix specific queries (e.g. "<location> <customer type>" or "<location> <customer type> <signal>") with broader ones (e.g. "<region> <customer type>" or "<customer type> <signal>").
+- ${geoRule}
+- Do NOT invent industries or signals outside the Customer Model and profile.
 Respond with JSON only: { "queries": [ { "queryText": "...", "tier": "specific" | "broad" } ] }`;
 
-  const userPrompt = `Business sells: ${(input.servicesOffered || []).join(', ') || input.userMission || input.valueProp || 'B2B services'}
-Description: ${input.companyDescription || input.userMission || ''}
-Buyer sectors: ${buyer.buyerIndustries.join(', ')}
-Target triggers: ${(input.targetTriggers || []).join(', ') || 'breach, AI rollout, funding, expansion, new location'}
-Location: ${input.location || 'Unspecified'}`;
+  const userPrompt = JSON.stringify({
+    offering: (input.servicesOffered || []).join(', ') || input.userMission || input.valueProp || 'B2B services',
+    location: input.location || 'Unspecified',
+    customerModel: model,
+  });
 
-  const callModel = async (model: string) => {
+  const callModel = async (modelName: string) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 14000);
     try {
@@ -776,7 +771,7 @@ Location: ${input.location || 'Unspecified'}`;
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model,
+          model: modelName,
           temperature: 0.3,
           response_format: { type: 'json_object' },
           messages: [
@@ -799,26 +794,37 @@ Location: ${input.location || 'Unspecified'}`;
       res = await callModel('gpt-4o-mini');
       usedModel = 'gpt-4o-mini';
     }
-    if (!res.ok) {
-      console.warn(`[Candidate Queries] gpt-4o-mini returned ${res.status}, trying gpt-5-mini`);
-      res = await callModel('gpt-5-mini');
-      usedModel = 'gpt-5-mini';
-    }
     if (res.ok) {
       const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
       const content = json.choices?.[0]?.message?.content;
       if (content) {
         const parsed = JSON.parse(content) as { queries?: Array<{ queryText?: string; tier?: string }> };
-        const valid = (parsed.queries || [])
-          .filter((q) => typeof q.queryText === 'string' && q.queryText.trim().length >= 3)
-          .map((q) => ({
-            queryText: q.queryText!.replace(/\s+-\w+/g, '').replace(/\s+/g, ' ').trim(),
-            tier: (q.tier === 'broad' ? 'broad' : 'specific') as 'specific' | 'broad',
-          }))
-          .slice(0, 10);
-        if (valid.length >= 4) {
+        const valid: CandidateQuerySpec[] = [];
+        for (const q of parsed.queries || []) {
+          if (typeof q.queryText !== 'string' || q.queryText.trim().length < 3) continue;
+          const clean = q.queryText
+            .replace(/["|()]/g, ' ')
+            .replace(/\bOR\b/g, ' ')
+            .replace(/\s+-\w+/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (!clean || clean.split(/\s+/).length < 2) continue;
+          if (!valid.some((item) => item.queryText.toLowerCase() === clean.toLowerCase())) {
+            valid.push({
+              queryText: clean,
+              tier: q.tier === 'broad' ? 'broad' : 'specific',
+            });
+          }
+        }
+        for (const fb of fallback) {
+          if (valid.length >= 12) break;
+          if (!valid.some((item) => item.queryText.toLowerCase() === fb.queryText.toLowerCase())) {
+            valid.push(fb);
+          }
+        }
+        if (valid.length > 0) {
           console.log(`[Candidate Queries] generated ${valid.length} queries via ${usedModel}`);
-          return valid;
+          return valid.slice(0, 15);
         }
       }
     } else {

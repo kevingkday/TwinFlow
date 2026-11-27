@@ -11,120 +11,36 @@ export interface BuyerProfile {
   allowNationalSearch: boolean;
 }
 
-function inferServiceArea(blob: string, intent?: string): ServiceArea {
-  if (/(\bsaas\b|\bsoftware\b|marketing agency|digital agency|demand generation|\bplatform\b|\bapp\b)/.test(blob) && !/insurance|broker|managed it|\bmsp\b|contractor|real estate|lawyer|accountant/.test(blob)) {
+function inferServiceArea(blob: string): ServiceArea {
+  if (/(\bsaas\b|\bsoftware\b|agency|\bplatform\b|\bremote\b|\bonline\b)/.test(blob) && !/\b(local|city|broker|contractor|clinic|storefront|restaurant|bakery|cleaning|janitorial)\b/.test(blob)) {
     return 'national';
-  }
-  if (
-    /lawyer|law firm|insurance|brokerage|broker|accountant|\bcpa\b|contractor|managed it|\bmsp\b|managed services|real estate|commercial broker|clinic/.test(blob) ||
-    intent === 'subcontractor_partners'
-  ) {
-    return 'local';
   }
   return 'local';
 }
 
-function extractMentionedBuyerSectors(blob: string): string[] {
-  const sectors: string[] = [];
-  if (/\bclinics?\b|\bmedical\b|\bhealthcare\b|\bdental\b/.test(blob)) sectors.push('medical clinics');
-  if (/\blaw firms?\b|\blegal\b|\battorneys?\b/.test(blob)) sectors.push('law firms');
-  if (/\baccount(ing|ants?)\b|\bcpa\b/.test(blob)) sectors.push('accounting firms');
-  if (/\bmanufactur(ing|ers?)\b|\bindustrial\b/.test(blob)) sectors.push('manufacturing');
-  if (/\bconstruct(ion|ors?)\b|\bbuilders?\b|\bdevelopers?\b/.test(blob)) sectors.push('construction');
-  if (/\bretail\b|\bhospitality\b|\brestaurants?\b/.test(blob)) sectors.push('retail');
-  if (/\blogistics\b|\bfreight\b|\bwarehouse\b/.test(blob)) sectors.push('logistics');
-  if (/\bsmb\b|\bsmall and mid[- ]?sized|\bsmall business|\bmid[- ]?market/.test(blob)) sectors.push('small business');
-  if (/\btech(nology)?\b|\bsoftware\b|\bsaas\b|\bai\b/.test(blob) && !/cyber\s*(?:&|and)?\s*ai\s*(?:risk|insurance)/.test(blob)) {
-    sectors.push('technology');
-  }
-  return sectors;
-}
-
 export function deriveBuyerProfile(input: QueryPlannerInput): BuyerProfile {
   const blob = `${(input.userMission || '')} ${(input.valueProp || '')} ${(input.companyDescription || '')} ${(input.servicesOffered || []).join(' ')} ${(input.targetIndustries || []).join(' ')}`.toLowerCase();
-  const serviceArea: ServiceArea = input.serviceArea || inferServiceArea(blob, input.userIntent);
+  const serviceArea: ServiceArea = input.serviceArea || inferServiceArea(blob);
   const allowNationalSearch = serviceArea === 'national';
 
-  if (input.buyerIndustries && input.buyerIndustries.length > 0) {
-    return {
-      buyerIndustries: input.buyerIndustries,
-      buyerRoles: input.buyerRoles?.length ? input.buyerRoles : ['CEO', 'owner'],
-      buyerCompanySize: input.buyerCompanySize || 'any',
-      serviceArea,
-      allowNationalSearch,
-    };
-  }
+  const buyerIndustries =
+    input.buyerIndustries && input.buyerIndustries.length > 0
+      ? input.buyerIndustries
+      : input.targetIndustries && input.targetIndustries.length > 0
+      ? input.targetIndustries
+      : ['business'];
 
-  const mentioned = extractMentionedBuyerSectors(blob);
-
-  if (/captive/.test(blob)) {
-    return {
-      buyerIndustries: mentioned.length ? mentioned : ['manufacturing', 'healthcare systems', 'logistics', 'energy'],
-      buyerRoles: ['CFO', 'treasurer', 'risk manager'],
-      buyerCompanySize: 'enterprise',
-      serviceArea,
-      allowNationalSearch,
-    };
-  }
-  if (/managed it|\bmsp\b|managed services|it support|it services/.test(blob)) {
-    return {
-      buyerIndustries: mentioned.length ? mentioned : ['medical clinics', 'law firms', 'professional services'],
-      buyerRoles: ['owner', 'managing partner', 'operations director', 'IT manager'],
-      buyerCompanySize: 'smb',
-      serviceArea,
-      allowNationalSearch,
-    };
-  }
-  if (/cyber|ai risk|ai liability|cyber insurance/.test(blob)) {
-    return {
-      buyerIndustries: mentioned.length ? mentioned : ['small business', 'technology', 'healthcare', 'professional services'],
-      buyerRoles: ['CEO', 'CFO', 'founder', 'COO'],
-      buyerCompanySize: 'smb',
-      serviceArea,
-      allowNationalSearch,
-    };
-  }
-  if (/property and casualty|casualty insurance|p&c|commercial insurance|commercial lines|insurance broker|insurance brokerage|insurance services/.test(blob)) {
-    return {
-      buyerIndustries: mentioned.length ? mentioned : ['contractors', 'manufacturing', 'logistics', 'commercial real estate'],
-      buyerRoles: ['CFO', 'COO', 'CEO', 'risk manager', 'owner'],
-      buyerCompanySize: 'smb',
-      serviceArea,
-      allowNationalSearch,
-    };
-  }
-  if (/real estate|tenant representation|\blease\b|commercial broker/.test(blob)) {
-    return {
-      buyerIndustries: mentioned.length ? mentioned : ['law firms', 'professional services', 'corporate occupiers'],
-      buyerRoles: ['managing partner', 'office director', 'COO'],
-      buyerCompanySize: 'any',
-      serviceArea,
-      allowNationalSearch,
-    };
-  }
-  if (/construct|contractor|general contracting/.test(blob) || input.userIntent === 'subcontractor_partners') {
-    return {
-      buyerIndustries: mentioned.length ? mentioned : ['property developers', 'building owners'],
-      buyerRoles: ['development director', 'project owner'],
-      buyerCompanySize: 'any',
-      serviceArea,
-      allowNationalSearch,
-    };
-  }
-  if (/saas|software|marketing agency|demand generation/.test(blob)) {
-    return {
-      buyerIndustries: mentioned.length ? mentioned : ['b2b software'],
-      buyerRoles: ['CMO', 'founder', 'VP marketing'],
-      buyerCompanySize: 'smb',
-      serviceArea,
-      allowNationalSearch,
-    };
-  }
+  const buyerRoles =
+    input.buyerRoles && input.buyerRoles.length > 0
+      ? input.buyerRoles
+      : input.targetRoles && input.targetRoles.length > 0
+      ? input.targetRoles
+      : ['CEO', 'owner'];
 
   return {
-    buyerIndustries: mentioned.length ? mentioned : (input.targetIndustries?.length ? input.targetIndustries : ['business']),
-    buyerRoles: input.targetRoles?.length ? input.targetRoles : ['CEO', 'owner'],
-    buyerCompanySize: 'any',
+    buyerIndustries,
+    buyerRoles,
+    buyerCompanySize: input.buyerCompanySize || 'any',
     serviceArea,
     allowNationalSearch,
   };
@@ -188,8 +104,6 @@ export function companiesMatch(a: string, b: string): boolean {
 const BLOCKED_ROLES =
   /\b(minister|deputy minister|premier|mayor|councillor|senator|governor|mla|mp\b|public official|bureaucrat|journalist|reporter|columnist|analyst|investor|venture partner|lender|spokesperson)\b/i;
 
-const BLOCKED_EMPLOYERS = /\b(bdc|business development bank|export development canada|edc|hub international|marsh|aon|willis|wtw)\b/i;
-
 function quoteAppears(quote: string, source: string): boolean {
   const squash = (value: string) => value.normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
   const needle = squash(quote);
@@ -229,8 +143,8 @@ export function validateSignalEvidence(input: EvidenceCheckInput): { ok: boolean
   if (input.personEmployer && !companiesMatch(input.personEmployer, input.buyerCompany)) {
     return { ok: false, reason: 'The person works at a different company than the buyer.' };
   }
-  if (BLOCKED_ROLES.test(input.personRole) || BLOCKED_EMPLOYERS.test(input.personEmployer) || BLOCKED_EMPLOYERS.test(input.buyerCompany)) {
-    return { ok: false, reason: 'The person is an official, journalist, investor, lender, or insurance intermediary.' };
+  if (BLOCKED_ROLES.test(input.personRole)) {
+    return { ok: false, reason: 'The person is an official, journalist, investor, lender, or spokesperson.' };
   }
   if (input.extractedName && !companiesMatch(input.extractedName, input.namedPerson) && input.extractedName.toLowerCase() !== input.namedPerson.toLowerCase()) {
     return { ok: false, reason: 'Extraction and relevance name different people.' };

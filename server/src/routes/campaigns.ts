@@ -6,6 +6,7 @@ import { getSessionUser } from './auth';
 import { getUserProfileData } from './user';
 import { generateCandidateQueries, planNewsQueryWithAI } from '../services/aiQueryPlanner';
 import { deriveBuyerProfile } from '../services/buyerProfile';
+import { generateCustomerModel, type CustomerModel } from '../services/customerModel';
 import { seedCampaignQueries } from '../services/queryOptimizer';
 
 export const campaignsRouter = new Hono<{ Bindings: Bindings }>();
@@ -102,6 +103,7 @@ campaignsRouter.get('/', async (c) => {
         buyerRoles: cmp.buyerRoles ? JSON.parse(cmp.buyerRoles) : [],
         buyerCompanySize: cmp.buyerCompanySize || 'any',
         serviceArea: cmp.serviceArea || 'local',
+        customerModel: cmp.customerModel ? JSON.parse(cmp.customerModel) : null,
         isDefault: Boolean(cmp.isDefault),
         leadsCount,
         isActive: cmp.id === activeId,
@@ -118,7 +120,7 @@ campaignsRouter.get('/', async (c) => {
   });
 });
 
-// POST /api/campaigns/preview-queries - Generate candidate queries for the wizard preview
+// POST /api/campaigns/preview-queries - Generate CustomerModel & candidate queries for the wizard preview
 campaignsRouter.post('/preview-queries', async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -134,6 +136,7 @@ campaignsRouter.post('/preview-queries', async (c) => {
       targetIndustries?: string[];
       targetTriggers?: string[];
       serviceArea?: 'local' | 'national';
+      customerModel?: CustomerModel;
     }>()
     .catch((): Record<string, never> => ({}));
 
@@ -149,22 +152,32 @@ campaignsRouter.post('/preview-queries', async (c) => {
     serviceArea: body.serviceArea,
   });
 
+  const plannerInput = {
+    location: (body.targetLocation || '').trim(),
+    userIntent: body.userIntent || 'sales_client_acquisition',
+    userMission: body.userMission || '',
+    companyDescription: body.companyDescription || body.userMission || '',
+    servicesOffered: Array.isArray(body.servicesOffered) ? body.servicesOffered : [],
+    productsOffered: Array.isArray(body.productsOffered) ? body.productsOffered : [],
+    targetIndustries: Array.isArray(body.targetIndustries) ? body.targetIndustries : [],
+    targetTriggers: Array.isArray(body.targetTriggers) ? body.targetTriggers : [],
+    ...buyer,
+  };
+
+  const customerModel =
+    body.customerModel &&
+    Array.isArray(body.customerModel.idealCustomerTypes) &&
+    body.customerModel.idealCustomerTypes.length > 0
+      ? body.customerModel
+      : await generateCustomerModel(plannerInput, c.env?.OPENAI_API_KEY);
+
   const queries = await generateCandidateQueries(
-    {
-      location: (body.targetLocation || '').trim(),
-      userIntent: body.userIntent || 'sales_client_acquisition',
-      userMission: body.userMission || '',
-      companyDescription: body.companyDescription || body.userMission || '',
-      servicesOffered: Array.isArray(body.servicesOffered) ? body.servicesOffered : [],
-      productsOffered: Array.isArray(body.productsOffered) ? body.productsOffered : [],
-      targetIndustries: Array.isArray(body.targetIndustries) ? body.targetIndustries : [],
-      targetTriggers: Array.isArray(body.targetTriggers) ? body.targetTriggers : [],
-      ...buyer,
-    },
-    c.env?.OPENAI_API_KEY
+    plannerInput,
+    c.env?.OPENAI_API_KEY,
+    customerModel
   );
 
-  return c.json({ success: true, queries });
+  return c.json({ success: true, customerModel, queries });
 });
 
 // POST /api/campaigns - Create a new campaign
@@ -201,6 +214,7 @@ campaignsRouter.post('/', async (c) => {
     buyerCompanySize?: 'smb' | 'midmarket' | 'enterprise' | 'any';
     serviceArea?: 'local' | 'national';
     allowNationalSearch?: boolean;
+    customerModel?: CustomerModel;
   };
 
   try {
@@ -269,11 +283,18 @@ campaignsRouter.post('/', async (c) => {
         }))
     : [];
 
+  const customerModel =
+    body.customerModel &&
+    Array.isArray(body.customerModel.idealCustomerTypes) &&
+    body.customerModel.idealCustomerTypes.length > 0
+      ? body.customerModel
+      : await generateCustomerModel(plannerInput, c.env.OPENAI_API_KEY);
+
   const [queryPlan, candidateQueries] = await Promise.all([
     planNewsQueryWithAI(plannerInput, c.env.OPENAI_API_KEY),
     providedQueries.length > 0
       ? Promise.resolve(providedQueries)
-      : generateCandidateQueries(plannerInput, c.env.OPENAI_API_KEY),
+      : generateCandidateQueries(plannerInput, c.env.OPENAI_API_KEY, customerModel),
   ]);
   const finalIcpQuery = (body.icpQuery || '').trim() || candidateQueries[0]?.queryText || queryPlan.primaryQuery;
 
@@ -306,6 +327,7 @@ campaignsRouter.post('/', async (c) => {
     buyerCompanySize: buyer.buyerCompanySize,
     serviceArea: buyer.serviceArea,
     allowNationalSearch: buyer.allowNationalSearch,
+    customerModel: JSON.stringify(customerModel),
     isDefault: false,
     status: 'active',
     createdAt: now,
@@ -339,6 +361,7 @@ campaignsRouter.post('/', async (c) => {
         buyerCompanySize: buyer.buyerCompanySize,
         serviceArea: buyer.serviceArea,
         allowNationalSearch: buyer.allowNationalSearch,
+        customerModel: JSON.stringify(customerModel),
         onboardingCompleted: true,
         updatedAt: now,
       })
@@ -367,6 +390,7 @@ campaignsRouter.post('/', async (c) => {
       targetRoles,
       valueProp,
       icpQuery: finalIcpQuery,
+      customerModel,
       isDefault: false,
       isActive: makeActive,
       leadsCount: 0,
@@ -423,6 +447,7 @@ campaignsRouter.post('/:id/activate', async (c) => {
       buyerCompanySize: campaign.buyerCompanySize,
       serviceArea: campaign.serviceArea,
       allowNationalSearch: campaign.allowNationalSearch,
+      customerModel: campaign.customerModel,
       updatedAt: new Date().toISOString(),
     })
     .where(eq(schema.users.id, user.id));
@@ -479,6 +504,7 @@ campaignsRouter.patch('/:id', async (c) => {
     buyerRoles?: string[];
     buyerCompanySize?: 'smb' | 'midmarket' | 'enterprise' | 'any';
     serviceArea?: 'local' | 'national';
+    customerModel?: CustomerModel;
   };
 
   try {
@@ -519,23 +545,35 @@ campaignsRouter.patch('/:id', async (c) => {
     serviceArea: body.serviceArea,
   });
 
+  const plannerInputForUpdate = {
+    location: targetLocation || '',
+    userIntent: userIntent || 'sales_client_acquisition',
+    userMission: userMission || '',
+    companyDescription: companyDescription || '',
+    servicesOffered,
+    productsOffered,
+    targetIndustries,
+    targetTriggers,
+    targetRoles,
+    valueProp: valueProp || '',
+    ...buyer,
+  };
+
+  let existingModel: CustomerModel | null = null;
+  if (campaign.customerModel) {
+    try {
+      existingModel = JSON.parse(campaign.customerModel) as CustomerModel;
+    } catch {
+      existingModel = null;
+    }
+  }
+  const customerModel =
+    body.customerModel && Array.isArray(body.customerModel.idealCustomerTypes) && body.customerModel.idealCustomerTypes.length > 0
+      ? body.customerModel
+      : existingModel || (await generateCustomerModel(plannerInputForUpdate, c.env.OPENAI_API_KEY));
+
   // Re-calibrate query plan
-  const queryPlan = await planNewsQueryWithAI(
-    {
-      location: targetLocation || '',
-      userIntent: userIntent || 'sales_client_acquisition',
-      userMission: userMission || '',
-      companyDescription: companyDescription || '',
-      servicesOffered,
-      productsOffered,
-      targetIndustries,
-      targetTriggers,
-      targetRoles,
-      valueProp: valueProp || '',
-      ...buyer,
-    },
-    c.env.OPENAI_API_KEY
-  );
+  const queryPlan = await planNewsQueryWithAI(plannerInputForUpdate, c.env.OPENAI_API_KEY);
   const finalIcpQuery = body.icpQuery?.trim() || queryPlan.primaryQuery;
 
   const now = new Date().toISOString();
@@ -559,6 +597,7 @@ campaignsRouter.patch('/:id', async (c) => {
       buyerCompanySize: buyer.buyerCompanySize,
       serviceArea: buyer.serviceArea,
       allowNationalSearch: buyer.allowNationalSearch,
+      customerModel: JSON.stringify(customerModel),
       updatedAt: now,
     })
     .where(eq(schema.campaigns.id, campaignId));
@@ -583,6 +622,7 @@ campaignsRouter.patch('/:id', async (c) => {
         buyerCompanySize: buyer.buyerCompanySize,
         serviceArea: buyer.serviceArea,
         allowNationalSearch: buyer.allowNationalSearch,
+        customerModel: JSON.stringify(customerModel),
         updatedAt: now,
       })
       .where(eq(schema.users.id, user.id));

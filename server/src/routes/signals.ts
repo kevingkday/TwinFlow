@@ -14,6 +14,7 @@ import {
   hardRejectReason,
 } from '../services/llmEnricher';
 import { generateAlgorithmicQueryPlan, generateCandidateQueries, inferGoogleCountry, type LocationLock } from '../services/aiQueryPlanner';
+import { generateCustomerModel, type CustomerModel } from '../services/customerModel';
 import {
   MAX_ARTICLES_JUDGED_PER_SCOUT,
   MAX_QUERIES_PER_SCOUT,
@@ -458,6 +459,7 @@ interface PersistedScoutState {
   buyerIndustries: string[];
   buyerRoles: string[];
   serviceArea: 'local' | 'national';
+  customerModel?: CustomerModel;
   locationLock: LocationLock;
   gl: string;
   queryLabel: string;
@@ -759,6 +761,37 @@ async function prepareScoutState(
     const companyDescription = target.companyDescription || user.companyDescription || '';
     const savedIcpQuery = (target.icpQuery || user.icpQuery || '').trim();
 
+    let customerModel: CustomerModel | undefined;
+    const rawCustomerModel = target.customerModel || user.customerModel;
+    if (rawCustomerModel) {
+      try {
+        const parsed = JSON.parse(rawCustomerModel) as CustomerModel;
+        if (Array.isArray(parsed?.idealCustomerTypes) && parsed.idealCustomerTypes.length > 0) {
+          customerModel = parsed;
+        }
+      } catch {
+        customerModel = undefined;
+      }
+    }
+    if (!customerModel) {
+      customerModel = await generateCustomerModel(
+        {
+          location,
+          userIntent,
+          userMission,
+          companyDescription,
+          servicesOffered,
+          productsOffered,
+          targetIndustries,
+          targetTriggers,
+          valueProp,
+          serviceArea,
+          buyerIndustries,
+        },
+        env.OPENAI_API_KEY
+      );
+    }
+
     const plan = generateAlgorithmicQueryPlan({
       location,
       userIntent,
@@ -801,7 +834,8 @@ async function prepareScoutState(
             serviceArea,
             buyerIndustries,
           },
-          env.OPENAI_API_KEY
+          env.OPENAI_API_KEY,
+          customerModel
         );
         allCampaignQueries = await seedCampaignQueries(db, activeCampaign.id, user.id, candidateSpecs);
       }
@@ -836,7 +870,7 @@ async function prepareScoutState(
         ladder: plan.queryLadder,
         locationLock,
         keywords: sq.queryText,
-        poolSize: Math.min(20, MAX_ARTICLES_JUDGED_PER_SCOUT),
+        poolSize: Math.min(30, MAX_ARTICLES_JUDGED_PER_SCOUT),
         maxQueries: 1,
         skipPrWire: true,
         allowSampleFallback: !env.SERP_API_KEY,
@@ -932,20 +966,21 @@ async function prepareScoutState(
     const existingUrls = new Set(existingRows.map((row) => row.sourceUrl));
     const fresh = pool.filter((article) => !existingUrls.has(article.url));
 
-    // 2. Send up to 20 fresh, deduped articles to Jev batch triage, using keywords only to sort (never drop).
-    const triageBatch = fresh.slice(0, 20);
-    const triageCap = Math.min(20, Math.max(limit * 4, 12));
+    // 2. Send up to 200 fresh, deduped articles to Jev batch triage, using keywords only to sort (never drop).
+    const triageBatch = fresh.slice(0, 200);
+    const triageCap = Math.min(25, Math.max(limit * 4, 15));
     const triage = await triageCandidates(
       triageBatch.map(({ index, title, snippet, publisher, url, publishedAt }) => ({ index, title, snippet, publisher, url, publishedAt })),
       {
         offering: [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
         targetIndustries,
-        buyerIndustries: buyerIndustries.length ? buyerIndustries : [plan.queryLadder.sector],
+        buyerIndustries: buyerIndustries.length ? buyerIndustries : customerModel.idealCustomerTypes,
         targetTriggers,
         userIntent,
         serviceArea,
         location,
         locationLock,
+        customerModel,
       },
       triageCap,
       {
@@ -966,12 +1001,13 @@ async function prepareScoutState(
         {
           offering: [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
           targetIndustries,
-          buyerIndustries: buyerIndustries.length ? buyerIndustries : [plan.queryLadder.sector],
+          buyerIndustries: buyerIndustries.length ? buyerIndustries : customerModel.idealCustomerTypes,
           targetTriggers,
           userIntent,
           serviceArea,
           location,
           locationLock,
+          customerModel,
         },
         triageCap
       );
@@ -1038,6 +1074,7 @@ async function prepareScoutState(
       buyerIndustries,
       buyerRoles,
       serviceArea,
+      customerModel,
       locationLock,
       gl: plan.geographicFocus.gl,
       queryLabel,
@@ -1109,7 +1146,8 @@ async function processWinnerArticle(
             buyerIndustries,
           },
           { title: article.title, publisher: article.publisher, text: `${article.snippet}\n${crawled.markdown}` },
-          env.OPENAI_API_KEY
+          env.OPENAI_API_KEY,
+          state.customerModel
         ),
       ]);
       console.log(

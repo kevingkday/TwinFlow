@@ -205,19 +205,19 @@ describe('batch headline triage', () => {
   });
 
   it('lets Jev decide: hard geo gate, thresholds, ranking, and the deterministic guard', async () => {
-    // Jev probabilities per candidate: [trigger, fit, noise, local]
-    const probs: Record<number, [number, number, number, number]> = {
-      1: [0.95, 0.9, 0.05, 0.08], // Seattle: strong trigger/fit but outside service area
-      2: [0.93, 0.92, 0.04, 0.97], // Vancouver funding
-      4: [0.9, 0.7, 0.05, 0.9], // Burnaby, B.C. CFO hire
+    // Jev probabilities per candidate: [customer, noise, local]
+    const probs: Record<number, [number, number, number]> = {
+      1: [0.92, 0.05, 0.08], // Seattle: strong customer fit but outside service area
+      2: [0.93, 0.04, 0.97], // Vancouver funding
+      4: [0.85, 0.05, 0.9], // Burnaby, B.C. CFO hire
     };
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
       const answers: Record<string, { type: 'noul'; noul: number }> = {};
       for (const name of Object.keys(body.questions)) {
         const [, idx, kind] = name.match(/^a(\d+)_(\w+)$/)!;
-        const p = probs[Number(idx)] || [0.1, 0.1, 0.9, 0.1];
-        const value = { trigger: p[0], fit: p[1], noise: p[2], local: p[3] }[kind as 'trigger'];
+        const p = probs[Number(idx)] || [0.1, 0.9, 0.1];
+        const value = { customer: p[0], noise: p[1], local: p[2] }[kind as 'customer'];
         answers[name] = { type: 'noul', noul: value };
       }
       return new Response(JSON.stringify({ model: 'jev-1.14.0', answers, usage: { input_tokens: 1, output_tokens: 1 } }), {
@@ -237,11 +237,11 @@ describe('batch headline triage', () => {
     expect(body.model).toBe('jev-latest');
     expect(Object.keys(body.state.articles).sort()).toEqual(['1', '2', '4']);
     expect(body.questions.a2_local.instructions).toContain('Vancouver / British Columbia');
-    expect(body.questions).not.toHaveProperty('a5_trigger');
+    expect(body.questions).not.toHaveProperty('a5_customer');
 
     expect(result.modelUsed).toBe('jev:jev-1.14.0');
     expect(result.selectedIndices).toEqual([2, 4]);
-    expect(result.reasoning[2]).toMatch(/^Jev: trigger 0\.93/);
+    expect(result.reasoning[2]).toMatch(/^Jev: customer 0\.93/);
   });
 
   it('falls back to keyword triage when Jev is unreachable', async () => {

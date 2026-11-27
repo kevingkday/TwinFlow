@@ -1,4 +1,5 @@
 import type { QueryPlannerInput } from './aiQueryPlanner';
+import { buildFallbackCustomerModel, type CustomerModel } from './customerModel';
 import { isRelevantToProfile } from './signalQuality';
 
 export const FIT_SCORE_THRESHOLD = 60;
@@ -15,6 +16,8 @@ export interface RelevanceJudgment {
   buyerPersonaMatch: boolean;
   buyerPersonaReason: string;
   buyerCompany?: string;
+  businessType?: string;
+  businessSize?: string;
   triggerEvent?: string;
   namedPerson?: string;
   evidenceQuotes?: string[];
@@ -34,103 +37,102 @@ function findTriggerSentence(text: string, terms: string[]): string {
   return sentences[0]?.slice(0, 260) || '';
 }
 
-function computeKeywordFitScore(profile: QueryPlannerInput, title: string, text: string): {
+function computeKeywordFitScore(
+  profile: QueryPlannerInput,
+  title: string,
+  text: string,
+  customerModel?: CustomerModel
+): {
   fitScore: number;
   triggerType: string;
   triggerSentence: string;
   whyMatched: string;
   locationOk: boolean;
 } {
+  const model = customerModel || buildFallbackCustomerModel(profile);
   const haystack = `${title} ${text}`.toLowerCase();
-  const sellerBlob = [
-    ...(profile.servicesOffered || []),
-    ...(profile.productsOffered || []),
-    profile.userMission || '',
-    profile.valueProp || '',
-    profile.companyDescription || '',
-  ]
-    .join(' ')
-    .toLowerCase();
+  const stop = new Set(['and', 'the', 'for', 'with', 'that', 'this', 'from', 'into', 'your', 'our', 'services', 'solutions', 'company', 'business', 'businesses', 'firm', 'firms', 'small', 'mid', 'sized']);
 
-  const isCyberOrAiSeller = /cyber|ai risk|ai liability|ransomware|data breach/.test(sellerBlob);
-  const isMspSeller = /managed it|\bmsp\b|managed services|it support/.test(sellerBlob);
+  const hasTerm = (term: string) =>
+    new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(haystack);
 
-  const cyberTriggers = ['breach', 'ransomware', 'cyber', 'hack', 'malware', 'phishing', 'ai rollout', 'artificial intelligence', 'ai policy', 'ai governance', 'ciso', 'cto', 'data privacy', 'security audit', 'compliance'];
-  const mspTriggers = ['it ', 'cyber', 'ransomware', 'breach', 'cloud', 'software', 'network', 'digital', 'clinic', 'law firm', 'medical', 'legal', 'new office', 'expansion', 'compliance'];
-  const generalTriggers = ['funding', 'raises', 'series', 'expansion', 'expands', 'new location', 'opens', 'contract', 'rfp', 'regulation', 'compliance', 'acquires', 'appoints', 'hires'];
+  const signalCandidates = [
+    ...model.buyingSignals,
+    ...(profile.targetTriggers || []),
+  ].filter((t) => t.trim().length >= 3);
 
-  const hasTerm = (term: string) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(haystack);
-
-  const matchedCyber = cyberTriggers.find((t) => hasTerm(t));
-  const matchedMsp = mspTriggers.find((t) => hasTerm(t.trim()));
-  const matchedGeneral = generalTriggers.find((t) => hasTerm(t));
+  const matchedSignal =
+    signalCandidates.find((t) => hasTerm(t.trim())) ||
+    signalCandidates.find((t) =>
+      t
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .some((w) => w.length >= 4 && !stop.has(w) && hasTerm(w))
+    ) ||
+    '';
 
   const place = (profile.location || '').toLowerCase().split(',')[0].trim();
+  const region = ((profile.location || '').split(',')[1] || '').toLowerCase().trim();
   const locationOk = Boolean(
     profile.allowNationalSearch ||
+      model.serviceArea === 'national' ||
       !place ||
       haystack.includes(place) ||
-      /\bb\.?c\.?\b|british columbia/.test(haystack)
+      (region && haystack.includes(region))
   );
 
-  // Strict domain calibration: if seller is cyber/AI or MSP, an article with NO relevant trigger scores under 40.
-  if (isCyberOrAiSeller && !matchedCyber) {
-    return {
-      fitScore: locationOk ? 28 : 12,
-      triggerType: 'none',
-      triggerSentence: '',
-      whyMatched: `No cyber or AI risk trigger found in "${title.slice(0, 70)}".`,
-      locationOk,
-    };
-  }
-  if (isMspSeller && !matchedMsp) {
-    return {
-      fitScore: locationOk ? 30 : 15,
-      triggerType: 'none',
-      triggerSentence: '',
-      whyMatched: `No IT, cyber, clinic, or law-firm trigger found in "${title.slice(0, 70)}".`,
-      locationOk,
-    };
-  }
-
-  const matchedTrigger = (isCyberOrAiSeller ? matchedCyber : isMspSeller ? matchedMsp : matchedGeneral) || '';
-  if (!matchedTrigger) {
+  if (!matchedSignal) {
     return {
       fitScore: locationOk ? 32 : 15,
       triggerType: 'none',
       triggerSentence: '',
-      whyMatched: `No commercial buying trigger related to your services in "${title.slice(0, 70)}".`,
+      whyMatched: `No buying signal from the customer model found in "${title.slice(0, 70)}".`,
       locationOk,
     };
   }
 
-  const stop = new Set(['and', 'the', 'for', 'with', 'that', 'this', 'from', 'into', 'your', 'our', 'services', 'solutions', 'company', 'business', 'businesses', 'firm', 'firms', 'small', 'mid', 'sized']);
-  const sectorTokens = [...new Set((profile.buyerIndustries || profile.targetIndustries || []).join(' ').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !stop.has(w)))];
+  const sectorTokens = [
+    ...new Set(
+      [
+        ...model.idealCustomerTypes,
+        ...(profile.buyerIndustries || []),
+        ...(profile.targetIndustries || []),
+      ]
+        .join(' ')
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length >= 3 && !stop.has(w))
+    ),
+  ];
   const matchedSectorTokens = sectorTokens.filter((tok) => haystack.includes(tok));
 
   let score = 0;
   if (locationOk) score += 35;
-  score += 35; // matched service-relevant trigger
-  score += Math.min(20, matchedSectorTokens.length * 10);
-  if (isCyberOrAiSeller && /breach|ransomware|cyber/.test(haystack)) score += 8;
-  if (isMspSeller && /clinic|law firm|medical|legal/.test(haystack)) score += 8;
+  score += 35;
+  score += Math.min(25, matchedSectorTokens.length * 10);
 
-  const triggerSentence = findTriggerSentence(`${title}. ${text}`, [matchedTrigger]);
-  const primaryService = (profile.servicesOffered && profile.servicesOffered[0]) || profile.valueProp || 'your services';
-  const whyMatched = `Article reports a ${matchedTrigger} event ("${title.slice(0, 75)}"), creating an immediate need for ${primaryService}.`;
+  const triggerSentence = findTriggerSentence(`${title}. ${text}`, [matchedSignal.toLowerCase()]);
+  const primaryService = (profile.servicesOffered && profile.servicesOffered[0]) || profile.valueProp || profile.userMission || 'your services';
+  const whyMatched = `Article reports a ${matchedSignal} signal ("${title.slice(0, 75)}"), aligning with ${primaryService}.`;
 
   return {
     fitScore: Math.min(98, score),
-    triggerType: matchedTrigger,
+    triggerType: matchedSignal,
     triggerSentence,
     whyMatched,
     locationOk,
   };
 }
 
-function keywordJudgment(profile: QueryPlannerInput, title: string, text: string, publisher: string): RelevanceJudgment {
+function keywordJudgment(
+  profile: QueryPlannerInput,
+  title: string,
+  text: string,
+  publisher: string,
+  customerModel?: CustomerModel
+): RelevanceJudgment {
   const relevantByRules = isRelevantToProfile(profile, title, text, publisher);
-  const { fitScore, triggerType, triggerSentence, whyMatched, locationOk } = computeKeywordFitScore(profile, title, text);
+  const { fitScore, triggerType, triggerSentence, whyMatched, locationOk } = computeKeywordFitScore(profile, title, text, customerModel);
   const relevant = relevantByRules && locationOk && fitScore >= FIT_SCORE_THRESHOLD;
   return {
     relevant,
@@ -148,67 +150,64 @@ function keywordJudgment(profile: QueryPlannerInput, title: string, text: string
 }
 
 /**
- * gpt-4o-mini judgment of a crawled article against the full user profile.
+ * gpt-4o-mini judgment of a crawled article against the CustomerModel.
  * Keyword overlap is only the fallback when OpenAI is unavailable.
  */
 export async function judgeArticleRelevance(
   profile: QueryPlannerInput,
   article: { title: string; publisher?: string; text: string },
-  openAiApiKey?: string
+  openAiApiKey?: string,
+  customerModel?: CustomerModel
 ): Promise<RelevanceJudgment> {
+  const model = customerModel || buildFallbackCustomerModel(profile);
   const cleanKey = (openAiApiKey || '').trim();
   if (!cleanKey || !cleanKey.startsWith('sk-') || cleanKey.includes('your_')) {
-    return keywordJudgment(profile, article.title, article.text, article.publisher || '');
+    return keywordJudgment(profile, article.title, article.text, article.publisher || '', model);
   }
 
-  const systemPrompt = `You judge whether a news article is a useful 1:1 outreach signal for one specific seller.
-Read the full profile and the article. Respond with JSON only:
+  const offering = (profile.servicesOffered || []).join(', ') || profile.userMission || profile.valueProp || 'B2B services';
+  const locationLabel = profile.location || 'target area';
+
+  const systemPrompt = `You judge whether the business in an article is a plausible customer for ${offering} in ${locationLabel}, per the provided Customer Model.
+Answer one core question: "Is the business in this article a plausible customer for ${offering} in ${locationLabel}, per this customer model? Name the business, its type and size, and the reason to reach out."
+
+Respond with JSON only:
 {
   "relevant": true,
   "fitScore": 84,
-  "triggerType": "ransomware | data_breach | ai_rollout | ai_regulation | funding | expansion | new_location | leadership_hire | none",
-  "triggerSentence": "Exact verbatim sentence from the article showing the trigger, or empty string if none.",
-  "whyMatched": "One specific sentence naming the company, the event, and how the seller's specific service applies.",
+  "buyerCompany": "The single operating business that could buy from the seller, or empty string",
+  "businessType": "Type/industry of that business, or empty string",
+  "businessSize": "Estimated size (e.g. local SMB, mid-market, enterprise), or empty string",
+  "triggerType": "Short label for the buying signal / reason to reach out, or none",
+  "triggerSentence": "Exact verbatim sentence from the article showing the reason to reach out, or empty string",
+  "whyMatched": "One specific sentence naming the business, its type/size, and why it needs ${offering} right now.",
   "relevantReason": "One sentence",
   "locationMatch": true,
   "locationReason": "One sentence naming the places",
   "buyerPersonaMatch": true,
-  "buyerPersonaReason": "One sentence on whether this company would buy what the user sells"
-}
-
-Also include:
-{
-  "buyerCompany": "The single operating company that could buy from the user, or empty",
-  "triggerEvent": "The event at that company, or empty",
-  "namedPerson": "A person employed at that same company, or empty",
-  "evidenceQuotes": ["Short quotes from the article proving the company, the event, and the person"]
+  "buyerPersonaReason": "One sentence on whether this business fits the customer model",
+  "triggerEvent": "Short description of the reason to reach out, or empty string",
+  "namedPerson": "A person employed at that same business, or empty string",
+  "evidenceQuotes": ["Short verbatim quotes from the article proving the business, the reason to reach out, and any named person"]
 }
 
 Rules:
-- Score fitScore from 0 to 100 based on: (a) whether the article contains a concrete buying trigger DIRECTLY related to the seller's specific services, (b) target sector match, and (c) location match.
-- A story with NO trigger related to the seller's services MUST score under 40 and relevant=false. For example, for a cyber/AI insurance broker, an apartment-tower construction story, a tea-merchant acquisition with no cyber/AI angle, or a transit contract dispute has NO cyber or AI trigger and MUST score under 40.
-- relevant is true ONLY when fitScore >= 60, locationMatch holds, buyerPersonaMatch holds, and an operating company is identified with a triggerSentence.
-- A named person in the article is NOT required (Apollo finds company executives when no person is named).
-- Judge the BUYER, not the seller's own industry. A commercial insurance broker's trade press is not a buyer.
-- A roundup that names people at several different companies is not a match.
-- GoFundMe, personal crowdfunding, and consumer charity drives are not buyer matches.
-- A story set in a different metro is locationMatch false. Florida is not Dallas. Vancouver is not Toronto.
-- Do not treat a keyword accident as a match.`;
+- Reject vendors/competitors offering the same thing as the seller, media/news outlets, and organizations outside the Customer Model (score under 40, relevant=false).
+- Score fitScore from 0 to 100 based on: (a) fit with the Customer Model's idealCustomerTypes and customerSize, (b) presence of a concrete reason to reach out (buyingSignals or equivalent timely need), and (c) location match.
+- relevant is true ONLY when fitScore >= 60, locationMatch holds, buyerPersonaMatch holds, and an operating customer business is identified with a triggerSentence.
+- A named person in the article is NOT required.
+- A roundup naming several different businesses is not a match; GoFundMe/personal charity drives are not matches.
+- For local offerings, the article must connect the business to the target city or province/state.`;
 
-  const userPrompt = `SELLER (context only; do not match this industry):
-Location setting: ${profile.location || 'unspecified'}
-National widening allowed: ${profile.allowNationalSearch ? 'yes' : 'no'}
-What they sell: ${profile.userMission || profile.valueProp || ''}
-Services offered: ${(profile.servicesOffered || []).join(', ') || 'not specified'}
+  const userPrompt = `SELLER OFFERING: ${offering}
+LOCATION: ${locationLabel} (national widening allowed: ${model.serviceArea === 'national' || profile.allowNationalSearch ? 'yes' : 'no'})
 
-BUYER CRITERIA (judge the article against these):
-Eligible industries: ${(profile.buyerIndustries || profile.targetIndustries || []).join(', ') || 'operating companies that would buy from this seller'}
-Target triggers: ${(profile.targetTriggers || []).join(', ') || 'funding, expansion, new location, breach, AI rollout, regulation'}
-Roles worth contacting: ${(profile.buyerRoles || []).join(', ') || 'operator or finance leader'}
-Company size: ${profile.buyerCompanySize || 'any'}
-Geography rule: the article must name the city or the province/state. The word Canadian does not prove Vancouver or British Columbia. A national story matches only when national widening is allowed.
+CUSTOMER MODEL:
+- Ideal customer types: ${model.idealCustomerTypes.join(', ')}
+- Customer size: ${model.customerSize}
+- Reason to buy / buying signals: ${model.buyingSignals.join(', ')}
 
-ARTICLE
+ARTICLE:
 Publisher: ${article.publisher || 'unknown'}
 Headline: ${article.title}
 Body:
@@ -294,6 +293,8 @@ ${article.text.slice(0, 18000)}`;
       buyerPersonaMatch,
       buyerPersonaReason: parsed.buyerPersonaReason || '',
       buyerCompany: parsed.buyerCompany || '',
+      businessType: parsed.businessType || '',
+      businessSize: parsed.businessSize || '',
       triggerEvent: parsed.triggerEvent || '',
       namedPerson: parsed.namedPerson || '',
       evidenceQuotes: quotes,

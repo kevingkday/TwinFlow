@@ -1,3 +1,10 @@
+export interface CustomerModel {
+  idealCustomerTypes: string[];
+  customerSize: string;
+  buyingSignals: string[];
+  serviceArea: 'local' | 'national';
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -18,6 +25,7 @@ export interface Campaign {
   buyerRoles?: string[];
   buyerCompanySize?: 'smb' | 'midmarket' | 'enterprise' | 'any';
   serviceArea?: 'local' | 'national';
+  customerModel?: CustomerModel | null;
   isDefault: boolean;
   leadsCount: number;
   isActive: boolean;
