@@ -94,9 +94,27 @@ function extractTokenFromEmailAddress(toAddress: string): string | null {
   return localMatch ? localMatch[1] : null;
 }
 
+function decodeEmailBody(raw: string): string {
+  // Unfold quoted-printable
+  let text = raw.replace(/=\r?\n/g, '').replace(/=3D/gi, '=');
+  // Decode any base64 MIME blocks so URLs inside Gmail base64 parts are visible
+  const b64Blocks = raw.match(/Content-Transfer-Encoding:\s*base64[\s\S]*?\r?\n\r?\n([A-Za-z0-9+/=\r\n]+)/gi) || [];
+  for (const block of b64Blocks) {
+    const b64 = block.split(/\r?\n\r?\n/).slice(1).join('').replace(/\s+/g, '');
+    if (b64.length >= 16) {
+      try {
+        text += '\n' + atob(b64);
+      } catch {
+        // ignore invalid base64
+      }
+    }
+  }
+  return text;
+}
+
 function extractArticleFromRawEmail(raw: string): { title: string; url: string; text: string } {
-  const unfolded = raw.replace(/=\r?\n/g, '').replace(/=3D/gi, '=');
-  const subjectMatch = unfolded.match(/^Subject:\s*(.+)$/im);
+  const unfolded = decodeEmailBody(raw);
+  const subjectMatch = raw.match(/^Subject:\s*(.+)$/im);
   const title = subjectMatch ? subjectMatch[1].replace(/^(fwd:|re:)\s*/i, '').trim() : '';
   const urls = unfolded.match(/https?:\/\/[^\s<>"')]+/gi) || [];
   const articleUrl =
@@ -112,7 +130,7 @@ export default {
   async email(
     message: { to: string; from: string; raw: ReadableStream<Uint8Array> },
     env: Bindings,
-    ctx: ExecutionContext
+    _ctx: ExecutionContext
   ) {
     if (!env?.DB) return;
     const token = extractTokenFromEmailAddress(message.to);
@@ -128,13 +146,17 @@ export default {
     }
     const rawText = await new Response(message.raw).text();
     const extracted = extractArticleFromRawEmail(rawText);
-    ctx.waitUntil(
-      ingestManualArticleForUser(db, env, user, {
+    console.log(`[Email Ingest] user=${user.email} to=${message.to} url="${extracted.url}" title="${extracted.title}" textLen=${extracted.text.length}`);
+    try {
+      const res = await ingestManualArticleForUser(db, env, user, {
         url: extracted.url || undefined,
         title: extracted.title || undefined,
         text: extracted.text || undefined,
         sourceLabel: 'Email Forward',
-      }).catch((err) => console.error('[Email Ingest] failed:', err))
-    );
+      });
+      console.log('[Email Ingest] result:', JSON.stringify(res));
+    } catch (err) {
+      console.error('[Email Ingest] failed:', err);
+    }
   },
 };
