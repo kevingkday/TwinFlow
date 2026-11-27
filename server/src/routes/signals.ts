@@ -263,7 +263,7 @@ signalsRouter.get('/deck', async (c) => {
 
     let queuedSignals = await db.query.signals.findMany({
       where: and(...deckConditions),
-      limit: 10,
+      limit: 100,
       orderBy: [desc(schema.signals.createdAt)],
       with: {
         contacts: {
