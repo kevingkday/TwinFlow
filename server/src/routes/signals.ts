@@ -2692,36 +2692,17 @@ export async function ingestManualArticleForUser(
   const articleBody = crawledMarkdown || articleTitle;
   const now = new Date().toISOString();
 
-  const [enriched, judgment] = await Promise.all([
-    enrichSignalWithLLM(
-      articleTitle,
-      articleBody,
-      publisher,
-      env.OPENAI_API_KEY,
-      [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
-      userIntent
-    ),
-    judgeArticleRelevance(
-      {
-        location: location || undefined,
-        userIntent,
-        userMission: userMission || undefined,
-        servicesOffered,
-        targetIndustries,
-        targetTriggers,
-        valueProp: valueProp || undefined,
-        companyDescription: companyDescription || undefined,
-        serviceArea,
-        allowNationalSearch: serviceArea === 'national',
-        buyerIndustries,
-      },
-      { title: articleTitle, publisher, text: `${articleTitle}\n${articleBody}` },
-      env.OPENAI_API_KEY,
-      customerModel
-    ),
-  ]);
+  // Manually added articles bypass Jev & relevance judge since the user already selected them.
+  const enriched = await enrichSignalWithLLM(
+    articleTitle,
+    articleBody,
+    publisher,
+    env.OPENAI_API_KEY,
+    [servicesOffered.join(', '), valueProp, userMission].filter(Boolean).join(' — ') || undefined,
+    userIntent
+  );
 
-  const companyName = (judgment.buyerCompany || enriched.companyName || '').trim() || 'Shared Prospect';
+  const companyName = (enriched.companyName || '').trim() || 'Shared Prospect';
   const companyDomain = usableCompanyDomain(enriched.companyDomain);
   const articlePerson =
     enriched.decisionMaker?.name && !isNonBuyerRole(enriched.decisionMaker.role || '')
@@ -2762,10 +2743,10 @@ export async function ingestManualArticleForUser(
   const uniqueSuffix = Math.random().toString(36).substring(2, 8);
   const signalId = `sig_${Date.now()}_${uniqueSuffix}`;
   const draftId = `dr_${Date.now()}_${uniqueSuffix}`;
-  const triggerSentence = judgment.triggerSentence || enriched.verbatimQuotes?.[0] || null;
+  const triggerSentence = enriched.verbatimQuotes?.[0] || null;
   const whyMatched =
-    judgment.whyMatched ||
     enriched.coldIntroHook ||
+    enriched.summaryBullets?.[0] ||
     `Manually added prospect (${input.sourceLabel || 'Direct'}) for ${companyName}.`;
   const sourceExcerptsList = (enriched.verbatimQuotes || []).map((quote) => ({
     quote,
@@ -2788,7 +2769,7 @@ export async function ingestManualArticleForUser(
     articleSummary: enriched.articleSummary || null,
     sourceExcerpts: sourceExcerptsList.length > 0 ? JSON.stringify(sourceExcerptsList) : null,
     sourceSnapshot,
-    fitScore: judgment.fitScore || null,
+    fitScore: 100,
     whyMatched,
     triggerSentence,
     status: 'queued',
@@ -2850,7 +2831,7 @@ export async function ingestManualArticleForUser(
     signalId,
     companyName,
     title: articleTitle,
-    fitScore: judgment.fitScore,
+    fitScore: 100,
     message: `Added "${companyName}" to your Lead Deck.`,
   };
 }
