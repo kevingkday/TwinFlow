@@ -2680,7 +2680,7 @@ async function enrichManualProspectItem(
     .map((r) => r.replace(/\([^)]*\)/g, '').trim())
     .filter(Boolean);
 
-  const resolution = await resolveSignalContacts(
+  let resolution = await resolveSignalContacts(
     {
       articlePerson,
       companyName: item.companyName,
@@ -2691,6 +2691,22 @@ async function enrichManualProspectItem(
     },
     env.APOLLO_API_KEY
   );
+  if (resolution.contacts.length === 0) {
+    const strippedName = item.companyName.replace(/,?\s*\b(inc|corp|corporation|ltd|limited|llc|llp)\.?$/i, '').trim();
+    if (strippedName && strippedName !== item.companyName) {
+      resolution = await resolveSignalContacts(
+        {
+          articlePerson,
+          companyName: strippedName,
+          companyDomain: item.companyDomain || '',
+          buyerTitles: cleanTitles.length ? cleanTitles : ['CEO', 'Founder', 'President', 'Owner', 'CFO', 'COO'],
+          industries: item.industry ? [item.industry] : [],
+          locations: undefined,
+        },
+        env.APOLLO_API_KEY
+      );
+    }
+  }
 
   const now = new Date().toISOString();
   const uniqueSuffix = Math.random().toString(36).substring(2, 8);

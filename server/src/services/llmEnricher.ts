@@ -863,13 +863,13 @@ export async function extractProspectsFromArticle(
     // Split long articles into ~5,500-char line-aligned chunks and extract in parallel so
     // 40+ company backgrounders complete in ~3-5s without hitting output token or timeout limits.
     const chunks: string[] = [];
-    if (body.length <= 6500) {
+    if (body.length <= 4500) {
       chunks.push(body);
     } else {
       const lines = body.split('\n');
       let current = '';
       for (const line of lines) {
-        if (current.length + line.length + 1 > 5500 && current.length > 500) {
+        if (current.length + line.length + 1 > 4000 && current.length > 500) {
           chunks.push(current);
           current = line;
         } else {
@@ -881,7 +881,7 @@ export async function extractProspectsFromArticle(
 
     const extractChunk = async (chunkText: string): Promise<ExtractedProspectItem[]> => {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 14000);
+      const timer = setTimeout(() => controller.abort(), 20000);
       try {
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
