@@ -862,7 +862,7 @@ export async function extractProspectsFromArticle(
     for (const modelName of models) {
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 18000);
+        const timer = setTimeout(() => controller.abort(), 25000);
         let res: Response;
         try {
           res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -874,35 +874,19 @@ export async function extractProspectsFromArticle(
             body: JSON.stringify({
               model: modelName,
               temperature: 0.1,
-              max_tokens: 4000,
+              max_tokens: 4500,
               response_format: { type: 'json_object' },
               messages: [
                 {
                   role: 'system',
-                  content: `You extract EVERY distinct operating company or organization that is a prospect, funding recipient, award winner, or subject in the article.
-CRITICAL:
-- If the article is a backgrounder, list, or roundup naming multiple companies (e.g. 10, 20, or 44 companies), you MUST return EVERY SINGLE ONE of them — do NOT summarize or stop early.
-- Do NOT include government agencies, publishers, or big tech partners unless they are listed as one of the recipients/subjects.
-- Keep triggerSummary to 1 concise sentence per company.
-Respond with JSON only:
-{
-  "prospects": [
-    {
-      "companyName": "Exact company name",
-      "location": "City, Province/State or empty string",
-      "industry": "Industry/sector or empty string",
-      "domain": "Website domain if explicitly stated, else empty string",
-      "triggerSummary": "1 concise sentence explaining why this company is featured",
-      "signalType": "Funding | Expansion | Award | Acquisition | Contract | Partnership | Operational Milestone",
-      "decisionMakerName": "Full name of a person at this company if printed verbatim, else empty string",
-      "decisionMakerRole": "Role/title if printed verbatim, else empty string"
-    }
-  ]
-}`,
+                  content: `Extract EVERY distinct operating company that is a prospect, recipient, winner, or subject in the article.
+If the article lists 10, 20, or 44 companies, you MUST return ALL of them — never stop early. Do NOT include government agencies, publishers, or partners unless they are listed as recipients.
+Use compact keys for speed:
+{ "prospects": [ { "c": "Company Name", "l": "City, Prov/State or empty", "i": "Industry or empty", "s": "1 short sentence summary" } ] }`,
                 },
                 {
                   role: 'user',
-                  content: `Headline: ${headline}\nPublisher: ${publisher}\n\nArticle Content:\n${(articleMarkdown || '').slice(0, 32000)}`,
+                  content: `Headline: ${headline}\nPublisher: ${publisher}\n\nArticle:\n${(articleMarkdown || '').slice(0, 32000)}`,
                 },
               ],
             }),
@@ -915,24 +899,24 @@ Respond with JSON only:
         const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
         const raw = json.choices?.[0]?.message?.content;
         if (!raw) continue;
-        const parsed = JSON.parse(raw) as { prospects?: ExtractedProspectItem[] };
+        const parsed = JSON.parse(raw) as {
+          prospects?: Array<{ c?: string; l?: string; i?: string; s?: string; companyName?: string; location?: string; industry?: string; triggerSummary?: string }>;
+        };
         const deduped: ExtractedProspectItem[] = [];
         const seen = new Set<string>();
         for (const item of parsed.prospects || []) {
-          const name = cleanCompanyName(String(item.companyName || '').trim());
+          const name = cleanCompanyName(String(item.c || item.companyName || '').trim());
           if (!name || name.length < 2) continue;
           const key = name.toLowerCase();
           if (seen.has(key)) continue;
           seen.add(key);
           deduped.push({
             companyName: name,
-            location: item.location ? String(item.location).trim() : '',
-            industry: item.industry ? String(item.industry).trim() : '',
-            domain: usableCompanyDomain(item.domain),
-            triggerSummary: String(item.triggerSummary || headline).trim(),
-            signalType: String(item.signalType || 'Operational Milestone').trim(),
-            decisionMakerName: item.decisionMakerName ? String(item.decisionMakerName).trim() : '',
-            decisionMakerRole: item.decisionMakerRole ? String(item.decisionMakerRole).trim() : '',
+            location: (item.l || item.location || '').trim(),
+            industry: (item.i || item.industry || '').trim(),
+            domain: '',
+            triggerSummary: String(item.s || item.triggerSummary || headline).trim(),
+            signalType: 'Funding & Expansion',
           });
         }
         if (deduped.length > 0) {
