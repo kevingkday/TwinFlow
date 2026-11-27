@@ -512,8 +512,9 @@ signalsRouter.get('/ingest/status/:jobId', async (c) => {
     const rawState = JSON.parse(job.stateJson || '{}') as any;
     if (rawState.mode === 'manual_multi') {
       const items = (rawState.items || []) as ManualMultiItem[];
-      const batchEnd = Math.min(items.length, (rawState.nextIndex || 0) + 5);
+      const batchEnd = Math.min(items.length, (rawState.nextIndex || 0) + 2);
       for (let i = rawState.nextIndex || 0; i < batchEnd; i += 1) {
+        if (i > (rawState.nextIndex || 0)) await new Promise((r) => setTimeout(r, 250));
         await enrichManualProspectItem(db, c.env, user, rawState.context, items[i]);
       }
       rawState.nextIndex = batchEnd;
@@ -2674,13 +2675,18 @@ async function enrichManualProspectItem(
       ? { name: item.decisionMakerName, role: item.decisionMakerRole || '' }
       : null;
 
+  const cleanTitles = ctx.buyerRoles
+    .flatMap((r) => r.split('/'))
+    .map((r) => r.replace(/\([^)]*\)/g, '').trim())
+    .filter(Boolean);
+
   const resolution = await resolveSignalContacts(
     {
       articlePerson,
       companyName: item.companyName,
       companyDomain: item.companyDomain || '',
-      buyerTitles: ctx.buyerRoles.length ? ctx.buyerRoles : ['CEO', 'Founder', 'President', 'Owner', 'CFO', 'COO'],
-      industries: [...ctx.buyerIndustries, ...ctx.targetIndustries, ...(item.industry ? [item.industry] : [])],
+      buyerTitles: cleanTitles.length ? cleanTitles : ['CEO', 'Founder', 'President', 'Owner', 'CFO', 'COO'],
+      industries: item.industry ? [item.industry] : [],
       locations: undefined,
     },
     env.APOLLO_API_KEY
@@ -2955,9 +2961,10 @@ export async function ingestManualArticleForUser(
       apolloLocations: apolloLocations(plan.locationLock, plan.geographicFocus.gl),
     };
 
-    // Enrich first 5 immediately so initial cards have contacts right away
-    const initialBatch = Math.min(5, multiItems.length);
+    // Enrich first 2 immediately so initial cards have contacts right away without tripping Apollo rate limits
+    const initialBatch = Math.min(2, multiItems.length);
     for (let i = 0; i < initialBatch; i += 1) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 250));
       await enrichManualProspectItem(db, env, user, ctx, multiItems[i]);
     }
 
